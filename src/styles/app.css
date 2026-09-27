@@ -1589,6 +1589,9 @@ body { line-height: 1.52; }
 .btn:active { transform: translateY(1px); }
 .btn.secondary:hover:not(:disabled), .icon-btn:hover { background: #f3f8f5; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+html.high-contrast { --focus: #000; }
+html.high-contrast .stage :focus-visible,
+html.high-contrast .camera-lab :focus-visible { outline-color: #fff; }
 
 /* Landing: asymmetry gives the synthetic movement study room to breathe. */
 .hero { background: radial-gradient(circle at 84% 19%,#194448 0%,#0b2427 45%); }

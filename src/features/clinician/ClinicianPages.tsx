@@ -50,7 +50,7 @@ export function ClinicianOverview() {
     <div className="content stack loose clinician-overview">
       <div className="row between wrap page-intro clinician-intro">
         <div>
-          <p className="eyebrow">{db.settings.clinicName}</p>
+          <p className="eyebrow">Dheepika Lab</p>
           <h1>{t('nav.overview')}</h1>
           {clinician && <p className="muted">{clinician.name} · {clinician.title}</p>}
         </div>
