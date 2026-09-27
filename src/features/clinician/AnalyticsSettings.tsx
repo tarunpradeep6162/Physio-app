@@ -122,6 +122,7 @@ const THRESHOLD_LABELS: Record<keyof ObservationThresholds, string> = {
   ear_shoulder_line: 'Ear–shoulder line angle (°)',
   trunk_sagittal: 'Trunk forward/back lean (°)',
   asymmetry: 'Left/right ROM asymmetry (°)',
+  knee_flexion_limited: 'Knee flexion below (°) — valid captures only',
 };
 
 export function ClinicSettingsPage() {

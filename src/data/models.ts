@@ -1,6 +1,7 @@
 import type { ExerciseResult } from '../engine/exerciseRunner';
 import type { ExercisePrescription } from '../engine/exercises/types';
 import type { Provenance } from '../engine/provenance';
+import type { CaptureConfig, ConditionMatch, ProtocolResult } from '../engine/protocols/types';
 import type { Landmark, Side } from '../engine/types';
 
 /**
@@ -72,11 +73,18 @@ export interface Consent {
 
 export type AssessmentStatus = 'in_progress' | 'submitted' | 'reviewed' | 'safety_hold';
 
+export type SafetyLevel = 'clear' | 'clinician_review' | 'urgent' | 'emergency';
+
 export interface Assessment {
   id: ID;
   patientId: ID;
   createdBy: ID;
   status: AssessmentStatus;
+  /** Body-region pathway. The first release implements the knee pathway end to end. */
+  region?: 'knee' | 'shoulder' | 'low_back' | 'general';
+  type?: 'initial' | 'reassessment';
+  baselineAssessmentId?: ID;
+  safetyLevel?: SafetyLevel;
   createdAt: ISODate;
   submittedAt?: ISODate;
   reviewedAt?: ISODate;
@@ -86,10 +94,147 @@ export interface Assessment {
   isDemo?: boolean;
 }
 
+export type SymptomType = 'pain' | 'stiffness' | 'weakness' | 'numbness' | 'tingling';
+
+/** One symptomatic body region. Anatomy, side, symptom types and location are stored separately. */
 export interface PainRegion {
   id: ID;
   assessmentId: ID;
+  /** View-independent map location id, e.g. 'knee_left'. */
   regionId: string;
+  anatomy?: string;
+  side?: Side | null;
+  symptomTypes?: SymptomType[];
+  /** Finer location within the region, e.g. knee: anterior / medial / lateral / posterior. */
+  subLocations?: string[];
+}
+
+/** Patient-drawn symptom radiation path (SVG coordinates of the given map view). */
+export interface RadiationPath {
+  id: ID;
+  assessmentId: ID;
+  view: string;
+  symptomType: SymptomType;
+  points: [number, number][];
+  createdAt: ISODate;
+}
+
+/** Original intake answer — immutable; a correction supersedes rather than overwrites. */
+export interface IntakeAnswer {
+  id: ID;
+  assessmentId: ID;
+  patientId: ID;
+  questionnaireId: string;
+  questionnaireVersion: string;
+  questionId: string;
+  questionText: string;
+  answer: string | number | string[] | boolean | null;
+  answeredAt: ISODate;
+  supersededBy?: ID;
+  isDemo?: boolean;
+}
+
+export type SafetyAction = 'emergency' | 'urgent' | 'clinician_review';
+
+/** Safety questionnaire response with the rule outcome at the time it was answered. */
+export interface SafetyResponse {
+  id: ID;
+  assessmentId: ID;
+  patientId: ID;
+  questionnaireId: string;
+  questionnaireVersion: string;
+  questionId: string;
+  questionText: string;
+  answer: boolean;
+  triggered: boolean;
+  action: SafetyAction | null;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+/** Clinician correction of an auto-organised summary line; the original is preserved. */
+export interface Amendment {
+  id: ID;
+  assessmentId: ID;
+  target: string;
+  original: string;
+  amended: string;
+  by: ID;
+  at: ISODate;
+}
+
+export interface TestPlanItem {
+  protocolId: string;
+  protocolVersion: string;
+  side: Side | null;
+}
+
+/** Test plan revisions — the latest row for an assessment is current; history is kept. */
+export interface TestPlan {
+  id: ID;
+  assessmentId: ID;
+  items: TestPlanItem[];
+  source: 'protocol_default' | 'clinician' | 'baseline_copy';
+  createdBy: ID;
+  createdAt: ISODate;
+  note?: string;
+}
+
+export interface CaptureSession {
+  id: ID;
+  assessmentId: ID;
+  patientId: ID;
+  protocolId: string;
+  protocolVersion: string;
+  side: Side | null;
+  result: ProtocolResult;
+  config: CaptureConfig | null;
+  baselineCaptureId?: ID;
+  conditionMatch?: ConditionMatch;
+  /** Free-text setup the camera cannot see, e.g. chair height. */
+  setupNotes?: string;
+  provenance: Provenance;
+  createdAt: ISODate;
+  isDemo?: boolean;
+}
+
+export type ReasoningAction = 'accept' | 'reject' | 'defer' | 'annotate';
+
+/** Clinician action on a rule-generated consideration; the suggestion snapshot is preserved. */
+export interface ReasoningDecision {
+  id: ID;
+  assessmentId: ID;
+  ruleSetId: string;
+  ruleSetVersion: string;
+  considerationId: string;
+  suggestion: { state: string; supporting: string[]; conflicting: string[]; missing: string[] };
+  action: ReasoningAction;
+  note?: string;
+  by: ID;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+export interface Impression {
+  id: ID;
+  assessmentId: ID;
+  text: string;
+  by: ID;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+export interface Report {
+  id: ID;
+  assessmentId: ID;
+  version: number;
+  status: 'preliminary' | 'clinician_reviewed';
+  generatedAt: ISODate;
+  generatedBy: ID;
+  approvedBy?: ID;
+  approvedAt?: ISODate;
+  templateVersion: string;
+  isDemo?: boolean;
 }
 
 export type ProType =
@@ -151,6 +296,10 @@ export interface Measurement {
   sd?: number;
   confidence: number;
   category: 'camera_estimate' | 'clinician_measured';
+  captureId?: ID;
+  metricId?: string;
+  validity?: 'valid' | 'invalid';
+  validityReason?: string;
   provenance: Provenance;
   reviewStatus: ReviewStatus;
   reviewedBy?: ID;
@@ -206,6 +355,8 @@ export interface TrainingSession {
   painBefore?: number;
   painAfter?: number;
   rpe?: number;
+  /** In-session pain reports and the configured rule's outcome. */
+  painEvents?: { at: ISODate; nprs: number; paused: boolean; rule: string }[];
   results: (ExerciseResult & { programExerciseId: ID })[];
   provenance: Provenance;
   isDemo?: boolean;
@@ -265,6 +416,8 @@ export interface ObservationThresholds {
   ear_shoulder_line: number;
   trunk_sagittal: number;
   asymmetry: number;
+  /** Knee flexion below this (camera-estimated, valid capture) creates an observation. */
+  knee_flexion_limited: number;
 }
 
 export interface ClinicSettings {
@@ -272,6 +425,10 @@ export interface ClinicSettings {
   emergencyNumber: string;
   thresholds: ObservationThresholds;
   validationModeEnabled: boolean;
+  /** Clinical-lead sign-off of versioned clinical rule sets (safety, reasoning, protocols). */
+  ruleApprovals: Record<string, { approvedBy: ID; approvedAt: ISODate }>;
+  /** Raw video is never stored; landmark data retention in days (0 = keep until deleted). */
+  retentionDays: number;
 }
 
 export interface DB {
@@ -294,6 +451,15 @@ export interface DB {
   alerts: Alert[];
   messages: Message[];
   audit: AuditEvent[];
+  radiationPaths: RadiationPath[];
+  intakeAnswers: IntakeAnswer[];
+  safetyResponses: SafetyResponse[];
+  amendments: Amendment[];
+  testPlans: TestPlan[];
+  captures: CaptureSession[];
+  reasoningDecisions: ReasoningDecision[];
+  impressions: Impression[];
+  reports: Report[];
   settings: ClinicSettings;
 }
 

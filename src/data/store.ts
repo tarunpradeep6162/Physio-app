@@ -11,7 +11,7 @@ import type { AuditEvent, ClinicSettings, DB, ID, Table } from './models';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -41,8 +41,11 @@ export const DEFAULT_SETTINGS: ClinicSettings = {
     ear_shoulder_line: 15,
     trunk_sagittal: 8,
     asymmetry: 10,
+    knee_flexion_limited: 120,
   },
   validationModeEnabled: false,
+  ruleApprovals: {},
+  retentionDays: 0,
 };
 
 export function emptyDb(): DB {
@@ -66,6 +69,15 @@ export function emptyDb(): DB {
     alerts: [],
     messages: [],
     audit: [],
+    radiationPaths: [],
+    intakeAnswers: [],
+    safetyResponses: [],
+    amendments: [],
+    testPlans: [],
+    captures: [],
+    reasoningDecisions: [],
+    impressions: [],
+    reports: [],
     settings: DEFAULT_SETTINGS,
   };
 }
@@ -77,12 +89,27 @@ function load(): DB {
   try {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null;
     if (!raw) return emptyDb();
-    const parsed = JSON.parse(raw) as DB;
-    if (parsed.schemaVersion !== SCHEMA_VERSION) return emptyDb();
-    return { ...emptyDb(), ...parsed, settings: { ...DEFAULT_SETTINGS, ...parsed.settings, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...parsed.settings?.thresholds } } };
+    return migrate(JSON.parse(raw) as DB);
   } catch {
     return emptyDb();
   }
+}
+
+/**
+ * Forward-only migrations. Existing patient data is preserved: new tables start empty and new
+ * settings take defaults. Unknown future versions are left untouched rather than wiped.
+ */
+export function migrate(parsed: DB): DB {
+  const base = emptyDb();
+  const v = parsed.schemaVersion ?? 1;
+  if (v > SCHEMA_VERSION) return parsed;
+  const out: DB = { ...base, ...parsed, schemaVersion: SCHEMA_VERSION };
+  out.settings = { ...DEFAULT_SETTINGS, ...parsed.settings, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...parsed.settings?.thresholds } };
+  if (v < 2) {
+    // v1 → v2: knee pathway tables; existing assessments are 'general' initial assessments.
+    out.assessments = parsed.assessments.map((a) => ({ region: 'general', type: 'initial', ...a }));
+  }
+  return out;
 }
 
 let persistError: string | null = null;

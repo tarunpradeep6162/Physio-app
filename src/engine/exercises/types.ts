@@ -98,6 +98,11 @@ export interface ExercisePrescription {
   /** Sessions per week. */
   frequencyPerWeek: number;
   instructions?: string;
+  /** Clinician-written progression plan/criteria (never applied automatically). */
+  progression?: string;
+  /** Session pauses when patient-reported pain reaches this (0–10), or rises by `painRiseStop`. */
+  painStopAt?: number;
+  painRiseStop?: number;
 }
 
 export function requiredView(def: ExerciseDefinition, side: Side): ViewOrientation[] {

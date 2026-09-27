@@ -20,7 +20,13 @@ export interface SynthOptions {
 export type SynthScene =
   | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number }
   | { kind: 'supine_lateral'; side: Side; legRaise?: number; kneeBend?: number }
-  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; offsetX?: number; scale?: number };
+  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; offsetX?: number; scale?: number }
+  /** Supine heel slide seen from the side: knee flexes with the heel on the floor. */
+  | { kind: 'supine_heel_slide'; side: Side; kneeFlexion: number }
+  /** Sit-to-stand seen from the side: kneeFlexion ~90 seated → ~0 standing; trunk leans forward to rise. */
+  | { kind: 'sit_to_stand_lateral'; side: Side; kneeFlexion: number; trunkLean?: number }
+  /** Double-leg squat seen from the front. depth = hip descent as a fraction of leg length; valgus = FPPA (deg), + = knee toward midline. */
+  | { kind: 'squat_anterior'; depth: number; valgusLeft?: number; valgusRight?: number };
 
 function rng(seed: number) {
   let s = seed >>> 0 || 1;
@@ -84,6 +90,42 @@ export function synthesize(scene: SynthScene, opts: SynthOptions = {}): Landmark
     return lm;
   }
 
+  if (scene.kind === 'squat_anterior') {
+    const cx = W / 2;
+    const ankleY = H * 0.9;
+    const leg = 0.4 * H;
+    const halfHip = 0.045 * H;
+    const hipY = ankleY - leg + scene.depth * leg;
+    const drop = hipY - (ankleY - leg);
+    const shY = hipY - 0.28 * H;
+    set(LM.nose, { x: cx, y: shY - 0.1 * H }, -0.2, 0.99);
+    set(LM.leftEar, { x: cx + 0.035 * H, y: shY - 0.09 * H }, 0, 0.9);
+    set(LM.rightEar, { x: cx - 0.035 * H, y: shY - 0.09 * H }, 0, 0.9);
+    set(LM.leftEye, { x: cx + 0.02 * H, y: shY - 0.105 * H }, -0.1, 0.95);
+    set(LM.rightEye, { x: cx - 0.02 * H, y: shY - 0.105 * H }, -0.1, 0.95);
+    for (const [sd, sign] of [['left', 1], ['right', -1]] as const) {
+      const L = sd === 'left';
+      const x = cx + sign * halfHip;
+      const hip = { x, y: hipY };
+      const ankle = { x, y: ankleY };
+      // Knee halfway between hip and ankle, displaced toward the midline to produce the FPPA.
+      const half = (ankleY - hipY) / 2;
+      const fppa = rad((L ? scene.valgusLeft : scene.valgusRight) ?? 0);
+      const e = half * Math.tan(fppa / 2);
+      const knee = { x: x - sign * e, y: hipY + half };
+      set(L ? LM.leftHip : LM.rightHip, hip, 0, 0.97);
+      set(L ? LM.leftKnee : LM.rightKnee, knee, -0.1 - drop / H, 0.95);
+      set(L ? LM.leftAnkle : LM.rightAnkle, ankle, 0, 0.94);
+      set(L ? LM.leftHeel : LM.rightHeel, { x, y: ankleY + 0.02 * H }, 0, 0.9);
+      set(L ? LM.leftFootIndex : LM.rightFootIndex, { x: x + sign * 8, y: ankleY + 0.03 * H }, -0.1, 0.9);
+      const shX = cx + sign * 0.08 * H;
+      set(L ? LM.leftShoulder : LM.rightShoulder, { x: shX, y: shY }, 0, 0.98);
+      set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 6, y: shY + 0.1 * H }, -0.2, 0.92);
+      set(L ? LM.leftWrist : LM.rightWrist, { x: shX - sign * 20, y: shY + 0.14 * H }, -0.3, 0.9);
+    }
+    return lm;
+  }
+
   const side = scene.side;
   // The patient faces image-left; the near side (exercised side) gets smaller z.
   const fwd = -1;
@@ -93,6 +135,60 @@ export function synthesize(scene: SynthScene, opts: SynthOptions = {}): Landmark
     set(near(l, rr), p, -0.15, nearV);
     set(far(l, rr), { x: farP.x + 4, y: farP.y }, 0.15, farV);
   };
+
+  if (scene.kind === 'supine_heel_slide') {
+    const baseY = H * 0.62;
+    const L = 0.2 * W * 1.6 * 0.6;
+    const hip: P = { x: W * 0.2 + 0.25 * W * 1.6 * 0.62, y: baseY };
+    const theta = rad(180 - scene.kneeFlexion); // interior knee angle
+    const span = 2 * L * Math.sin(theta / 2);
+    const ankle: P = { x: hip.x + span, y: baseY };
+    const knee: P = { x: hip.x + span / 2, y: baseY - L * Math.cos(theta / 2) };
+    const sh: P = { x: W * 0.2, y: baseY };
+    const farKnee: P = { x: hip.x + L, y: baseY };
+    const farAnkle: P = { x: hip.x + 2 * L, y: baseY };
+    pair(LM.leftShoulder, LM.rightShoulder, sh);
+    pair(LM.leftHip, LM.rightHip, hip);
+    pair(LM.leftKnee, LM.rightKnee, knee, farKnee);
+    pair(LM.leftAnkle, LM.rightAnkle, ankle, farAnkle);
+    pair(LM.leftHeel, LM.rightHeel, { x: ankle.x + 6, y: ankle.y + 6 }, { x: farAnkle.x + 6, y: farAnkle.y + 6 });
+    pair(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + 12, y: ankle.y - 30 }, { x: farAnkle.x + 12, y: farAnkle.y - 30 });
+    pair(LM.leftElbow, LM.rightElbow, { x: sh.x + 90, y: baseY + 4 });
+    pair(LM.leftWrist, LM.rightWrist, { x: sh.x + 170, y: baseY + 6 });
+    pair(LM.leftEar, LM.rightEar, { x: sh.x - 60, y: baseY - 10 });
+    pair(LM.leftEye, LM.rightEye, { x: sh.x - 80, y: baseY - 25 });
+    set(LM.nose, { x: sh.x - 85, y: baseY - 35 }, -0.1, 0.95);
+    return lm;
+  }
+
+  if (scene.kind === 'sit_to_stand_lateral') {
+    const Ls = 0.22 * H;
+    const Lt = 0.22 * H;
+    const torso = 0.28 * H;
+    const f = rad(scene.kneeFlexion);
+    const alpha = f * 0.2; // shank tilts slightly forward as the knee bends
+    const ankle: P = { x: W * 0.46, y: H * 0.9 };
+    const us = { x: fwd * Math.sin(alpha), y: -Math.cos(alpha) };
+    const knee: P = { x: ankle.x + Ls * us.x, y: ankle.y + Ls * us.y };
+    const ut = { x: fwd * Math.sin(alpha - f), y: -Math.cos(alpha - f) };
+    const hip: P = { x: knee.x + Lt * ut.x, y: knee.y + Lt * ut.y };
+    const lean = rad(scene.trunkLean ?? 5);
+    const sh: P = { x: hip.x + fwd * Math.sin(lean) * torso, y: hip.y - Math.cos(lean) * torso };
+    pair(LM.leftAnkle, LM.rightAnkle, ankle);
+    pair(LM.leftKnee, LM.rightKnee, knee);
+    pair(LM.leftHip, LM.rightHip, hip);
+    pair(LM.leftShoulder, LM.rightShoulder, sh);
+    pair(LM.leftHeel, LM.rightHeel, { x: ankle.x - fwd * 8, y: ankle.y + 10 });
+    pair(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + fwd * 40, y: ankle.y + 14 });
+    // Arms crossed over the chest (per protocol).
+    pair(LM.leftElbow, LM.rightElbow, { x: sh.x + fwd * 30, y: sh.y + 0.08 * H });
+    pair(LM.leftWrist, LM.rightWrist, { x: sh.x + fwd * 10, y: sh.y + 0.03 * H });
+    const ear: P = { x: sh.x + fwd * (6 + Math.sin(lean) * 40), y: sh.y - 0.07 * H };
+    pair(LM.leftEar, LM.rightEar, ear);
+    pair(LM.leftEye, LM.rightEye, { x: ear.x + fwd * 30, y: ear.y - 6 });
+    set(LM.nose, { x: ear.x + fwd * 45, y: ear.y + 4 }, -0.1, 0.95);
+    return lm;
+  }
 
   if (scene.kind === 'standing_lateral') {
     const cx = W * 0.5;

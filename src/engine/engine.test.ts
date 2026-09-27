@@ -132,6 +132,18 @@ describe('calibration', () => {
     // Subject on image-right in a front camera = too far to their own left → "move right".
     expect(run({ kind: 'standing_anterior', offsetX: 0.25 }).instruction).toBe('move_right');
   });
+  it('fails when any single required landmark is occluded, even if the mean is high', () => {
+    const p = new MotionPipeline('none');
+    let f!: ProcessedFrame;
+    for (let i = 0; i < 10; i++) {
+      const lm = synthesize({ kind: 'standing_anterior' });
+      lm[LM.leftKnee].visibility = 0.35; // e.g. hidden behind a chair
+      f = p.process({ timestamp: i * 33, width: W, height: H, poses: [lm], inferenceMs: 5, provider });
+    }
+    const r = evaluateCalibration({ frame: f, req, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
+    expect(r.frameReady).toBe(false);
+    expect(r.checks.find((c) => c.id === 'confidence')?.detail).toContain('leftKnee');
+  });
   it('flags camera tilt, poor lighting and absence', () => {
     expect(run({ kind: 'standing_anterior' }, 8).instruction).toBe('camera_tilted');
     expect(run({ kind: 'standing_anterior' }, 0, 30).instruction).toBe('increase_lighting');

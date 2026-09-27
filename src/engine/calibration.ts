@@ -1,5 +1,5 @@
 import type { ProcessedFrame } from './pipeline';
-import { LM } from './landmarks';
+import { LANDMARK_NAMES, LM } from './landmarks';
 import type { Landmark, ViewOrientation } from './types';
 
 /**
@@ -164,9 +164,14 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
     add({ id: 'orientation', status: 'fail', instruction, detail: frame.orientation });
   }
 
-  const meanConf = required.reduce((s, l) => s + l.visibility, 0) / Math.max(1, required.length);
-  if (meanConf < req.minConfidence) add({ id: 'confidence', status: 'fail', instruction: 'low_confidence', detail: meanConf.toFixed(2) });
-  else add({ id: 'confidence', status: 'pass', detail: meanConf.toFixed(2) });
+  // EVERY landmark the selected test needs must be confidently visible: a strong mean must not
+  // hide one occluded joint.
+  const occluded = req.landmarks.filter((i) => lms[i].visibility < req.minConfidence);
+  if (occluded.length > 0) {
+    add({ id: 'confidence', status: 'fail', instruction: 'low_confidence', detail: `occluded: ${occluded.map((i) => LANDMARK_NAMES[i]).join(', ')}` });
+  } else {
+    add({ id: 'confidence', status: 'pass', detail: `min ${Math.min(...required.map((l) => l.visibility)).toFixed(2)}` });
+  }
 
   return finish(checks);
 }
