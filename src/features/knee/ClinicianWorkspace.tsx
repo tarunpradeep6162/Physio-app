@@ -335,12 +335,14 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
   const caps = capturesFor(db, a.id);
   const all = db.captures.filter((c) => c.assessmentId === a.id);
   const decide = (m: Measurement, status: ReviewStatus) => update('measurements', m.id, { reviewStatus: status, reviewedBy: actorId, reviewedAt: new Date().toISOString() }, actorId, `review:${status}`);
-  if (!caps.length) return <p className="muted">No captures yet.</p>;
+  const scansByView = new Map<string, (typeof db.scans)[number]>();
+  for (const scan of db.scans.filter((s) => s.assessmentId === a.id && s.kind === 'static_posture').sort((x, y) => x.createdAt.localeCompare(y.createdAt))) scansByView.set(scan.view, scan);
+  if (!caps.length && !scansByView.size) return <p className="muted">No captures yet.</p>;
   return (
     <div className="stack">
-      <p className="small muted">
+      {!!caps.length && <p className="small muted">
         Showing the latest capture per test ({all.length} captures in total, earlier attempts retained). Accepting a camera estimate records that you reviewed it; it remains labelled camera-estimated.
-      </p>
+      </p>}
       {caps.map((c) => {
         const ms = db.measurements.filter((m) => m.captureId === c.id);
         return (
@@ -374,6 +376,34 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
           </div>
         );
       })}
+      {!!scansByView.size && (
+        <section className="panel stack">
+          <div className="row between wrap"><h2>Static camera scan</h2><CategoryBadge kind="camera" /></div>
+          <p className="small muted">Latest capture for each view. These are 2D alignment estimates and threshold observations, not diagnoses. Review the original camera source and quality before accepting a measure.</p>
+          {[...scansByView.values()].map((scan) => {
+            const ms = db.measurements.filter((m) => m.scanId === scan.id && m.type.startsWith('posture.'));
+            return (
+              <div key={scan.id} className="stack tight">
+                <h3>{scan.view.replace(/_/g, ' ')} · {fmtDateTime(scan.createdAt)}</h3>
+                <p className="xs muted mono">{scan.provenance.poseModel} {scan.provenance.poseModelVersion} · {scan.provenance.algorithmVersion} · {scan.provenance.source}</p>
+                {!ms.length && <Notice tone="warn">No reliable measures were recorded for this view. Recapture is needed.</Notice>}
+                {ms.map((m) => (
+                  <div key={m.id} className="row between wrap" style={{ gap: '0.6rem' }}>
+                    <span className="small grow">{m.type.slice(8).replace(/_/g, ' ')}{m.direction ? ` · ${m.direction.replace(/_/g, ' ')}` : ''}</span>
+                    <strong className="num">{m.value}{m.unit === 'deg' ? '°' : '% body height'}</strong>
+                    <span className="xs muted">confidence {m.confidence.toFixed(2)} · ±{m.sd ?? '—'} · {m.reviewStatus}</span>
+                    <div className="row wrap">
+                      <button className="btn sm primary" onClick={() => decide(m, 'accepted')}>Accept</button>
+                      <button className="btn sm danger" onClick={() => decide(m, 'rejected')}>Reject</button>
+                      <button className="btn sm secondary" onClick={() => decide(m, 'repeat_requested')}>Repeat</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </section>
+      )}
     </div>
   );
 }
@@ -590,6 +620,7 @@ function WhyPanel({ item, evidence, results, db, onClose, onOpen }: { item: Evid
   const conflicts = results.filter((r) => r.conflicting.some((s) => s.evidence.some((e) => e.id === item.id)));
   const src = item.source;
   const cap = src.kind === 'capture_metric' ? db.captures.find((c) => c.id === src.captureId) : undefined;
+  const scan = src.kind === 'scan_metric' ? db.scans.find((s) => s.id === src.scanId) : undefined;
   return (
     <aside className="drawer stack" role="dialog" aria-label={`Why? ${item.label}`}>
       <div className="row between">
@@ -617,6 +648,7 @@ function WhyPanel({ item, evidence, results, db, onClose, onOpen }: { item: Evid
         {src.kind === 'profile' && <p className="small">Patient profile field: {src.field}.</p>}
         {src.kind === 'safety' && <p className="small">{src.responseIds.length} safety questionnaire responses.</p>}
         {src.kind === 'clinician_measure' && <p className="small">Clinician-entered measurement.</p>}
+        {scan && <p className="small">Static camera scan · {src.kind === 'scan_metric' && src.view} view · {fmtDateTime(scan.createdAt)}. Recorded landmarks are retained for clinician review; an image is stored only with separate consent.</p>}
         {src.kind === 'rule' && (
           <div className="small">
             Algorithmic observation <span className="mono">{src.rule}</span> based on:

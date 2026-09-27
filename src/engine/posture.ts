@@ -72,7 +72,8 @@ function plumbOffset(id: PostureMetricId, pick: (v: ViewOrientation) => number):
     id,
     views: LATERAL,
     unit: 'pct_height',
-    landmarks: (v) => [pick(v), nearIdx(v, LM.leftAnkle, LM.rightAnkle), LM.nose],
+    landmarks: (v) => [pick(v), nearIdx(v, LM.leftAnkle, LM.rightAnkle), LM.nose,
+      nearIdx(v, LM.leftFootIndex, LM.rightFootIndex), nearIdx(v, LM.leftHeel, LM.rightHeel)],
     compute: (p, v) => {
       const ankle = p(nearIdx(v, LM.leftAnkle, LM.rightAnkle));
       const pt = p(pick(v));
@@ -165,7 +166,9 @@ export function computePostureMetrics(lms: Landmark[], width: number, height: nu
   const out: PostureMetricSample[] = [];
   for (const def of POSTURE_METRICS) {
     if (!def.views.includes(view)) continue;
-    const conf = Math.min(...def.landmarks(view).map((i) => lms[i].visibility));
+    const required = def.landmarks(view).map((i) => lms[i]);
+    if (required.some((lm) => !lm || !Number.isFinite(lm.x) || !Number.isFinite(lm.y))) continue;
+    const conf = Math.min(...required.map((lm) => lm.visibility));
     if (conf < minConfidence) continue; // never compute from occluded landmarks
     const r = def.compute(p, view, lms);
     if (!r || !Number.isFinite(r.value)) continue;

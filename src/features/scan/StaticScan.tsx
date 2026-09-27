@@ -145,7 +145,16 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
           const prog = (ctx.now - captureStart.current) / CAPTURE_MS;
           label(c2d, `${Math.round(prog * 100)}%`, f.width / 2, f.height * 0.08, f.height, mirrored, { size: 16 });
           if (prog >= 1) {
-            const metrics = capture.current!.result();
+            // Do not save a scan containing only unstable or insufficient-confidence readings.
+            const metrics = capture.current!.result().filter((m) => m.level === 'high' || m.level === 'moderate');
+            if (!metrics.length) {
+              capture.current = null;
+              gate.current.reset();
+              phaseRef.current = 'calibrating';
+              setPhase('calibrating');
+              setUi({ calib, gate: 0, capture: 0 });
+              return;
+            }
             const conf = metrics.length ? metrics.reduce((a, m) => a + m.confidence, 0) / metrics.length : 0;
             const res: ScanViewResult = {
               view,

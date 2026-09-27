@@ -203,6 +203,12 @@ describe('posture', () => {
     lms[LM.leftShoulder].visibility = 0.1;
     expect(computePostureMetrics(lms, W, H, 'anterior').find((x) => x.id === 'shoulder_level')).toBeUndefined();
   });
+  it('withholds lateral plumb offsets when a foot-direction landmark is hidden', () => {
+    const lms = synthesize({ kind: 'standing_lateral', side: 'left' });
+    lms[LM.leftHeel].visibility = 0.1;
+    const metrics = computePostureMetrics(lms, W, H, 'lateral_left');
+    expect(metrics.some((m) => m.id.startsWith('plumb_'))).toBe(false);
+  });
 });
 
 /** Drives the state machine with a synthetic angle profile at 30 fps. */

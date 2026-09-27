@@ -54,6 +54,8 @@ export interface ReportModel {
 export function lastDataChange(db: DB, id: ID): string {
   const ts = [
     ...db.captures.filter((x) => x.assessmentId === id).map((x) => x.createdAt),
+    ...db.scans.filter((x) => x.assessmentId === id).map((x) => x.createdAt),
+    ...db.measurements.filter((x) => x.assessmentId === id).flatMap((x) => [x.createdAt, x.reviewedAt ?? '']),
     ...db.intakeAnswers.filter((x) => x.assessmentId === id).map((x) => x.answeredAt),
     ...db.reasoningDecisions.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.impressions.filter((x) => x.assessmentId === id).map((x) => x.at),
@@ -144,7 +146,10 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   );
 
   // 4. Static assessment
-  const scanMs = db.measurements.filter((m) => m.assessmentId === a.id && m.type.startsWith('posture.'));
+  const latestScanByView = new Map<string, string>();
+  for (const s of db.scans.filter((x) => x.assessmentId === a.id && x.kind === 'static_posture').sort((x, y) => x.createdAt.localeCompare(y.createdAt))) latestScanByView.set(s.view, s.id);
+  const latestScanIds = new Set(latestScanByView.values());
+  const scanMs = db.measurements.filter((m) => m.assessmentId === a.id && !!m.scanId && latestScanIds.has(m.scanId) && m.type.startsWith('posture.') && m.confidence >= 0.7 && m.reviewStatus !== 'rejected');
   add(
     4,
     'Static assessment',

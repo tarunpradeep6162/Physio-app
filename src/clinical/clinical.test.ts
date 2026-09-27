@@ -46,6 +46,19 @@ describe('safety questionnaire', () => {
 });
 
 describe('evidence and reasoning', () => {
+  it('links static scan measurements and threshold observations without diagnosis facts', () => {
+    const db = dbWith({}, [{ regionId: 'knee_left' }]);
+    const provenance = cameraProvenance({ createdBy: 'u', provider: SIM_PROVIDER, confidence: 0.9, filter: 'one_euro', view: 'anterior' });
+    db.scans.push({ id: 'scan1', patientId: 'p', assessmentId: 'a', kind: 'static_posture', view: 'anterior', frameWidth: 720, frameHeight: 1280, landmarks: [], provenance, createdAt: provenance.createdAt });
+    db.measurements.push({ id: 'm1', patientId: 'p', assessmentId: 'a', scanId: 'scan1', type: 'posture.shoulder_level', value: 3.5, unit: 'deg', confidence: 0.9, category: 'camera_estimate', provenance, reviewStatus: 'pending', createdAt: provenance.createdAt });
+    db.observations.push({ id: 'o1', patientId: 'p', assessmentId: 'a', measurementId: 'm1', rule: 'shoulder_level', threshold: 3, value: 3.5, status: 'pending', createdAt: provenance.createdAt });
+    const ev = buildEvidence(db, 'a');
+    expect(ev.find((e) => e.id === 'scan:m1')?.source).toMatchObject({ kind: 'scan_metric', scanId: 'scan1' });
+    expect(ev.find((e) => e.id === 'scan-observation:o1')?.source).toMatchObject({ kind: 'rule', basedOn: ['scan:m1'] });
+    expect(ev.filter((e) => e.id.startsWith('scan')).flatMap((e) => e.facts)).toEqual([]);
+    db.measurements[0].confidence = 0.4;
+    expect(buildEvidence(db, 'a').some((e) => e.id === 'scan-observation:o1')).toBe(false);
+  });
   it('links answers to considerations with supportive / conflicting evidence and missing info', () => {
     const db = dbWith(
       { onset: 'gradual', aggravating: ['stairs_down', 'squatting'], swelling: 'none', time_of_day: ['during_activity'] },

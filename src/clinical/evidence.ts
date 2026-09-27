@@ -26,6 +26,7 @@ export interface EvidenceItem {
     | { kind: 'symptom_map'; regionRowId: ID }
     | { kind: 'profile'; field: string }
     | { kind: 'capture_metric'; captureId: ID; metricId: string; protocol: string }
+    | { kind: 'scan_metric'; scanId: ID; measurementId: ID; view: string }
     | { kind: 'rule'; rule: string; basedOn: string[] }
     | { kind: 'clinician_measure'; measurementId: ID }
     | { kind: 'safety'; responseIds: ID[] };
@@ -204,6 +205,44 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
         source: { kind: 'rule', rule: `${OBSERVATION_RULES_VERSION}:asymmetry`, basedOn: [flexPeak.left.id, flexPeak.right.id] },
         validity: 'valid',
         limitations: ['A left/right difference is descriptive and is not, by itself, evidence of pathology.'],
+      });
+    }
+  }
+
+  // Static camera scan: descriptive estimates and threshold observations remain separate.
+  // A camera observation does not establish the cause of a symptom or a diagnosis.
+  const latestScanByView = new Map<string, ID>();
+  for (const scan of db.scans.filter((s) => s.assessmentId === assessmentId && s.kind === 'static_posture').sort((x, y) => x.createdAt.localeCompare(y.createdAt))) latestScanByView.set(scan.view, scan.id);
+  const scanMeasurements = db.measurements.filter((m) => m.assessmentId === assessmentId && m.type.startsWith('posture.') && m.scanId);
+  const scanIds = new Set(latestScanByView.values());
+  for (const m of scanMeasurements) {
+    if (!scanIds.has(m.scanId!)) continue;
+    const id = `scan:${m.id}`;
+    const valid = m.validity !== 'invalid' && m.confidence >= 0.7;
+    out.push({
+      id,
+      category: 'camera_estimated',
+      label: `${m.type.slice('posture.'.length).replace(/_/g, ' ')} — ${m.provenance.view ?? 'unknown view'}`,
+      value: valid ? `${m.value}${m.unit === 'deg' ? '°' : '% body height'}${m.direction ? ` (${m.direction.replace(/_/g, ' ')})` : ''}` : 'Not reported — capture quality insufficient',
+      facts: [],
+      source: { kind: 'scan_metric', scanId: m.scanId!, measurementId: m.id, view: m.provenance.view ?? 'unknown' },
+      method: '2D pose landmarks; median over a stationary capture',
+      version: `${m.provenance.algorithmVersion} · ${m.provenance.poseModel ?? ''} ${m.provenance.poseModelVersion ?? ''}`.trim(),
+      validity: valid ? 'valid' : 'invalid',
+      validityNote: `Confidence ${m.confidence.toFixed(2)}${m.sd === undefined ? '' : ` · capture SD ${m.sd.toFixed(2)}`}; clinician review ${m.reviewStatus}`,
+      limitations: ['Camera-estimated alignment, affected by positioning and occlusion. Descriptive only; no diagnosis or universal normal range.'],
+    });
+    if (!valid || m.reviewStatus === 'rejected') continue;
+    for (const o of db.observations.filter((x) => x.measurementId === m.id)) {
+      out.push({
+        id: `scan-observation:${o.id}`,
+        category: 'algorithmic',
+        label: `${m.type.slice('posture.'.length).replace(/_/g, ' ')} crossed configured threshold`,
+        value: `${m.value}° > ${o.threshold}° (configured threshold; clinician review ${o.status})`,
+        facts: [],
+        source: { kind: 'rule', rule: `posture-observation:${o.rule}`, basedOn: [id] },
+        validity: 'valid',
+        limitations: ['A threshold crossing is an observation, not evidence of a specific condition.'],
       });
     }
   }

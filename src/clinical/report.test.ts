@@ -32,6 +32,12 @@ describe('report', () => {
     expect(JSON.stringify(m.sections.find((s) => s.n === 11))).not.toContain('Clinician conclusion');
   });
 
+  it('reverts an approved report after a new static camera scan', () => {
+    const copy = structuredClone(db);
+    copy.scans.push({ id: 'late-scan', assessmentId: base.id, patientId: base.patientId, kind: 'static_posture', view: 'anterior', createdAt: new Date(Date.now() + 60_000).toISOString() } as never);
+    expect(buildReport(copy, base.id, 'clinician').state).toBe('preliminary');
+  });
+
   it('renders a real multi-page PDF', () => {
     const doc = renderPdf(buildReport(db, re.id, 'clinician'));
     const bytes = doc.output('arraybuffer');

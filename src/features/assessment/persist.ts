@@ -28,7 +28,7 @@ export function saveScan(patientId: string, assessmentId: string, actorId: strin
     const prov = cameraProvenance({ createdBy: actorId, provider: r.provider, confidence: r.confidence, filter: 'one_euro', view: r.view, device: r.device });
     const scan = { id: uuid(), patientId, assessmentId, kind: 'static_posture' as const, view: r.view, frameWidth: r.frameWidth, frameHeight: r.frameHeight, landmarks: r.landmarks, imageDataUrl: r.image, provenance: prov, createdAt: prov.createdAt, isDemo };
     insert('scans', scan, actorId);
-    const ms: Measurement[] = r.metrics.map((m) => ({
+    const ms: Measurement[] = r.metrics.filter((m) => m.level === 'high' || m.level === 'moderate').map((m) => ({
       id: uuid(),
       patientId,
       assessmentId,
