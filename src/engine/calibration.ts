@@ -63,6 +63,8 @@ export interface CalibrationRequirements {
   views: ViewOrientation[];
   /** Fraction of frame height the body should occupy (min, max). */
   heightRange: [number, number];
+  /** Axis along which body extent is judged: vertical for standing, horizontal for lying tests. */
+  extentAxis?: 'vertical' | 'horizontal';
   minConfidence: number;
   maxRollDeg: number;
 }
@@ -124,11 +126,14 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
   const required = req.landmarks.map((i) => lms[i]);
 
   // Distance: vertical extent of the body in the frame.
+  // Body extent along the relevant axis: a distance proxy (fraction of frame, not metres).
+  const horiz = req.extentAxis === 'horizontal';
+  const coord = (l: Landmark) => (horiz ? l.x : l.y);
   const ys = [lms[LM.nose], lms[LM.leftAnkle], lms[LM.rightAnkle], lms[LM.leftShoulder], lms[LM.rightShoulder], lms[LM.leftHip], lms[LM.rightHip]]
     .filter((l) => l.visibility > 0.4)
-    .map((l) => l.y);
-  const top = Math.min(...required.map((l) => l.y), ...ys);
-  const bottom = Math.max(...required.map((l) => l.y), ...ys);
+    .map(coord);
+  const top = Math.min(...required.map(coord), ...ys);
+  const bottom = Math.max(...required.map(coord), ...ys);
   const extent = bottom - top;
   const tooClose = extent > req.heightRange[1] || top < 0 || bottom > 1;
 

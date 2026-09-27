@@ -36,6 +36,7 @@ export class ProtocolRecorder {
   private full: { t: number; raw: Landmark[] | null; smoothed: Landmark[] | null }[] = [];
   private live: LiveState = { phase: 'waiting', validCycles: 0, attempts: 0, value: null, complete: false, elapsedSec: 0 };
   private view: ProcessedFrame['orientation'] = 'unknown';
+  private dims = { w: 720, h: 1280 };
   private fpsSum = 0;
   private fpsN = 0;
 
@@ -57,6 +58,7 @@ export class ProtocolRecorder {
       this.fpsN++;
     }
     if (frame.orientation !== 'unknown') this.view = frame.orientation;
+    this.dims = { w: frame.width, h: frame.height };
     const s = this.signal(frame);
     let value: number | null = null;
     if (s.value !== null) value = this.filter.filter(s.value, t);
@@ -113,6 +115,8 @@ export class ProtocolRecorder {
       side: this.side,
       view: this.view,
       durationSec: Math.round(((t - t0) / 1000) * 10) / 10,
+      frameWidth: this.dims.w,
+      frameHeight: this.dims.h,
       cycles: cycles.map((c) => ({ ...c, startT: c.startT - t0, peakT: c.peakT - t0, engagedT: c.engagedT === null ? null : c.engagedT - t0, endT: c.endT === null ? null : c.endT - t0 })),
       metrics: gated,
       quality,

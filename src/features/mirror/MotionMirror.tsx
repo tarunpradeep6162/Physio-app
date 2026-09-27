@@ -165,7 +165,7 @@ export function MotionMirror({
         }
         const c = evaluateCalibration({
           frame: f,
-          req: { landmarks: reqLandmarks, views, heightRange: def.position === 'supine' ? [0.05, 0.98] : [0.45, 0.98], minConfidence: 0.65, maxRollDeg: 4 },
+          req: { landmarks: reqLandmarks, views, heightRange: [0.45, 0.98], extentAxis: def.position === 'supine' ? 'horizontal' : 'vertical', minConfidence: 0.65, maxRollDeg: 4 },
           lighting: lighting.current,
           cameraRollDeg: simulated ? 0 : rollRef.current,
           facing: 'user',

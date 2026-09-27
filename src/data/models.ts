@@ -289,7 +289,7 @@ export interface Measurement {
   sessionId?: ID;
   type: string;
   value: number;
-  unit: 'deg' | 'pct_height';
+  unit: 'deg' | 'pct_height' | 's' | 'pct_leg' | 'count';
   side?: Side;
   direction?: string;
   /** Standard deviation over the capture window, where applicable. */

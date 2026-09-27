@@ -144,6 +144,16 @@ describe('calibration', () => {
     expect(r.frameReady).toBe(false);
     expect(r.checks.find((c) => c.id === 'confidence')?.detail).toContain('leftKnee');
   });
+  it('judges distance horizontally for a patient lying down', () => {
+    const p = new MotionPipeline('none');
+    let f!: ProcessedFrame;
+    for (let i = 0; i < 10; i++) f = p.process(frameOf({ kind: 'supine_heel_slide', side: 'left', kneeFlexion: 5 }, i * 33));
+    const lying = { landmarks: [LM.leftHip, LM.leftKnee, LM.leftAnkle], views: ['lateral_left' as const], heightRange: [0.45, 0.98] as [number, number], minConfidence: 0.65, maxRollDeg: 4 };
+    const vertical = evaluateCalibration({ frame: f, req: lying, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
+    expect(vertical.instruction).toBe('move_closer');
+    const horizontal = evaluateCalibration({ frame: f, req: { ...lying, extentAxis: 'horizontal' }, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
+    expect(horizontal.frameReady).toBe(true);
+  });
   it('flags camera tilt, poor lighting and absence', () => {
     expect(run({ kind: 'standing_anterior' }, 8).instruction).toBe('camera_tilted');
     expect(run({ kind: 'standing_anterior' }, 0, 30).instruction).toBe('increase_lighting');

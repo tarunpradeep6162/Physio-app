@@ -91,6 +91,8 @@ export interface ProtocolResult {
   side: Side | null;
   view: ViewOrientation;
   durationSec: number;
+  frameWidth: number;
+  frameHeight: number;
   cycles: Cycle[];
   metrics: ProtocolMetric[];
   quality: QualityReport;

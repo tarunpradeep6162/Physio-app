@@ -1,6 +1,7 @@
 import type { ExerciseId } from '../exercises/types';
 import type { PoseFrame, PoseProviderInfo, Side } from '../types';
 import type { PoseProvider } from './provider';
+import { sceneAt, type SimParams } from '../protocols/simulate';
 import { synthesize, type SynthScene } from './synthetic';
 
 /**
@@ -10,7 +11,7 @@ import { synthesize, type SynthScene } from './synthetic';
  */
 
 export interface SimulationScenario {
-  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral';
+  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat';
   side: Side;
   /** Peak angle the simulated patient reaches (can be set below target to show incomplete reps). */
   peak: number;
@@ -24,6 +25,13 @@ export class SimulatedPoseProvider implements PoseProvider {
   private start = 0;
   private seed = 1;
   scenario: SimulationScenario = { exercise: 'knee_flexion', side: 'left', peak: 92, holdSeconds: 3 };
+  /** Protocol simulations stay at the start position until `startProtocol()` is called. */
+  private protocolStart: number | null = null;
+  protocolParams: SimParams = {};
+
+  startProtocol() {
+    this.protocolStart = performance.now();
+  }
 
   async init(): Promise<void> {
     this.start = performance.now();
@@ -51,6 +59,13 @@ export class SimulatedPoseProvider implements PoseProvider {
     const a = this.angleAt(elapsed);
     const s = this.scenario;
     let scene: SynthScene;
+    if (s.exercise.startsWith('knee_') && s.exercise !== 'knee_flexion') {
+      const t = this.protocolStart === null ? 0 : (timestamp - this.protocolStart) / 1000;
+      const side = s.exercise === 'knee_squat' ? null : s.side;
+      const sc = sceneAt(s.exercise, side, t, this.protocolParams);
+      const lms = sc ? synthesize(sc, { ...SIM_FRAME, noisePx: 1.5, seed: this.seed++ }) : null;
+      return { timestamp, ...SIM_FRAME, poses: lms ? [lms] : [], inferenceMs: performance.now() - t0, provider: this.info };
+    }
     switch (s.exercise) {
       case 'knee_flexion':
         scene = { kind: 'standing_lateral', side: s.side, kneeFlexion: 5 + a };
