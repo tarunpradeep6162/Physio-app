@@ -13,7 +13,7 @@ export class WorkerPoseProvider {
   loadMs = 0;
   private worker: Worker | null = null;
   private nextId = 1;
-  private pending = new Map<number, { resolve: (f: PoseFrame) => void; reject: (e: Error) => void }>();
+  private pending = new Map<number, { resolve: (f: PoseFrame) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
   private failed: ((e: Error) => void) | null = null;
   busy = false;
 
@@ -60,11 +60,13 @@ export class WorkerPoseProvider {
   private onMessage(m: WorkerResponse) {
     if (m.type === 'result') {
       const p = this.pending.get(m.id);
+      if (p) clearTimeout(p.timer);
       this.pending.delete(m.id);
       this.busy = this.pending.size > 0;
       p?.resolve(m.frame);
     } else if (m.type === 'error' && m.id !== undefined) {
       const p = this.pending.get(m.id);
+      if (p) clearTimeout(p.timer);
       this.pending.delete(m.id);
       this.busy = this.pending.size > 0;
       p?.reject(new Error(m.message));
@@ -72,14 +74,19 @@ export class WorkerPoseProvider {
   }
 
   private fail(e: Error) {
-    for (const p of this.pending.values()) p.reject(e);
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(e);
+    }
     this.pending.clear();
     this.busy = false;
-    this.failed?.(e);
+    const callback = this.failed;
+    this.failed = null;
+    callback?.(e);
   }
 
   /** Transfers the bitmap (it is closed in the worker) and resolves with the pose frame. */
-  submit(bitmap: ImageBitmap, ts: number): Promise<PoseFrame> {
+  submit(bitmap: ImageBitmap, ts: number, timeoutMs = 1500): Promise<PoseFrame> {
     if (!this.worker) {
       bitmap.close();
       return Promise.reject(new Error('pose worker not initialised'));
@@ -87,13 +94,27 @@ export class WorkerPoseProvider {
     const id = this.nextId++;
     this.busy = true;
     return new Promise<PoseFrame>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.worker!.postMessage({ type: 'frame', id, ts, bitmap } satisfies WorkerRequest, [bitmap]);
+      const timer = setTimeout(() => this.fail(new Error('pose worker frame timeout')), timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.worker!.postMessage({ type: 'frame', id, ts, bitmap } satisfies WorkerRequest, [bitmap]);
+      } catch (e) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        this.busy = false;
+        bitmap.close();
+        const error = e instanceof Error ? e : new Error('pose worker frame transfer failed');
+        reject(error);
+        this.fail(error);
+      }
     });
   }
 
   close() {
-    for (const p of this.pending.values()) p.reject(new Error('closed'));
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error('closed'));
+    }
     this.pending.clear();
     this.busy = false;
     this.worker?.postMessage({ type: 'close' } satisfies WorkerRequest);

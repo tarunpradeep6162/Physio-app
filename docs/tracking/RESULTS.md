@@ -1,5 +1,9 @@
 # Tracking work: measured results by phase
 
+## Follow-up after the brand release
+
+The capture screen now clears its displayed angle and skeleton if no processed frame arrives for 750 ms. It feeds invalid samples to the recorder so a repetition cannot bridge the gap. A worker frame that has not returned in 1.5 s fails over to the main-thread provider; the capture's existing engine-change guard invalidates an attempt that changes providers. This is a code and unit-test result, **not a measured phone improvement**. Use the [phone run sheet](PHONE_RUN.md) to check it on real devices, especially on a slow phone and when the camera stream stops.
+
 The environment is the same as the [Phase 1 baseline](PHASE1_BASELINE.md) unless a row says otherwise: headless Chromium 141, 4 vCPU, **software WebGL (SwiftShader, no GPU)**, and a fake camera playing the rendered heel-slide clip at 360×640, 30 fps. **Real-phone results are outstanding.** The device procedure is at the end of the baseline document.
 
 ## Phase 2: diagnostics console

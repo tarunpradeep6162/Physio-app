@@ -60,6 +60,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   const [calib, setCalib] = useState<CalibrationResult | null>(null);
   const [match, setMatch] = useState<ConditionMatch | null>(null);
   const [live, setLive] = useState<ProtocolRecorder['state'] | null>(null);
+  const [streamStalled, setStreamStalled] = useState(false);
   const [joints, setJoints] = useState<{ index: number; state: JointState }[]>([]);
   const [outcome, setOutcome] = useState<CaptureOutcome | null>(null);
   const [notes, setNotes] = useState('');
@@ -81,6 +82,8 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   const lightT = useRef(0);
   const sampler = useRef<LightingSampler | null>(null);
   const lastUi = useRef(0);
+  const lastFrameAt = useRef(0);
+  const lastFrame = useRef<ProcessedFrame | null>(null);
   const rollRef = useRef<number | null>(null);
   rollRef.current = roll;
   const config = useRef<CaptureConfig | null>(null);
@@ -134,6 +137,9 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
 
   const onFrame = useCallback(
     (f: ProcessedFrame, ctx: FrameContext) => {
+      lastFrameAt.current = ctx.now;
+      lastFrame.current = f;
+      setStreamStalled((stalled) => stalled ? false : stalled);
       const canvas = canvasRef.current;
       if (!canvas) return;
       if (simulated) {
@@ -249,9 +255,30 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
 
   const runtime = useMotionRuntime({ providerId, facing, filter: prefs.filter, onFrame, enabled: phase !== 'review', thread: prefs.inferenceThread, onInterrupted: () => phaseRef.current === 'recording' && finish() });
 
+  // A stalled camera/worker must not leave the last angle looking live. Feed an explicit invalid
+  // sample to the recorder so a repetition cannot bridge the missing frames when tracking returns.
+  useEffect(() => {
+    if (phase !== 'recording') return;
+    const timer = setInterval(() => {
+      const f = lastFrame.current;
+      const now = performance.now();
+      if (!f || !lastFrameAt.current || now - lastFrameAt.current < 750) return;
+      setStreamStalled(true);
+      const canvas = canvasRef.current;
+      canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
+      const r = recorder.current;
+      if (!r) return;
+      r.update({ ...f, t: now, status: 'no_person', personCount: 0, raw: null, smoothed: null, world: null, support: null, orientation: 'unknown', orientationConfidence: 0 }, now);
+      setLive({ ...r.state, value: null, reason: 'tracking_stalled' });
+      setJoints([]);
+    }, 250);
+    return () => clearInterval(timer);
+  }, [phase]);
+
   const recapture = () => {
     setOutcome(null);
     setLive(null);
+    setStreamStalled(false);
     gate.current.reset();
     setPhase('setup');
     setAttempt((a) => a + 1);
@@ -260,7 +287,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   const liveCue = useStableCue(
     phase === 'recording' && live
       ? live.value === null
-        ? { key: `p:${live.reason}:${(live.missing ?? []).join(',')}`, tone: 'warning' as const, text: pauseText(t, live.reason, live.missing) }
+        ? { key: `p:${live.reason}:${(live.missing ?? []).join(',')}`, tone: 'warning' as const, text: streamStalled ? 'Tracking delayed — hold position or retry' : pauseText(t, live.reason, live.missing) }
         : { key: `m:${live.phase}`, tone: (live.phase === 'engaged' ? 'success' : 'info') as 'success' | 'info', text: PHASE_TEXT[live.phase] ?? def.cueStart }
       : null,
   );
