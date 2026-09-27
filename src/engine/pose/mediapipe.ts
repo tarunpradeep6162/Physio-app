@@ -1,4 +1,4 @@
-import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
+import { FilesetResolver, PoseLandmarker, type PoseLandmarkerResult } from '@mediapipe/tasks-vision';
 import type { PoseFrame, PoseProviderInfo } from '../types';
 import { sourceSize, type PoseProvider, type PoseSource, type ProviderOptions } from './provider';
 
@@ -34,6 +34,54 @@ async function reachable(url: string): Promise<boolean> {
   }
 }
 
+export interface LoadedLandmarker {
+  landmarker: PoseLandmarker;
+  config: NonNullable<PoseProviderInfo['config']>;
+  loadMs: number;
+}
+
+/** Creates a BlazePose landmarker (main thread or worker), falling back from GPU to CPU if needed. */
+export async function createLandmarker(variant: 'lite' | 'full', o: ProviderOptions): Promise<LoadedLandmarker> {
+  const t0 = performance.now();
+  const wasmBase = (await reachable(`${LOCAL_WASM}/vision_wasm_internal.js`)) ? LOCAL_WASM : CDN_WASM;
+  const model = POSE_MODELS[variant];
+  const modelPath = (await reachable(model.local)) ? model.local : model.cdn;
+  const fileset = await FilesetResolver.forVisionTasks(abs(wasmBase));
+  const thresholds = {
+    minPoseDetectionConfidence: o.minPoseDetectionConfidence ?? 0.5,
+    minPosePresenceConfidence: o.minPosePresenceConfidence ?? 0.5,
+    minTrackingConfidence: o.minTrackingConfidence ?? 0.5,
+  };
+  const numPoses = o.maxPoses ?? 2;
+  const make = (delegate: 'GPU' | 'CPU') =>
+    PoseLandmarker.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: abs(modelPath), delegate },
+      runningMode: 'VIDEO',
+      numPoses,
+      ...thresholds,
+      outputSegmentationMasks: false,
+    });
+  let delegate: 'GPU' | 'CPU' = o.delegate ?? 'GPU';
+  let landmarker: PoseLandmarker;
+  try {
+    landmarker = await make(delegate);
+  } catch {
+    // Some devices/browsers lack WebGL2 (or OffscreenCanvas in a worker) — fall back to CPU.
+    delegate = 'CPU';
+    landmarker = await make('CPU');
+  }
+  return {
+    landmarker,
+    loadMs: performance.now() - t0,
+    config: { delegate, numPoses, minDetection: thresholds.minPoseDetectionConfidence, minPresence: thresholds.minPosePresenceConfidence, minTracking: thresholds.minTrackingConfidence },
+  };
+}
+
+/** Absolute URL (a worker resolves relative URLs against its own script location). */
+function abs(u: string): string {
+  return /^https?:/.test(u) ? u : new URL(u, self.location.origin).toString();
+}
+
 export class MediaPipePoseProvider implements PoseProvider {
   info: PoseProviderInfo;
   private landmarker: PoseLandmarker | null = null;
@@ -47,46 +95,10 @@ export class MediaPipePoseProvider implements PoseProvider {
 
   async init(): Promise<void> {
     if (this.landmarker) return;
-    const t0 = performance.now();
-    const wasmBase = (await reachable(`${LOCAL_WASM}/vision_wasm_internal.js`)) ? LOCAL_WASM : CDN_WASM;
-    const model = POSE_MODELS[this.variant];
-    const modelPath = (await reachable(model.local)) ? model.local : model.cdn;
-    const fileset = await FilesetResolver.forVisionTasks(wasmBase);
-    const o = this.opts;
-    const thresholds = {
-      minPoseDetectionConfidence: o.minPoseDetectionConfidence ?? 0.5,
-      minPosePresenceConfidence: o.minPosePresenceConfidence ?? 0.5,
-      minTrackingConfidence: o.minTrackingConfidence ?? 0.5,
-    };
-    const numPoses = o.maxPoses ?? 2;
-    const make = (delegate: 'GPU' | 'CPU') =>
-      PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: modelPath, delegate },
-        runningMode: 'VIDEO',
-        numPoses,
-        ...thresholds,
-        outputSegmentationMasks: false,
-      });
-    let delegate: 'GPU' | 'CPU' = o.delegate ?? 'GPU';
-    try {
-      this.landmarker = await make(delegate);
-    } catch {
-      // Some devices/browsers lack WebGL2 (or OffscreenCanvas in a worker) — fall back to CPU.
-      delegate = 'CPU';
-      this.landmarker = await make('CPU');
-    }
-    this.info = {
-      ...this.info,
-      config: {
-        ...this.info.config,
-        delegate,
-        numPoses,
-        minDetection: thresholds.minPoseDetectionConfidence,
-        minPresence: thresholds.minPosePresenceConfidence,
-        minTracking: thresholds.minTrackingConfidence,
-      },
-    };
-    this.loadMs = performance.now() - t0;
+    const r = await createLandmarker(this.variant, this.opts);
+    this.landmarker = r.landmarker;
+    this.loadMs = r.loadMs;
+    this.info = { ...this.info, config: { ...r.config, thread: 'main' } };
   }
 
   detect(source: PoseSource, timestamp: number): PoseFrame {
@@ -98,19 +110,23 @@ export class MediaPipePoseProvider implements PoseProvider {
     const t0 = performance.now();
     const res = this.landmarker.detectForVideo(source, ts);
     const inferenceMs = performance.now() - t0;
-    return {
-      timestamp: ts,
-      width,
-      height,
-      poses: res.landmarks.map((pose) => pose.map((l) => ({ x: l.x, y: l.y, z: l.z, visibility: l.visibility ?? 0 }))),
-      worldLandmarks: res.worldLandmarks[0]?.map((l) => ({ x: l.x, y: l.y, z: l.z, visibility: l.visibility ?? 0 })),
-      inferenceMs,
-      provider: this.info,
-    };
+    return toPoseFrame(res, ts, width, height, inferenceMs, this.info);
   }
 
   close(): void {
     this.landmarker?.close();
     this.landmarker = null;
   }
+}
+
+export function toPoseFrame(res: PoseLandmarkerResult, ts: number, width: number, height: number, inferenceMs: number, info: PoseProviderInfo): PoseFrame {
+  return {
+    timestamp: ts,
+    width,
+    height,
+    poses: res.landmarks.map((pose) => pose.map((l) => ({ x: l.x, y: l.y, z: l.z, visibility: l.visibility ?? 0 }))),
+    worldLandmarks: res.worldLandmarks[0]?.map((l) => ({ x: l.x, y: l.y, z: l.z, visibility: l.visibility ?? 0 })),
+    inferenceMs,
+    provider: info,
+  };
 }

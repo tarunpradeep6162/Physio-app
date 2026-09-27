@@ -1,5 +1,6 @@
 import { closeCamera, openCamera } from '../camera/camera';
-import { createPoseProvider, type PoseProviderId } from '../engine/pose/provider';
+import { createPoseProvider, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
+import { WorkerPoseProvider } from '../engine/pose/workerProvider';
 
 /**
  * Live camera benchmark: measures what the real-time loop actually delivers on this device —
@@ -47,8 +48,18 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   const stream = await openCamera(o.facing ?? 'user', video, o.constraints);
   const track = stream.getVideoTracks()[0];
   const t0Load = performance.now();
-  const provider = await createPoseProvider(o.provider, { delegate: o.delegate });
-  await provider.init();
+  const loop = o.loop ?? 'sync';
+  const variant = o.provider === 'mediapipe-full' ? 'full' : 'lite';
+  let provider: PoseProvider | null = null;
+  let worker: WorkerPoseProvider | null = null;
+  if (loop === 'worker') {
+    worker = new WorkerPoseProvider(variant, { delegate: o.delegate });
+    await worker.init();
+  } else {
+    provider = await createPoseProvider(o.provider, { delegate: o.delegate });
+    await provider.init();
+  }
+  const info = (worker ?? provider)!.info;
   const loadMs = performance.now() - t0Load;
 
   const inf: number[] = [];
@@ -79,20 +90,46 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   }
 
   const start = performance.now();
+  let done = false;
+  let inflight = false;
+  let lastMeta: VideoFrameCallbackMetadata | null = null;
+  const analysed = (captured: number | null, inferenceMs: number, persons: number) => {
+    const b = performance.now();
+    inf.push(inferenceMs);
+    if (captured) ages.push(b - captured);
+    processed++;
+    if (persons) present++;
+  };
+  // Worker loop: at most one frame in flight; when a result returns and a newer frame exists, send it at once.
+  const submit = async (meta: VideoFrameCallbackMetadata) => {
+    inflight = true;
+    const captured = meta.captureTime ?? meta.expectedDisplayTime ?? performance.now();
+    try {
+      const bmp = await createImageBitmap(video);
+      const f = await worker!.submit(bmp, captured);
+      if (!done) analysed(captured, f.inferenceMs, f.poses.length);
+    } catch {
+      /* counted as not analysed */
+    }
+    inflight = false;
+    if (!done && lastMeta && lastMeta.presentedFrames > meta.presentedFrames) void submit(lastMeta);
+  };
   await new Promise<void>((resolve) => {
     const tick = (_now: number, meta: VideoFrameCallbackMetadata) => {
-      if (performance.now() - start > duration) return resolve();
+      if (performance.now() - start > duration) {
+        done = true;
+        return resolve();
+      }
       firstPresented ??= meta.presentedFrames;
-      if (lastPresented !== null && meta.presentedFrames - lastPresented > 1) skipped += meta.presentedFrames - lastPresented - 1;
       lastPresented = meta.presentedFrames;
-      const captured = meta.captureTime ?? meta.expectedDisplayTime;
-      const a = performance.now();
-      const f = provider.detect(video, a);
-      const b = performance.now();
-      inf.push(b - a);
-      if (captured) ages.push(b - captured);
-      processed++;
-      if (f.poses.length) present++;
+      lastMeta = meta;
+      if (loop === 'worker') {
+        if (!inflight) void submit(meta);
+      } else {
+        const captured = meta.captureTime ?? meta.expectedDisplayTime ?? null;
+        const f = provider!.detect(video, captured ?? performance.now());
+        analysed(captured, f.inferenceMs, f.poses.length);
+      }
       video.requestVideoFrameCallback(tick);
     };
     video.requestVideoFrameCallback(tick);
@@ -102,13 +139,15 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   po?.disconnect();
   const settings = track.getSettings();
   const presentedTotal = lastPresented !== null && firstPresented !== null ? lastPresented - firstPresented : 0;
-  provider.close();
+  skipped = Math.max(0, presentedTotal - processed);
+  provider?.close();
+  worker?.close();
   closeCamera(stream);
   video.srcObject = null;
   return {
-    loop: o.loop ?? 'sync',
-    provider: provider.info.id,
-    delegate: provider.info.config?.delegate,
+    loop,
+    provider: info.id,
+    delegate: info.config?.delegate,
     camera: { width: settings.width ?? video.videoWidth, height: settings.height ?? video.videoHeight, fps: Math.round((presentedTotal / elapsed) * 10000) / 10, label: track.label },
     inferenceFps: Math.round((processed / elapsed) * 10000) / 10,
     inferenceMs: { p50: pct(inf, 0.5), p95: pct(inf, 0.95), max: pct(inf, 1) },

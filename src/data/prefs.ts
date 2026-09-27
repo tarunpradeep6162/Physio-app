@@ -14,6 +14,8 @@ export interface Prefs {
   haptics: boolean;
   poseProvider: PoseProviderId;
   filter: FilterKind;
+  /** Where pose inference runs: 'auto' = Web Worker when supported. 'main' is for fallback testing. */
+  inferenceThread: 'auto' | 'main';
 }
 
 const KEY = 'physiovision.prefs';
@@ -28,6 +30,7 @@ const DEFAULT_PREFS: Prefs = {
   haptics: true,
   poseProvider: 'mediapipe-lite',
   filter: 'one_euro',
+  inferenceThread: 'auto',
 };
 
 function load(): Prefs {

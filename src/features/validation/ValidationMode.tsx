@@ -6,7 +6,7 @@ import { drawAngleArc, drawSkeleton, OVERLAY_COLORS, prepareCanvas } from '../..
 import { useMotionRuntime, type FrameContext } from '../../camera/useMotionRuntime';
 import { IconClose } from '../../components/icons';
 import { Segmented } from '../../components/ui';
-import { usePrefs } from '../../data/prefs';
+import { setPrefs, usePrefs } from '../../data/prefs';
 import { uuid } from '../../data/store';
 import { evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
 import { jumpRate, LATENCY_BUCKETS, TrackingDiagnostics, type DiagSample, type DiagSnapshot } from '../../engine/diagnostics';
@@ -184,7 +184,7 @@ export function ValidationMode() {
     [exercise, side, simulated, includeLm],
   );
 
-  const runtime = useMotionRuntime({ providerId, facing: 'user', filter, onFrame });
+  const runtime = useMotionRuntime({ providerId, facing: 'user', filter, onFrame, thread: prefs.inferenceThread });
 
   const exportCsv = () => {
     const header = ['t_ms', 'fps', 'inference_ms', 'persons', 'view', 'raw_angle', 'filtered_angle', 'world3d_angle', 'confidence', 'state', 'reps', ...(includeLm ? ['landmarks_x|y|z|vis'] : [])];
@@ -272,12 +272,14 @@ export function ValidationMode() {
             <Segmented<ExerciseId> label="Exercise" value={exercise} onChange={setExercise} options={EXERCISE_LIST.map((d) => ({ id: d.id, label: d.id.replace(/_/g, ' ') }))} />
             <Segmented<Side> label="Side" value={side} onChange={setSide} options={[{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }]} />
             <Segmented<FilterKind> label="Filter" value={filter} onChange={setFilter} options={[{ id: 'one_euro', label: '1€' }, { id: 'ema', label: 'EMA' }, { id: 'kalman', label: 'Kalman' }, { id: 'none', label: 'Raw' }]} />
+            <Segmented<'auto' | 'main'> label="Inference thread" value={prefs.inferenceThread} onChange={(v) => setPrefs({ inferenceThread: v })} options={[{ id: 'auto', label: 'Worker (auto)' }, { id: 'main', label: 'Main (fallback)' }]} />
           </div>
           <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
           <StagePanel snap={snap5} />
           <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
           <table style={{ width: '100%' }}>
             <tbody>
+              <KV k="Inference thread · delegate" v={`${runtime.stats.thread ?? '–'} · ${runtime.providerRef.current?.info.config?.delegate ?? '–'}${runtime.stats.fallbackReason ? ` (${runtime.stats.fallbackReason})` : ''}`} />
               <KV k="Camera fps / inference fps" v={`${fmt(snap5?.cameraFps)} / ${fmt(snap5?.inferenceFps)}`} />
               <KV k="Camera frames skipped" v={snap5?.skippedFraction === null || snap5?.skippedFraction === undefined ? '–' : `${Math.round(snap5.skippedFraction * 100)}%`} />
               <KV k="Frame age capture→result p50 / p95" v={snap5?.frameAge ? `${fmt(snap5.frameAge.p50, 0)} / ${fmt(snap5.frameAge.p95, 0)} ms` : '–'} />
