@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent } from 'react';
+import { lazy, Suspense, useId, useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent } from 'react';
 import { IconMinus, IconPlus } from '../../components/icons';
 import { Segmented } from '../../components/ui';
 import { useT } from '../../i18n';
@@ -39,11 +39,13 @@ function shapeEl(s: Shape, props: Record<string, unknown>) {
 }
 
 const pathD = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+const BodyMap3D = lazy(() => import('./BodyMap3D'));
 
 export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', compact, paths = [], drawing, onViewChange }: BodyMapProps) {
   const { t } = useT();
   const artId = useId().replace(/:/g, '');
   const [view, setViewState] = useState<BodyView>(initialView);
+  const [mode, setMode] = useState<'3d' | '2d'>(readOnly ? '2d' : '3d');
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hover, setHover] = useState<string | null>(null);
@@ -137,6 +139,13 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
 
   return (
     <div className="stack tight">
+      {!drawing && <div className="bodymap-mode" role="group" aria-label="Anatomy display">
+        <button type="button" aria-pressed={mode === '3d'} onClick={() => setMode('3d')}>3D body</button>
+        <button type="button" aria-pressed={mode === '2d'} onClick={() => setMode('2d')}>2D map</button>
+      </div>}
+      {mode === '3d' && !drawing ? <Suspense fallback={<div className="bodymap-3d-loading" role="status">Loading 3D anatomy…</div>}>
+        <BodyMap3D selected={selected} onToggle={onToggle} readOnly={readOnly} compact={compact} initialView={initialView} />
+      </Suspense> : <>
       <Segmented label={t('body.rotate')} options={VIEW_ORDER.map((v) => ({ id: v, label: viewLabels[v] }))} value={view} onChange={setView} />
       <div
         className={`bodymap ${drawing ? 'drawing' : ''}`}
@@ -282,6 +291,7 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
         </details>
       )}
       <p className="xs muted">{t('body.interim')}</p>
+      </>}
     </div>
   );
 }
