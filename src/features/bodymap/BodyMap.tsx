@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent } from 'react';
+import { useId, useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent } from 'react';
 import { IconMinus, IconPlus } from '../../components/icons';
 import { Segmented } from '../../components/ui';
 import { useT } from '../../i18n';
@@ -42,6 +42,7 @@ const pathD = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : '
 
 export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', compact, paths = [], drawing, onViewChange }: BodyMapProps) {
   const { t } = useT();
+  const artId = useId().replace(/:/g, '');
   const [view, setViewState] = useState<BodyView>(initialView);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -167,13 +168,24 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
         )}
         <svg ref={svgRef} viewBox="0 0 220 480" role="group" aria-label={`${t('body.title')} — ${viewLabels[view]}`} style={{ maxHeight: compact ? '44vh' : undefined }}>
           <defs>
-            <linearGradient id="skin" x1="0" x2="1" y1="0" y2="1">
-              <stop offset="0" stopColor="#e9efed" />
-              <stop offset="1" stopColor="#d6e0dd" />
+            <linearGradient id={`${artId}-tissue`} x1="0" x2="1" y1="0.15" y2="0.8">
+              <stop offset="0" stopColor="#7f3831" />
+              <stop offset="0.22" stopColor="#b86858" />
+              <stop offset="0.48" stopColor="#d99076" />
+              <stop offset="0.7" stopColor="#a95448" />
+              <stop offset="1" stopColor="#6c322f" />
             </linearGradient>
+            <linearGradient id={`${artId}-bone`} x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0" stopColor="#f3dec9" />
+              <stop offset="0.5" stopColor="#e1c6af" />
+              <stop offset="1" stopColor="#aa8177" />
+            </linearGradient>
+            <filter id={`${artId}-volume`} x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="1" dy="2" stdDeviation="1.5" floodColor="#3b2220" floodOpacity="0.24" />
+            </filter>
           </defs>
           <g ref={gRef} transform={`translate(${110 + pan.x} ${240 + pan.y}) scale(${zoom}) translate(-110 -240)`}>
-            <ellipse cx="110" cy="468" rx="46" ry="6" fill="#071012" opacity="0.08" />
+            <ellipse cx="110" cy="467" rx="43" ry="5" fill="#172e2d" opacity="0.13" />
             {regions.map((r) => {
               const on = sel.has(r.id);
               const isHover = hover === r.id && !drawing;
@@ -181,9 +193,10 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
                 <g key={r.id}>
                   {shapeEl(r.shape, {
                     className: 'region',
-                    fill: on ? 'rgba(230,90,90,0.62)' : isHover ? '#cfeee9' : 'url(#skin)',
-                    stroke: on ? '#b53131' : isHover ? '#0d9488' : '#aebfba',
-                    strokeWidth: on ? 2.2 : 1,
+                    fill: on ? '#eaa48c' : isHover ? '#dda78c' : r.id.startsWith('head') || r.id.startsWith('hand') || r.id.startsWith('foot') ? `url(#${artId}-bone)` : `url(#${artId}-tissue)`,
+                    stroke: on ? '#b43d43' : isHover ? '#087f79' : '#78423b',
+                    strokeWidth: on ? 2.1 : isHover ? 1.6 : 0.65,
+                    filter: `url(#${artId}-volume)`,
                     tabIndex: readOnly || drawing ? -1 : 0,
                     role: readOnly ? 'img' : 'button',
                     'aria-pressed': readOnly ? undefined : on,
@@ -198,9 +211,24 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
                 </g>
               );
             })}
-            <g stroke="#9fb3ad" strokeWidth="0.7" fill="none" opacity="0.6" pointerEvents="none">
-              {view === 'front' && <path d="M110,92 L110,206 M86,120 Q98,128 110,124 Q122,128 134,120 M96,160 L124,160 M96,178 L124,178" />}
-              {view === 'back' && <path d="M110,86 L110,212 M88,108 Q96,126 104,110 M132,108 Q124,126 116,110" />}
+            <g stroke="#f0c4ab" strokeWidth="1" fill="none" opacity="0.8" pointerEvents="none" strokeLinecap="round">
+              {view === 'front' && <>
+                <path d="M110 88 L110 206 M78 110 Q88 125 108 123 M142 110 Q132 125 112 123 M80 134 Q94 146 108 140 M140 134 Q126 146 112 140" />
+                <path d="M89 150 Q102 156 108 151 M111 151 Q119 157 131 150 M87 163 Q99 170 108 163 M112 163 Q121 170 133 163 M85 179 Q98 186 108 180 M112 180 Q123 186 135 179" />
+                <path d="M83 95 Q74 108 70 120 M137 95 Q146 108 150 120 M58 122 Q61 150 54 168 M162 122 Q159 150 166 168 M46 206 Q50 230 44 247 M174 206 Q170 230 176 247" />
+                <path d="M94 251 Q83 281 91 308 M126 251 Q137 281 129 308 M82 359 Q94 388 92 409 M138 359 Q126 388 128 409" />
+                <path d="M99 57 Q110 64 121 57 M101 45 Q105 43 108 45 M112 45 Q115 43 119 45" strokeWidth="0.6" />
+              </>}
+              {view === 'back' && <>
+                <path d="M110 84 L110 209 M83 96 Q97 108 107 115 M137 96 Q123 108 113 115 M78 115 Q91 137 106 145 M142 115 Q129 137 114 145" />
+                <path d="M79 152 Q95 161 108 155 M112 155 Q125 161 141 152 M83 184 Q98 190 108 185 M112 185 Q122 190 137 184" />
+                <path d="M80 212 Q94 224 107 234 M140 212 Q126 224 113 234 M94 255 Q84 283 91 311 M126 255 Q136 283 129 311 M83 354 Q92 385 94 412 M137 354 Q128 385 126 412" />
+                <path d="M60 126 Q58 150 54 168 M160 126 Q162 150 166 168" />
+              </>}
+              {(view === 'left' || view === 'right') && <>
+                <path d="M110 86 Q126 116 120 145 M110 150 Q123 175 120 196 M107 250 Q118 279 107 307 M108 356 Q115 383 107 410" />
+                <path d="M109 48 Q104 51 101 48 M111 98 Q117 131 114 160 M114 198 Q117 225 111 243" />
+              </>}
             </g>
             {/* Radiation paths: dashed line + arrow end so the pattern never relies on colour alone. */}
             <g pointerEvents="none" fill="none" strokeLinecap="round" strokeLinejoin="round">

@@ -138,7 +138,7 @@ export const en = {
   'body.selected': '{n} selected',
   'body.none_selected': 'No areas selected yet',
   'body.clear': 'Clear all',
-  'body.interim': 'Interim 2D anatomical map. A 3D model can be plugged in without changing the assessment data.',
+  'body.interim': 'Illustrated anatomy for locating symptoms. This is not a camera image or a diagnosis.',
   'body.patient_left': 'Your left',
   'body.patient_right': 'Your right',
 

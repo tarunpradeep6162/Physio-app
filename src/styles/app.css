@@ -1137,7 +1137,7 @@ table.data tr:hover td {
 .bodymap {
   position: relative;
   border-radius: var(--radius);
-  background: radial-gradient(ellipse at 50% 40%, #ffffff 0%, #eef3f1 70%);
+  background: radial-gradient(ellipse at 50% 40%, #f9f4ed 0%, #e9eee9 68%, #dce7e3 100%);
   border: 1px solid var(--line);
   overflow: hidden;
   touch-action: none;
@@ -1150,7 +1150,7 @@ table.data tr:hover td {
 }
 .region {
   cursor: pointer;
-  transition: fill 0.12s;
+  transition: fill 0.16s, stroke 0.16s;
 }
 .region:focus-visible {
   outline: none;
