@@ -20,6 +20,7 @@ const PatientProgress = lazy(() => named(import('../features/patient/PatientPage
 const PatientProfile = lazy(() => named(import('../features/patient/PatientPages'), 'PatientProfile'));
 const KneeAssessment = lazy(() => named(import('../features/knee/KneeAssessment'), 'KneeAssessment'));
 const ShoulderAssessment = lazy(() => named(import('../features/knee/KneeAssessment'), 'ShoulderAssessment'));
+const RegionAssessment = lazy(() => named(import('../features/knee/KneeAssessment'), 'RegionAssessment'));
 const TrainSession = lazy(() => named(import('../features/session/TrainSession'), 'TrainSession'));
 const ClinicianOverview = lazy(() => named(import('../features/clinician/ClinicianPages'), 'ClinicianOverview'));
 const PatientList = lazy(() => named(import('../features/clinician/ClinicianPages'), 'PatientList'));
@@ -239,6 +240,7 @@ export function App() {
               <Route path="home" element={<PatientHome />} />
               <Route path="assess" element={<KneeAssessment />} />
               <Route path="assess/shoulder" element={<ShoulderAssessment />} />
+              <Route path="assess/:region" element={<RegionAssessment />} />
               <Route path="train" element={<PatientTrain />} />
               <Route path="session" element={<TrainSession />} />
               <Route path="progress" element={<PatientProgress />} />

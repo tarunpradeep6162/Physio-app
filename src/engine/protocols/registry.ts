@@ -1,5 +1,6 @@
 import type { Side } from '../types';
 import { KNEE_DEFAULT_PLAN, KNEE_SIT_TO_STAND, KNEE_SIT_TO_STAND_V1_0, KNEE_SQUAT, KNEE_SQUAT_V1_0, KNEE_SUPPORTED_FLEXION, KNEE_SUPPORTED_FLEXION_V1_0 } from './knee';
+import { ANKLE_DEFAULT_PLAN, BALANCE_DEFAULT_PLAN, HIP_DEFAULT_PLAN, REGION_PROTOCOLS, SPINE_DEFAULT_PLAN } from './regions';
 import { SHOULDER_DEFAULT_PLAN, SHOULDER_PROTOCOLS } from './shoulder';
 import type { ProtocolDef, Region } from './types';
 
@@ -9,7 +10,7 @@ import type { ProtocolDef, Region } from './types';
  * they were recorded under.
  */
 
-export const PROTOCOLS: Record<string, ProtocolDef> = Object.fromEntries([KNEE_SUPPORTED_FLEXION, KNEE_SIT_TO_STAND, KNEE_SQUAT, ...SHOULDER_PROTOCOLS].map((p) => [p.id, p]));
+export const PROTOCOLS: Record<string, ProtocolDef> = Object.fromEntries([KNEE_SUPPORTED_FLEXION, KNEE_SIT_TO_STAND, KNEE_SQUAT, ...SHOULDER_PROTOCOLS, ...REGION_PROTOCOLS].map((p) => [p.id, p]));
 
 const HISTORY: Record<string, ProtocolDef> = Object.fromEntries(
   [KNEE_SUPPORTED_FLEXION_V1_0, KNEE_SIT_TO_STAND_V1_0, KNEE_SQUAT_V1_0, ...Object.values(PROTOCOLS)].map((p) => [`${p.id}@${p.version}`, p]),
@@ -27,4 +28,8 @@ export const protocolsForRegion = (region: Region) => Object.values(PROTOCOLS).f
 export const DEFAULT_PLANS: Partial<Record<Region, { protocolId: string; side: Side | null }[]>> = {
   knee: KNEE_DEFAULT_PLAN,
   shoulder: SHOULDER_DEFAULT_PLAN,
+  hip: HIP_DEFAULT_PLAN,
+  ankle: ANKLE_DEFAULT_PLAN,
+  spine: SPINE_DEFAULT_PLAN,
+  balance: BALANCE_DEFAULT_PLAN,
 };

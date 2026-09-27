@@ -88,7 +88,7 @@ export interface Assessment {
   createdBy: ID;
   status: AssessmentStatus;
   /** Body-region pathway. The first release implements the knee pathway end to end. */
-  region?: 'knee' | 'shoulder' | 'low_back' | 'general';
+  region?: 'knee' | 'shoulder' | 'hip' | 'ankle' | 'spine' | 'balance' | 'low_back' | 'general';
   type?: 'initial' | 'reassessment';
   baselineAssessmentId?: ID;
   safetyLevel?: SafetyLevel;

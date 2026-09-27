@@ -118,3 +118,34 @@ Evidence format per the brief: changed files and commit, before → after, migra
     - the clinician sees it;
     - no non-step samples stored.
 - **Gates:** native apps; real-device step validation; clinical use review.
+
+## Phases 12–15 — hip, ankle and foot, spine and neck, balance and gait
+- **Files:**
+  - `src/engine/protocols/regions.ts` (9 protocols) + `regions.test.ts` (14 tests)
+  - `engine/measurements.ts` (7 new 2D measurements)
+  - `engine/pose/synthetic.ts` (hip flexion, heel lift, neck, lunge, leg abduction, side bend, foot lift)
+  - `engine/protocols/simulate.ts`, `engine/pose/simulated.ts`, `engine/protocols/types.ts`, `registry.ts`
+  - `src/clinical/regionQuestionnaires.ts` (4 history + 4 safety drafts)
+  - `clinical/pathways.ts` (4 pathways, `PATHWAY_ORDER`, optional symptom map), `clinical/intake.ts` (region section in the organised history), `clinical/safety.ts` (questionnaire registry)
+  - `clinical/report.ts` (units, "Timed tests"), `features/knee/Results.tsx` (labels, units)
+  - `features/knee/KneeAssessment.tsx` (`/p/assess/:region`), `AssessmentRoute.tsx`, `Onboarding.tsx` (6 areas), `PatientPages.tsx` ("Assess another area")
+  - `ValidationStudy.tsx`, `data/models.ts`, `data/demo.ts` (DP-05 hip), `i18n/en.ts`
+  - `docs/REGION_PROTOCOLS.md`
+- **Before:** only knee and shoulder.
+- **After:** four more pathways run through the same intake → safety → capture → results → clinician workspace → AI draft → report flow. The balance pathway works without a pain area.
+- **Migration:** none; the `region` field accepts the new values and older records are unchanged.
+- **Risks:**
+  - all four regions rest on synthetic evidence only;
+  - the lunge heel-rise and heel-raise thresholds (5° and 12°) and the stance lift levels (3% and 6%) are capture-quality parameters awaiting review, not clinical thresholds;
+  - walking gait is intentionally not implemented;
+  - the new questionnaires are clinical drafts.
+- **Tests:**
+  - unit tests: ground truth, the named gates, no invented metrics;
+  - consultation draft validated on DP-05;
+  - Playwright:
+    - 6 areas on onboarding at 390 px (no overflow);
+    - ankle history/safety tags shown, lunge captured L/R (38°), results table, submit;
+    - balance without a pain area; repeated falls → clinician review, no camera tests;
+    - clinician DP-05 hip: refused capture shown, L/R table, AI draft lists the missing capture, "Hip assessment report" with scope limits;
+    - no page errors.
+- **Gates:** real-device captures and reference instruments; clinical review of all protocol text and questionnaires (on hold).

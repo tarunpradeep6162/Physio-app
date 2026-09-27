@@ -11,7 +11,7 @@ import { synthesize, type SynthScene } from './synthetic';
  */
 
 export interface SimulationScenario {
-  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat' | 'shoulder_flexion_active' | 'shoulder_abduction_active';
+  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | import('../protocols/types').ProtocolId;
   side: Side;
   /** Peak angle the simulated patient reaches (can be set below target to show incomplete reps). */
   peak: number;
@@ -61,7 +61,7 @@ export class SimulatedPoseProvider implements PoseProvider {
     let scene: SynthScene;
     if (SIMULATED_PROTOCOLS.has(s.exercise)) {
       const t = this.protocolStart === null ? 0 : (timestamp - this.protocolStart) / 1000;
-      const side = s.exercise === 'knee_squat' ? null : s.side;
+      const side = s.exercise === 'knee_squat' || s.exercise === 'heel_raise_double' || s.exercise === 'trunk_forward_bend' || s.exercise === 'neck_flexion_extension' || s.exercise === 'march_in_place' ? null : s.side;
       const sc = sceneAt(s.exercise, side, t, this.protocolParams);
       const lms = sc ? synthesize(sc, { ...SIM_FRAME, noisePx: 1.5, seed: this.seed++ }) : null;
       return { timestamp, ...SIM_FRAME, poses: lms ? [lms] : [], inferenceMs: performance.now() - t0, provider: this.info };

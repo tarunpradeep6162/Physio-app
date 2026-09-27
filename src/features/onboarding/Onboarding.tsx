@@ -1,3 +1,4 @@
+import { PATHWAY_ORDER, type PathwayRegion } from '../../clinical/pathways';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
@@ -26,7 +27,7 @@ export function Onboarding() {
   const [consent, setConsent] = useState<Record<Exclude<ConsentType, 'activity_steps' | 'activity_walking'>, boolean>>({ camera_processing: false, data_storage: false, image_storage: false, research_export: false });
   const [concern, setConcern] = useState(patient?.concern ?? '');
   const [goal, setGoal] = useState(patient?.goal ?? '');
-  const [area, setArea] = useState<'knee' | 'shoulder'>('knee');
+  const [area, setArea] = useState<PathwayRegion>('knee');
 
   if (!user || !patient) return null;
 
@@ -157,7 +158,7 @@ export function Onboarding() {
           </label>
           <div className="stack tight">
             <span>{t('onb.area')}</span>
-            <Segmented<'knee' | 'shoulder'> label={t('onb.area')} value={area} onChange={setArea} options={[{ id: 'knee', label: t('onb.area_knee') }, { id: 'shoulder', label: t('onb.area_shoulder') }]} />
+            <Segmented<PathwayRegion> label={t('onb.area')} value={area} onChange={setArea} options={PATHWAY_ORDER.map((id) => ({ id, label: t(`onb.area_${id}`) }))} />
           </div>
           <label className="field">
             <span>{t('onb.concern.goal')}</span>

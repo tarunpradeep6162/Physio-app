@@ -8,9 +8,10 @@ describe('Phase 7 — structured consultation draft', () => {
   const knee = db.assessments.find((a) => a.region === 'knee' && a.type === 'initial' && a.status === 'submitted')!;
   const shoulder = db.assessments.find((a) => a.region === 'shoulder')!;
   const hold = db.assessments.find((a) => a.status === 'safety_hold')!;
+  const hip = db.assessments.find((a) => a.region === 'hip')!;
 
   it('every statement in a generated draft cites valid evidence and passes the validator', () => {
-    for (const a of [knee, shoulder, hold]) {
+    for (const a of [knee, shoulder, hold, hip]) {
       const d = buildRuleDraft(db, a.id);
       expect(d.status).toBe('ai_draft_awaiting_review');
       const v = validateDraft(d, buildEvidence(db, a.id));
@@ -29,6 +30,13 @@ describe('Phase 7 — structured consultation draft', () => {
     expect(d.uncertainty).not.toBe('low');
     // Invalid capture never appears as an observation.
     expect(d.sections.observations.some((o) => /abduction.*right/i.test(o.text))).toBe(false);
+  });
+
+  it('the hip draft (Phase 12) reports the valid captures, refuses the hidden-knee capture and invents no considerations', () => {
+    const d = buildRuleDraft(db, hip.id);
+    expect(d.sections.considerations).toHaveLength(0);
+    expect(d.sections.missingData.join(' ')).toContain('No valid capture: Active hip abduction, standing (front view) (left)');
+    expect(JSON.stringify(d)).not.toMatch(/fall risk|strength|rotation/i);
   });
 
   it('a safety hold produces a high-uncertainty draft with the flag and no considerations', () => {

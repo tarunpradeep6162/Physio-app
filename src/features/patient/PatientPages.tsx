@@ -1,4 +1,4 @@
-import { PATHWAYS, type PathwayRegion } from '../../clinical/pathways';
+import { PATHWAY_ORDER, PATHWAYS, type PathwayRegion } from '../../clinical/pathways';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
@@ -97,13 +97,35 @@ export function PatientHome() {
             sub={last ? `${fmtDate(last.startedAt)} · ${t('session.peak_rom')}` : undefined}
           />
         </div>
-        <PathwayCard patientId={patient.id} region="knee" />
-        <PathwayCard patientId={patient.id} region="shoulder" />
+        {PATHWAY_ORDER.filter((r) => r === 'knee' || r === 'shoulder' || db.assessments.some((a) => a.patientId === patient.id && a.region === r)).map((r) => (
+          <PathwayCard key={r} patientId={patient.id} region={r} />
+        ))}
       </div>
+      <OtherAreas patientId={patient.id} />
       <Link to="/p/progress" className="btn secondary">
         {t('home.recent_progress')} <IconChevron width={18} />
       </Link>
     </div>
+  );
+}
+
+/** Pathways the patient has not started yet (other than the knee and shoulder cards). */
+function OtherAreas({ patientId }: { patientId: string }) {
+  const { t } = useT();
+  const db = useDb((d) => d);
+  const rest = PATHWAY_ORDER.filter((r) => r !== 'knee' && r !== 'shoulder' && !db.assessments.some((a) => a.patientId === patientId && a.region === r));
+  if (!rest.length) return null;
+  return (
+    <section className="panel stack tight">
+      <span className="stat-label">{t('home.other_areas')}</span>
+      <div className="row wrap" style={{ gap: '0.5rem' }}>
+        {rest.map((r) => (
+          <Link key={r} to={`/p/assess/${r}`} className="btn secondary sm">
+            {t(`onb.area_${r}`)}
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 

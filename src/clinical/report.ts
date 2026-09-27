@@ -1,4 +1,4 @@
-import type { Assessment, DB, ID, Report } from '../data/models';
+import type { Assessment, CaptureSession, DB, ID, Report } from '../data/models';
 import { openPauses } from './plan';
 import { activeProgram, age, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../data/queries';
 import { getDefinition } from '../engine/exercises/definitions';
@@ -80,6 +80,8 @@ export function reportStatus(db: DB, id: ID): { state: ReportState; latest?: Rep
   return { state: approved && !stale ? 'clinician_reviewed' : 'preliminary', latest: rows[0], approved, stale, nextVersion: (rows[0]?.version ?? 0) + 1 };
 }
 
+/** Unit of a metric as recorded in the capture results (degrees for legacy rows). */
+const unitOf = (caps: (CaptureSession | undefined)[], metricId: string) => caps.flatMap((c) => c?.result.metrics ?? []).find((m) => m.id === metricId)?.unit ?? 'deg';
 const fmtMetric = (v: number | null, unit: string) => (v === null ? '—' : `${v}${unit === 'deg' ? '°' : unit === 's' ? ' s' : unit === 'pct_leg' ? '% leg' : ''}`);
 
 export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'patient'): ReportModel {
@@ -183,10 +185,11 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
       const b = bCaps.find((x) => x.protocolId === protocolId && x.side === side);
       const cv = valid(c, id);
       const bv = valid(b, id);
-      romRows.push([`${pathway.label} ${side} — ${label}`, baseline ? (b ? fmtMetric(bv, 'deg') + (bv === null ? ' (invalid)' : '') : 'not captured') : '—', c ? fmtMetric(cv, 'deg') + (cv === null ? ' (invalid — recapture)' : '') : 'not captured', bv !== null && cv !== null ? `${cv - bv >= 0 ? '+' : ''}${Math.round((cv - bv) * 10) / 10}°` : '—', c ? `${getProtocol(c.protocolId).id}@${c.protocolVersion}, ${c.result.quality.verdict}` : '—']);
+      const u = unitOf([c, b], id);
+      romRows.push([`${pathway.label} ${side} — ${label}`, baseline ? (b ? fmtMetric(bv, u) + (bv === null ? ' (invalid)' : '') : 'not captured') : '—', c ? fmtMetric(cv, u) + (cv === null ? ' (invalid — recapture)' : '') : 'not captured', bv !== null && cv !== null ? `${cv - bv >= 0 ? '+' : ''}${fmtMetric(Math.round((cv - bv) * 10) / 10, u)}` : '—', c ? `${getProtocol(c.protocolId).id}@${c.protocolVersion}, ${c.result.quality.verdict}` : '—']);
     }
   }
-  add(5, 'Range of motion', [{ kind: 'table', head: ['Joint / side', 'Baseline', 'Current', 'Difference', 'Method / validity'], rows: romRows }, { kind: 'para', text: pathway.romNote, tone: 'muted' }], 'Camera-estimated');
+  add(5, pathway.region === 'balance' ? 'Timed tests' : 'Range of motion', [{ kind: 'table', head: ['Joint / side', 'Baseline', 'Current', 'Difference', 'Method / validity'], rows: romRows }, { kind: 'para', text: pathway.romNote, tone: 'muted' }], 'Camera-estimated');
 
   // 6. Movement
   const mv: Block[] = [];
@@ -203,7 +206,8 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   for (const row of pathway.symmetryRows) {
     const fl = valid(caps.find((x) => x.protocolId === row.protocolId && x.side === 'left'), row.metricId);
     const fr = valid(caps.find((x) => x.protocolId === row.protocolId && x.side === 'right'), row.metricId);
-    sym.push([row.label, fmtMetric(fl, 'deg'), fmtMetric(fr, 'deg'), fl !== null && fr !== null ? `${Math.round(Math.abs(fl - fr) * 10) / 10}°` : 'not available']);
+    const u = unitOf(caps.filter((x) => x.protocolId === row.protocolId), row.metricId);
+    sym.push([row.label, fmtMetric(fl, u), fmtMetric(fr, u), fl !== null && fr !== null ? fmtMetric(Math.round(Math.abs(fl - fr) * 10) / 10, u) : 'not available']);
   }
   if (pathway.region === 'knee') {
     const sq = caps.find((x) => x.protocolId === 'knee_squat');

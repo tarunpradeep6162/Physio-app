@@ -110,6 +110,10 @@ export const en = {
   'onb.area': 'Which area do you want assessed first?',
   'onb.area_knee': 'Knee',
   'onb.area_shoulder': 'Shoulder',
+  'onb.area_hip': 'Hip',
+  'onb.area_ankle': 'Ankle or foot',
+  'onb.area_spine': 'Back or neck',
+  'onb.area_balance': 'Balance and walking',
   'onb.finish': 'Start my assessment',
 
   // Assessment
@@ -321,6 +325,13 @@ export const en = {
   'measure.knee_extension_angle': 'Knee straightness',
   'measure.elbow_extension_angle': 'Elbow straightness',
   'measure.trunk_sagittal_lean': 'Trunk lean',
+  'measure.hip_flexion_standing': 'Hip flexion (standing)',
+  'measure.hip_abduction_standing': 'Hip abduction (standing)',
+  'measure.tibial_inclination': 'Shin angle (lunge)',
+  'measure.heel_lift_angle': 'Heel lift angle',
+  'measure.trunk_forward_inclination': 'Trunk forward inclination',
+  'measure.trunk_lateral_flexion': 'Trunk side bend',
+  'measure.head_neck_angle': 'Head–neck angle',
   'measure.confidence': 'Confidence',
   'measure.conf.high': 'High',
   'measure.conf.moderate': 'Moderate',
@@ -522,6 +533,7 @@ export const en = {
   'home.sessions_done': '{done}/{planned} sessions',
   'home.assessment_status': 'Assessment',
   'home.recent_progress': 'Recent progress',
+  'home.other_areas': 'Assess another area',
 
   // Train
   'train.title': 'Your program',

@@ -11,7 +11,7 @@ export type AnswerValue = IntakeAnswer['answer'];
 
 export interface Question {
   id: string;
-  section: 'onset' | 'intensity' | 'behaviour' | 'knee' | 'shoulder' | 'function' | 'history' | 'context' | 'goals';
+  section: 'onset' | 'intensity' | 'behaviour' | 'knee' | 'shoulder' | 'region' | 'function' | 'history' | 'context' | 'goals';
   text: string;
   help?: string;
   kind: 'single' | 'multi' | 'nprs' | 'scale04' | 'text' | 'date';
@@ -157,6 +157,9 @@ export function organiseHistory(answers: Record<string, AnswerValue>, regions: P
   if (answers.arm_symptoms) sh.push(`arm symptoms: ${f('arm_symptoms', answers.arm_symptoms).toLowerCase()}`);
   if (answers.neck_link) sh.push(`neck movement brings it on: ${f('neck_link', answers.neck_link).toLowerCase()}`);
   if (sh.length) L.push({ key: 'shoulder', text: `Shoulder: ${sh.join('; ')}.`, sources: ['dominant_arm', 'instability', 'arm_symptoms', 'neck_link'].filter((k) => answers[k] !== undefined) });
+  // Region-specific answers (hip, ankle, spine, balance pathways), verbatim with their question.
+  const reg = qn.questions.filter((q) => q.section === 'region' && answers[q.id] !== undefined && answers[q.id] !== null && answers[q.id] !== '');
+  if (reg.length) L.push({ key: 'region', text: reg.map((q) => `${q.text.replace(/\?$/, '')}: ${f(q.id, answers[q.id]).toLowerCase()}`).join('; ') + '.', sources: reg.map((q) => q.id) });
   const func = qn.questions.filter((q) => q.section === 'function' && typeof answers[q.id] === 'number');
   if (func.length) L.push({ key: 'function', text: `Function (0 none – 4 unable): ${func.map((q) => `${q.text.replace('Difficulty ', '')} ${answers[q.id]}`).join(', ')}.`, sources: func.map((q) => q.id) });
   const hist: string[] = [];

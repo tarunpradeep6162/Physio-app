@@ -64,6 +64,11 @@ export const SHOULDER_SAFETY_QUESTIONNAIRE: SafetyQuestionnaire = {
 
 export const SAFETY_QUESTIONNAIRES: Record<string, SafetyQuestionnaire> = { [SAFETY_QUESTIONNAIRE.id]: SAFETY_QUESTIONNAIRE, [SHOULDER_SAFETY_QUESTIONNAIRE.id]: SHOULDER_SAFETY_QUESTIONNAIRE };
 
+/** Registers additional regions' questionnaires (called by the pathway registry; avoids an import cycle). */
+export function registerSafetyQuestionnaire(q: SafetyQuestionnaire) {
+  SAFETY_QUESTIONNAIRES[q.id] = q;
+}
+
 const RANK: Record<SafetyLevel, number> = { clear: 0, clinician_review: 1, urgent: 2, emergency: 3 };
 
 export function evaluateSafety(answers: Record<string, boolean>, qn: SafetyQuestionnaire = SAFETY_QUESTIONNAIRE): { level: SafetyLevel; triggered: SafetyItem[] } {

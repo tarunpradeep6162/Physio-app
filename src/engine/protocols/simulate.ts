@@ -4,7 +4,7 @@ import type { Landmark, PoseProviderInfo, Side } from '../types';
 import { getProtocol } from './registry';
 
 /** Protocol ids the synthetic scene generator can animate. */
-export const SIMULATED_PROTOCOLS = new Set(['knee_supported_flexion', 'knee_sit_to_stand', 'knee_squat', 'shoulder_flexion_active', 'shoulder_abduction_active']);
+export const SIMULATED_PROTOCOLS = new Set(['knee_supported_flexion', 'knee_sit_to_stand', 'knee_squat', 'shoulder_flexion_active', 'shoulder_abduction_active', 'hip_flexion_standing', 'hip_abduction_standing', 'ankle_knee_to_wall', 'heel_raise_double', 'trunk_forward_bend', 'trunk_side_bend', 'neck_flexion_extension', 'single_leg_stance', 'march_in_place']);
 import { ProtocolRecorder } from './recorder';
 import type { ProtocolResult } from './types';
 
@@ -23,6 +23,14 @@ export interface SimParams {
   valgusRight?: number;
   /** Shoulder flexion: trunk lean (deg) reached at peak arm elevation. */
   trunkLean?: number;
+  /** Neck: backward movement peak (deg, positive number) for the extension repetitions. */
+  peakBack?: number;
+  /** Single-leg stance: seconds the foot stays up (reference timing). */
+  stanceSec?: number;
+  /** Marching: steps per minute. */
+  cadence?: number;
+  /** Marching: lift height of the right foot relative to the left (1 = equal). */
+  rightLiftRatio?: number;
   /** Seconds per cycle multiplier (1 = default tempo). */
   tempo?: number;
   cycles?: number;
@@ -92,6 +100,8 @@ export function sceneAt(protocolId: string, side: Side | null, t: number, p: Sim
       ? { kind: 'standing_lateral', side: side ?? 'left', shoulderFlexion: a, trunkLean: lean, scale: SHOULDER_FRAMING_SCALE }
       : { kind: 'standing_anterior', armSide: side ?? 'left', shoulderAbduction: a, scale: SHOULDER_FRAMING_SCALE };
   }
+  const region = regionScene(protocolId, side, t, p);
+  if (region !== undefined) return region;
   // knee_squat
   const peak = p.peak ?? 0.32;
   const [rest, down, up] = [0.8 * k, 1.2 * k, 1.2 * k];
@@ -105,6 +115,68 @@ export function sceneAt(protocolId: string, side: Side | null, t: number, p: Sim
   else d = peak - ease((x - rest - down) / up) * peak;
   const frac = d / peak;
   return { kind: 'squat_anterior', depth: d, valgusLeft: (p.valgusLeft ?? 6) * frac, valgusRight: (p.valgusRight ?? 2) * frac };
+}
+
+/** rest → rise → hold → lower cycles; returns 0..1 of the movement at time t (0 before start/after end). */
+function cyc(t: number, k: number, n: number, rest = 1.0, up = 1.4, hold = 0.4, down = 1.4, start = 1) {
+  const c = (rest + up + hold + down) * k;
+  if (t < start || t >= start + n * c) return { f: 0, i: -1 };
+  const i = Math.floor((t - start) / c);
+  const x = (t - start - i * c) / k;
+  if (x < rest) return { f: 0, i };
+  if (x < rest + up) return { f: ease((x - rest) / up), i };
+  if (x < rest + up + hold) return { f: 1, i };
+  return { f: 1 - ease((x - rest - up - hold) / down), i };
+}
+
+function regionScene(id: string, side: Side | null, t: number, p: SimParams): SynthScene | null | undefined {
+  const k = p.tempo ?? 1;
+  const s = side ?? 'left';
+  const opp: Side = s === 'left' ? 'right' : 'left';
+  switch (id) {
+    case 'hip_flexion_standing': {
+      const a = 3 + cyc(t, k, p.cycles ?? 3).f * ((p.peak ?? 100) - 3);
+      return { kind: 'standing_lateral', side: s, hipFlexion: a, kneeFlexion: a, scale: 0.9 };
+    }
+    case 'hip_abduction_standing':
+      return { kind: 'standing_anterior', legSide: s, hipAbduction: 2 + cyc(t, k, p.cycles ?? 3).f * ((p.peak ?? 35) - 2), scale: 0.9 };
+    case 'ankle_knee_to_wall':
+      return { kind: 'lunge_lateral', side: s, shankTilt: 5 + cyc(t, k, p.cycles ?? 3, 1.0, 1.5, 2.0, 1.5).f * ((p.peak ?? 38) - 5) };
+    case 'heel_raise_double':
+      return { kind: 'standing_lateral', side: s, heelLift: cyc(t, k, p.cycles ?? 10, 0.4, 0.8, 0.2, 0.8).f * (p.peak ?? 30), scale: 0.9 };
+    case 'trunk_forward_bend':
+      return { kind: 'standing_lateral', side: s, trunkLean: cyc(t, k, p.cycles ?? 3, 1.0, 2.0, 0.5, 2.0).f * (p.peak ?? 70), scale: 0.85 };
+    case 'trunk_side_bend': {
+      const a = cyc(t, k, p.cycles ?? 3).f * (p.peak ?? 25);
+      return { kind: 'standing_anterior', trunkSideBend: s === 'left' ? a : -a, scale: 0.85 };
+    }
+    case 'neck_flexion_extension': {
+      const { f, i } = cyc(t, k, p.cycles ?? 4, 1.0, 1.2, 0.4, 1.2);
+      const peak = i % 2 === 0 ? (p.peak ?? 40) : -(p.peakBack ?? 30);
+      return { kind: 'standing_lateral', side: s, neckFlexion: f * peak, scale: 0.9 };
+    }
+    case 'single_leg_stance': {
+      const dur = p.stanceSec ?? 10;
+      const t0 = 2;
+      const ramp = 0.2;
+      const f = t < t0 || t > t0 + dur + ramp ? 0 : t < t0 + ramp ? ease((t - t0) / ramp) : t > t0 + dur ? 1 - ease((t - t0 - dur) / ramp) : 1;
+      return { kind: 'standing_anterior', footLift: { side: opp, height: 0.12 * f }, offsetX: 0.01 * Math.sin(t * 3) * f, scale: 0.9 };
+    }
+    case 'march_in_place': {
+      const period = 60 / (p.cadence ?? 100);
+      const n = p.cycles ?? 20;
+      const t0 = 1.5;
+      if (t < t0 || t >= t0 + n * period) return { kind: 'standing_anterior', scale: 0.9 };
+      const i = Math.floor((t - t0) / period);
+      const x = (t - t0 - i * period) / period;
+      const lifted: Side = i % 2 === 0 ? 'left' : 'right';
+      const h = x < 0.7 ? Math.sin((Math.PI * x) / 0.7) : 0;
+      const ratio = lifted === 'right' ? (p.rightLiftRatio ?? 1) : 1;
+      return { kind: 'standing_anterior', footLift: { side: lifted, height: 0.14 * h * ratio }, scale: 0.9 };
+    }
+    default:
+      return undefined;
+  }
 }
 
 export function simulateCapture(protocolId: string, side: Side | null, p: SimParams = {}): ProtocolResult {

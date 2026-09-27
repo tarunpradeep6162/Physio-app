@@ -10,8 +10,22 @@ import type { Cycle, CycleConfig, CycleDetector } from './cycles';
  * Results store the protocol + algorithm version so historical captures stay interpretable.
  */
 
-export type ProtocolId = 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat' | 'shoulder_flexion_active' | 'shoulder_abduction_active';
-export type Region = 'knee' | 'shoulder' | 'low_back';
+export type ProtocolId =
+  | 'knee_supported_flexion'
+  | 'knee_sit_to_stand'
+  | 'knee_squat'
+  | 'shoulder_flexion_active'
+  | 'shoulder_abduction_active'
+  | 'hip_flexion_standing'
+  | 'hip_abduction_standing'
+  | 'ankle_knee_to_wall'
+  | 'heel_raise_double'
+  | 'trunk_forward_bend'
+  | 'trunk_side_bend'
+  | 'neck_flexion_extension'
+  | 'single_leg_stance'
+  | 'march_in_place';
+export type Region = 'knee' | 'shoulder' | 'low_back' | 'hip' | 'ankle' | 'spine' | 'balance';
 
 export interface SignalSample {
   value: number | null;

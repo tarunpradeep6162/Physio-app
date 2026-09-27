@@ -18,9 +18,40 @@ export interface SynthOptions {
 }
 
 export type SynthScene =
-  | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number; scale?: number }
+  | {
+      kind: 'standing_lateral';
+      side: Side;
+      kneeFlexion?: number;
+      shoulderFlexion?: number;
+      trunkLean?: number;
+      scale?: number;
+      /** Near thigh swung forward from vertical (deg); knee bend is relative to the thigh. */
+      hipFlexion?: number;
+      /** Both heels raised: foot rotated about the toes (deg); the body rises with it. */
+      heelLift?: number;
+      /** Head and neck tilted forward (+) or back (−) about the shoulder (deg). */
+      neckFlexion?: number;
+    }
+  /** Knee-to-wall lunge seen from the side: front (tested) foot flat, shin tilted forward by shankTilt (deg). */
+  | { kind: 'lunge_lateral'; side: Side; shankTilt: number; scale?: number }
   | { kind: 'supine_lateral'; side: Side; legRaise?: number; kneeBend?: number }
-  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; shoulderAbduction?: number; armSide?: Side; offsetX?: number; scale?: number; handsInFront?: boolean }
+  | {
+      kind: 'standing_anterior';
+      shoulderTiltDeg?: number;
+      pelvicTiltDeg?: number;
+      shoulderAbduction?: number;
+      armSide?: Side;
+      offsetX?: number;
+      scale?: number;
+      handsInFront?: boolean;
+      /** Leg moved out to the side (deg) on legSide, knee straight. */
+      hipAbduction?: number;
+      legSide?: Side;
+      /** Upper body bent sideways about the mid-hip (deg); + = toward the patient's left. */
+      trunkSideBend?: number;
+      /** One foot lifted off the floor by `height` × leg length. */
+      footLift?: { side: Side; height: number };
+    }
   /** Supine heel slide seen from the side: knee flexes with the heel on the floor. */
   | { kind: 'supine_heel_slide'; side: Side; kneeFlexion: number }
   /** Sit-to-stand seen from the side: kneeFlexion ~90 seated → ~0 standing; trunk leans forward to rise. */
@@ -89,6 +120,7 @@ function needsMirror(scene: SynthScene): boolean {
   switch (scene.kind) {
     case 'standing_lateral':
     case 'sit_to_stand_lateral':
+    case 'lunge_lateral':
       return scene.side === 'right';
     case 'supine_lateral':
     case 'supine_heel_slide':
@@ -132,10 +164,16 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
     for (const [side, sign] of [['left', 1], ['right', -1]] as const) {
       const hipX = cx + sign * halfHip;
       const L = side === 'left';
-      set(L ? LM.leftKnee : LM.rightKnee, { x: hipX, y: hipY + 0.2 * H * s }, 0, 0.96);
-      set(L ? LM.leftAnkle : LM.rightAnkle, { x: hipX, y: hipY + 0.4 * H * s }, 0, 0.94);
-      set(L ? LM.leftHeel : LM.rightHeel, { x: hipX, y: hipY + 0.42 * H * s }, 0, 0.9);
-      set(L ? LM.leftFootIndex : LM.rightFootIndex, { x: hipX + sign * 10, y: hipY + 0.43 * H * s }, -0.1, 0.9);
+      const hipYs = hipY - (L ? 1 : -1) * Math.sin(pvTilt) * halfHip;
+      const abd = scene.legSide === side ? rad(scene.hipAbduction ?? 0) : 0;
+      const dir = { x: sign * Math.sin(abd), y: Math.cos(abd) };
+      const lift = scene.footLift?.side === side ? scene.footLift.height * 0.4 * H * s : 0;
+      const knee = { x: hipX + dir.x * 0.2 * H * s, y: hipYs + dir.y * 0.2 * H * s - lift * 0.5 };
+      const ankle = { x: hipX + dir.x * 0.4 * H * s, y: hipYs + dir.y * 0.4 * H * s - lift };
+      set(L ? LM.leftKnee : LM.rightKnee, knee, 0, 0.96);
+      set(L ? LM.leftAnkle : LM.rightAnkle, ankle, 0, 0.94);
+      set(L ? LM.leftHeel : LM.rightHeel, { x: ankle.x, y: ankle.y + 0.02 * H * s }, 0, 0.9);
+      set(L ? LM.leftFootIndex : LM.rightFootIndex, { x: ankle.x + sign * 10, y: ankle.y + 0.03 * H * s }, -0.1, 0.9);
       const shX = cx + sign * halfSh;
       if (scene.handsInFront) {
         // Holding something (e.g. a phone) in front of the belly with both hands.
@@ -154,6 +192,54 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
         set(L ? LM.leftWrist : LM.rightWrist, { x: shX + sign * 16, y: hipY + 0.02 * H * s }, 0, 0.93);
       }
     }
+    if (scene.trunkSideBend) {
+      // Rotate the upper body about the mid-hip; + moves the head toward image +x (patient's left).
+      const d = rad(scene.trunkSideBend);
+      const mx = cx / W;
+      const my = hipY / H;
+      for (const i of [LM.leftShoulder, LM.rightShoulder, LM.leftElbow, LM.rightElbow, LM.leftWrist, LM.rightWrist, LM.nose, LM.leftEar, LM.rightEar, LM.leftEye, LM.rightEye]) {
+        const dx = (lm[i].x - mx) * W;
+        const dy = (lm[i].y - my) * H;
+        lm[i] = { ...lm[i], x: mx + (dx * Math.cos(d) - dy * Math.sin(d)) / W, y: my + (dx * Math.sin(d) + dy * Math.cos(d)) / H };
+      }
+    }
+    return lm;
+  }
+
+  if (scene.kind === 'lunge_lateral') {
+    const side = scene.side;
+    const near = (l: number, rr: number) => (side === 'left' ? l : rr);
+    const far = (l: number, rr: number) => (side === 'left' ? rr : l);
+    const sc = scene.scale ?? 1;
+    const fwd = -1;
+    const shin = 0.22 * H * sc;
+    const thigh = 0.22 * H * sc;
+    const torso = 0.28 * H * sc;
+    const b = rad(scene.shankTilt);
+    const ankle: P = { x: W * 0.4, y: H * 0.88 };
+    const knee: P = { x: ankle.x + fwd * Math.sin(b) * shin, y: ankle.y - Math.cos(b) * shin };
+    const g = rad(25);
+    const hip: P = { x: knee.x - fwd * Math.sin(g) * thigh, y: knee.y - Math.cos(g) * thigh };
+    const sh: P = { x: hip.x + fwd * 10, y: hip.y - torso };
+    const farAnkle: P = { x: ankle.x - fwd * 0.2 * H * sc, y: ankle.y };
+    const farKnee: P = { x: (hip.x + farAnkle.x) / 2 - fwd * 10, y: (hip.y + farAnkle.y) / 2 + 20 };
+    const put = (l: number, rr: number, pn: P, pf: P) => {
+      set(near(l, rr), pn, -0.15, nearV);
+      set(far(l, rr), pf, 0.15, farV);
+    };
+    put(LM.leftAnkle, LM.rightAnkle, ankle, farAnkle);
+    put(LM.leftKnee, LM.rightKnee, knee, farKnee);
+    put(LM.leftHip, LM.rightHip, hip, { x: hip.x + 4, y: hip.y });
+    put(LM.leftHeel, LM.rightHeel, { x: ankle.x - fwd * 8, y: ankle.y + 10 }, { x: farAnkle.x - fwd * 8, y: farAnkle.y + 4 });
+    put(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + fwd * 40, y: ankle.y + 14 }, { x: farAnkle.x + fwd * 40, y: farAnkle.y + 14 });
+    put(LM.leftShoulder, LM.rightShoulder, sh, { x: sh.x + 4, y: sh.y });
+    // Hands on the wall in front.
+    put(LM.leftElbow, LM.rightElbow, { x: sh.x + fwd * 0.1 * H * sc, y: sh.y + 0.08 * H * sc }, { x: sh.x + fwd * 0.1 * H * sc + 4, y: sh.y + 0.08 * H * sc });
+    put(LM.leftWrist, LM.rightWrist, { x: sh.x + fwd * 0.22 * H * sc, y: sh.y + 0.04 * H * sc }, { x: sh.x + fwd * 0.22 * H * sc + 4, y: sh.y + 0.04 * H * sc });
+    const ear: P = { x: sh.x + fwd * 6, y: sh.y - 0.07 * H * sc };
+    put(LM.leftEar, LM.rightEar, ear, { x: ear.x + 4, y: ear.y });
+    put(LM.leftEye, LM.rightEye, { x: ear.x + fwd * 30, y: ear.y - 6 }, { x: ear.x + fwd * 30 + 4, y: ear.y - 6 });
+    set(LM.nose, { x: ear.x + fwd * 45, y: ear.y + 4 }, -0.1, 0.95);
     return lm;
   }
 
@@ -270,9 +356,10 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
     const kneeFlex = rad(scene.kneeFlexion ?? 0);
     const shFlex = rad(scene.shoulderFlexion ?? 0);
     // Stance leg (far side) straight; the exercised (near) leg performs knee flexion.
+    const hipFlex = rad(scene.hipFlexion ?? 0);
     const hip: P = { x: cx, y: ankleY - shin - thigh };
-    const knee: P = { x: cx, y: hip.y + thigh };
-    const ankle: P = { x: knee.x - fwd * Math.sin(kneeFlex) * shin, y: knee.y + Math.cos(kneeFlex) * shin };
+    const knee: P = { x: hip.x + fwd * Math.sin(hipFlex) * thigh, y: hip.y + Math.cos(hipFlex) * thigh };
+    const ankle: P = { x: knee.x + fwd * Math.sin(hipFlex - kneeFlex) * shin, y: knee.y + Math.cos(hipFlex - kneeFlex) * shin };
     const farKnee: P = { x: cx, y: hip.y + thigh };
     const farAnkle: P = { x: cx, y: ankleY };
     pair(LM.leftHip, LM.rightHip, hip);
@@ -290,10 +377,29 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
     const wrist: P = { x: elbow.x + armDir.x * fa, y: elbow.y + armDir.y * fa };
     pair(LM.leftElbow, LM.rightElbow, elbow, { x: sh.x, y: sh.y + ua });
     pair(LM.leftWrist, LM.rightWrist, wrist, { x: sh.x, y: sh.y + ua + fa });
-    const ear: P = { x: sh.x + fwd * 6, y: sh.y - 0.07 * H * sc };
+    const neck = rad(scene.neckFlexion ?? 0);
+    const headL = 0.07 * H * sc;
+    const ear: P = { x: sh.x + fwd * (6 + Math.sin(neck) * headL), y: sh.y - Math.cos(neck) * headL };
     pair(LM.leftEar, LM.rightEar, ear);
-    pair(LM.leftEye, LM.rightEye, { x: ear.x + fwd * 30, y: ear.y - 6 });
-    set(LM.nose, { x: ear.x + fwd * 45, y: ear.y + 4 }, -0.1, 0.95);
+    pair(LM.leftEye, LM.rightEye, { x: ear.x + fwd * 30, y: ear.y - 6 + Math.sin(neck) * 12 });
+    set(LM.nose, { x: ear.x + fwd * 45, y: ear.y + 4 + Math.sin(neck) * 20 }, -0.1, 0.95);
+    if (scene.heelLift) {
+      // Both feet rotate about the toes; everything above the feet rises with the ankles.
+      const phi = rad(scene.heelLift);
+      const toe: P = { x: ankle.x + fwd * 40, y: ankle.y + 14 };
+      const rot = (dx: number, dy: number): P => {
+        const r = Math.hypot(dx, dy);
+        const a0 = Math.atan2(dy, dx);
+        return { x: toe.x - fwd * r * Math.cos(a0 + phi), y: toe.y - r * Math.sin(a0 + phi) };
+      };
+      const newAnkle = rot(40, 14);
+      const newHeel = rot(48, 4);
+      const dx = (newAnkle.x - ankle.x) / W;
+      const dy = (newAnkle.y - ankle.y) / H;
+      const feet = new Set<number>([LM.leftFootIndex, LM.rightFootIndex, LM.leftHeel, LM.rightHeel]);
+      for (let i = 0; i < lm.length; i++) if (!feet.has(i)) lm[i] = { ...lm[i], x: lm[i].x + dx, y: lm[i].y + dy };
+      for (const h of [LM.leftHeel, LM.rightHeel]) lm[h] = { ...lm[h], x: lm[h].x + (newHeel.x - (ankle.x - fwd * 8)) / W, y: lm[h].y + (newHeel.y - (ankle.y + 10)) / H };
+    }
     return lm;
   }
 

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { currentAnswers, SCALE04, visibleQuestions, type AnswerValue, type Question } from '../../clinical/intake';
-import { PATHWAYS, pathwayFor, type PathwayRegion } from '../../clinical/pathways';
+import { isPathwayRegion, PATHWAYS, pathwayFor, type PathwayRegion } from '../../clinical/pathways';
 import { routineAllowed, SAFETY_ACTION_TEXT } from '../../clinical/safety';
 import { CategoryBadge, ChipGroup, NprsInput, Notice, Segmented, Steps } from '../../components/ui';
 import type { Assessment, PainRegion, RadiationPath, SymptomType } from '../../data/models';
@@ -38,6 +38,12 @@ type Draft = Omit<PainRegion, 'id' | 'assessmentId'>;
 
 export const KneeAssessment = () => <PathwayAssessment region="knee" />;
 export const ShoulderAssessment = () => <PathwayAssessment region="shoulder" />;
+/** /p/assess/:region for the hip, ankle and foot, back and neck, and balance pathways. */
+export function RegionAssessment() {
+  const { region } = useParams();
+  if (!isPathwayRegion(region)) return <Navigate to="/p/home" replace />;
+  return <PathwayAssessment key={region} region={region} />;
+}
 
 export function PathwayAssessment({ region }: { region: PathwayRegion }) {
   const pathway = PATHWAYS[region];
@@ -211,7 +217,7 @@ function MapStep({ a, actorId, onNext }: { a: Assessment; actorId: string; onNex
       )}
       <button
         className="btn primary lg block"
-        disabled={regions.length === 0 || regions.some((r) => !r.symptomTypes?.length)}
+        disabled={(regions.length === 0 && !pathway.symptomMapOptional) || regions.some((r) => !r.symptomTypes?.length)}
         onClick={() => {
           saveRegions(a.id, actorId, regions);
           saveRadiationPaths(a.id, actorId, paths);

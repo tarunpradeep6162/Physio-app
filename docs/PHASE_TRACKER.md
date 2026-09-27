@@ -42,10 +42,10 @@ A phase is never marked **done** on a clean build alone.
 | 9 | Prescription and plan versioning | 8 | **engineering done – gate pending** | Versions, change diff, reason for intensification, alternatives, pauses (patient/pain rule) with clinician-only resume, reassessment triggers, migration 003 with RLS. Clinical review of pause wording and triggers (on hold). |
 | 10 | Daily companion foundation | 9 | **engineering done – gate pending** | Offline recording and two-tab merge verified in the browser. **Cross-device sync not live:** it needs the Phase 6 server; the merge (`src/data/sync.ts`) is ready and tested. Copy review (Tamil, clinical) pending. |
 | 11 | Wearable and phone activity integration | 6, 10 | **engineering done – gate pending** | Apple Health export and CSV import, granular consent, de-duplication, revoked/absent handling, migration 004 with consent-enforcing RLS (`docs/ACTIVITY_INTEGRATION.md`). **Live Health Connect / HealthKit reads need native apps**; step totals not yet checked on real phones. |
-| 12 | Hip pathway | 1–4 | not started | Validation evidence |
-| 13 | Ankle and foot pathway | 1–4 | not started | Validation evidence |
-| 14 | Spine and neck pathway | 1–4 | not started | Validation evidence |
-| 15 | Balance, gait and functional performance | 1–4 | not started | Reference captures |
+| 12 | Hip pathway | 1–4 | **engineering done – gate pending** | 2 protocols, history and safety drafts, report template, demo DP-05. Synthetic evidence only; **real-device and reference validation pending**; clinical review on hold. `docs/REGION_PROTOCOLS.md` |
+| 13 | Ankle and foot pathway | 1–4 | **engineering done – gate pending** | Lunge (heel-down gate) and heel raise; occlusion, wrong-view and framing gates tested; browser capture verified with the simulated provider. Real-device validation pending. |
+| 14 | Spine and neck pathway | 1–4 | **engineering done – gate pending** | Trunk forward/side bend and neck change-from-start; no posture or structural claims; red-flag screen. Real-device validation pending. |
+| 15 | Balance, gait and functional performance | 1–4 | **engineering done – gate pending** | Single-leg stance timing and marching; the safety screen sends repeated falls to the clinician. Timing matches synthetic references; **stopwatch/real reference captures pending**. Walking gait is not implemented (needs a validated setup). |
 | 16 | Exercise content system at scale | 9 | not started | Licensed media and clinical content review |
 | 17 | Clinician intelligence and longitudinal trends | 8, 10 | not started | Threshold review |
 | 18 | Reference measurements and interoperability | 6 | not started | Device imports need real devices |
@@ -72,5 +72,7 @@ A phase is never marked **done** on a clean build alone.
 16. ~~Demo sign-offs were attributed to “Dheepika”.~~ **Fixed** (commit `4e69c37`): the demo account is now “Demo clinician”, and older browser copies are migrated.
 17. **Found in Phase 11:** re-selecting the same file did not re-import. Fixed by resetting the file input.
 18. **Open → Phase 19:** account deletion and the patient data export do not yet cover the tables added in phases 3–11.
+19. **Found in Phases 12–15 and fixed:** the left/right table and the report printed every difference in degrees; they now use the metric's own unit (seconds, %, counts).
+20. **Found in Phase 15 and fixed:** marching with one foot below the detection level halved the cadence while reporting it as valid. It is now withheld with a reason.
 
 Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.

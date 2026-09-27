@@ -1,3 +1,4 @@
+import { isPathwayRegion } from '../../clinical/pathways';
 import { useParams } from 'react-router-dom';
 import { useDb } from '../../data/store';
 import { AssessmentReview } from '../clinician/AssessmentReview';
@@ -7,6 +8,6 @@ import { KneeWorkspace } from './ClinicianWorkspace';
 export function AssessmentRoute() {
   const { id } = useParams();
   const a = useDb((d) => d.assessments.find((x) => x.id === id), [id]);
-  if (a?.region === 'knee' || a?.region === 'shoulder') return <KneeWorkspace a={a} />;
+  if (isPathwayRegion(a?.region)) return <KneeWorkspace a={a!} />;
   return <AssessmentReview />;
 }

@@ -94,7 +94,10 @@ export function BilateralTable({ db, assessmentId }: { db: DB; assessmentId: str
     const fr = find(caps, row.protocolId, 'right');
     const l = validNum(fl, row.metricId);
     const r = validNum(fr, row.metricId);
-    rows.push({ label: row.metricId.includes('trunk') ? row.label : `${pathway.label} ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}`, left: metricValue(mOf(fl, row.metricId), fl), right: metricValue(mOf(fr, row.metricId), fr), diff: l !== null && r !== null ? `${Math.round(Math.abs(l - r) * 10) / 10}°` : '—' });
+    // Knee and shoulder rows are short ("Flexion (peak)") and get the region name; newer pathways' rows are already specific.
+    const prefix = (pathway.region === 'knee' || pathway.region === 'shoulder') && !row.metricId.includes('trunk');
+    const unit = (mOf(fl, row.metricId) ?? mOf(fr, row.metricId))?.unit ?? 'deg';
+    rows.push({ label: prefix ? `${pathway.label} ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}` : row.label, left: metricValue(mOf(fl, row.metricId), fl), right: metricValue(mOf(fr, row.metricId), fr), diff: l !== null && r !== null ? `${Math.round(Math.abs(l - r) * 10) / 10}${unitText(unit)}` : '—' });
   }
   if (pathway.region === 'knee') {
     const sq = find(caps, 'knee_squat', null);

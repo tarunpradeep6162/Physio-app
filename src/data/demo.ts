@@ -9,6 +9,8 @@ import type { ExercisePrescription } from '../engine/exercises/types';
 import { MotionPipeline } from '../engine/pipeline';
 import { synthesize } from '../engine/pose/synthetic';
 import { getProtocol } from '../engine/protocols/registry';
+import { HIP_DEFAULT_PLAN } from '../engine/protocols/regions';
+import { HIP_HISTORY_QUESTIONNAIRE, HIP_SAFETY_QUESTIONNAIRE } from '../clinical/regionQuestionnaires';
 import { SHOULDER_DEFAULT_PLAN } from '../engine/protocols/shoulder';
 import { captureConfig, compareConfig } from '../engine/protocols/recorder';
 import { sceneAt, SIM_PROVIDER, simulateCapture, type SimParams } from '../engine/protocols/simulate';
@@ -211,6 +213,24 @@ export function buildDemoDb(): DB {
   // Invalid: the right elbow is hidden from 2 s on — kept for audit, produces no reported number.
   capture(a4, 0.6 * DAY - 180_000, 'shoulder_abduction_active', 'right', { peak: 110, perturb: (l, t) => (t > 2 ? l.map((x, i) => (i === 14 ? { ...x, visibility: 0.15 } : x)) : l) });
   db.alerts.push({ id: uuid(), patientId: p4.id, type: 'assessment_submitted', severity: 'info', detail: 'Shoulder assessment', createdAt: iso(0.6 * DAY), isDemo: true });
+
+  // ---- DP-05: hip pathway (Phase 12) — awaiting review; the left knee was hidden in one capture --
+  const p5 = mkPatient('DP-05', 'male', 58, false);
+  const a5 = mkAssessment(p5, 0.4 * DAY, { region: 'hip' });
+  db.painRegions.push({ id: uuid(), assessmentId: a5.id, regionId: 'hip_left', anatomy: 'hip', side: 'left', symptomTypes: ['pain', 'stiffness'], subLocations: ['groin'] });
+  answer(
+    a5,
+    0.4 * DAY,
+    { onset: 'gradual', duration: 'gt3m', nprs_now: 3, nprs_worst: 6, nprs_best: 1, pattern: 'intermittent', time_of_day: ['morning', 'after_activity'], morning_stiffness: 'lt30', night: 'position', aggravating: ['walking', 'socks', 'car'], easing: ['movement'], hip_location: ['groin'], hip_clicking: 'no', hip_limp: 'sometimes', func_socks: 2, func_stairs: 1, func_walk: 2, func_car: 2, func_chair: 1, prev_injury: 'no', conditions: ['none'], prior_care: ['none'], occupation: 'retired', activity: 'recreational', goal: 'Walk the dog for an hour again (demo)' },
+    HIP_HISTORY_QUESTIONNAIRE,
+  );
+  safety(a5, 0.4 * DAY, [], HIP_SAFETY_QUESTIONNAIRE);
+  db.testPlans.push({ id: uuid(), assessmentId: a5.id, items: HIP_DEFAULT_PLAN.map((i) => ({ ...i, protocolVersion: getProtocol(i.protocolId).version })), source: 'protocol_default', createdBy: clin.id, createdAt: iso(0.4 * DAY) });
+  capture(a5, 0.4 * DAY, 'hip_flexion_standing', 'left', { peak: 88 });
+  capture(a5, 0.4 * DAY - 60_000, 'hip_flexion_standing', 'right', { peak: 108 });
+  capture(a5, 0.4 * DAY - 120_000, 'hip_abduction_standing', 'left', { peak: 22, perturb: (l, t) => (t > 2 ? l.map((x, i) => (i === 25 ? { ...x, visibility: 0.15 } : x)) : l) });
+  capture(a5, 0.4 * DAY - 180_000, 'hip_abduction_standing', 'right', { peak: 31 });
+  db.alerts.push({ id: uuid(), patientId: p5.id, type: 'assessment_submitted', severity: 'info', detail: 'Hip assessment', createdAt: iso(0.4 * DAY), isDemo: true });
 
   return db;
 }

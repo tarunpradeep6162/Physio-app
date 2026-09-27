@@ -15,6 +15,15 @@ const METRICS_BY_PROTOCOL: Record<string, string[]> = {
   knee_squat: ['squat_fppa_left', 'squat_fppa_right', 'squat_depth'],
   shoulder_flexion_active: ['shoulder_flexion_peak'],
   shoulder_abduction_active: ['shoulder_abduction_peak'],
+  hip_flexion_standing: ['hip_flexion_peak'],
+  hip_abduction_standing: ['hip_abduction_peak'],
+  ankle_knee_to_wall: ['knee_to_wall_shin_angle'],
+  heel_raise_double: ['heel_raise_count'],
+  trunk_forward_bend: ['trunk_forward_bend_peak'],
+  trunk_side_bend: ['trunk_side_bend_peak'],
+  neck_flexion_extension: ['neck_flexion_change', 'neck_extension_change'],
+  single_leg_stance: ['single_leg_stance_time'],
+  march_in_place: ['march_cadence'],
 };
 const METRICS = Object.values(PROTOCOLS).flatMap((p) => METRICS_BY_PROTOCOL[p.id] ?? []);
 
