@@ -30,6 +30,7 @@ export interface EvidenceItem {
     | { kind: 'scan_metric'; scanId: ID; measurementId: ID; view: string }
     | { kind: 'rule'; rule: string; basedOn: string[] }
     | { kind: 'clinician_measure'; measurementId: ID }
+    | { kind: 'clinician_exam'; findingId: ID; area: string }
     | { kind: 'safety'; responseIds: ID[] };
   method?: string;
   version?: string;
@@ -274,6 +275,10 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
       validity: 'valid',
       limitations: [],
     });
+  }
+  // --- Clinician examination findings (Phase 8) -----------------------------------------------
+  for (const f of (db.examFindings ?? []).filter((x) => x.assessmentId === assessmentId)) {
+    out.push({ id: `exam:${f.id}`, category: 'clinician', label: `Examination — ${f.area}`, value: f.text, facts: [], source: { kind: 'clinician_exam', findingId: f.id, area: f.area }, validity: 'n/a', limitations: ['Clinician examination finding, recorded by the clinician.'] });
   }
   return out;
 }

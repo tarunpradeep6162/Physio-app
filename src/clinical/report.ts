@@ -64,6 +64,7 @@ export function lastDataChange(db: DB, id: ID): string {
     ...db.intakeAnswers.filter((x) => x.assessmentId === id).map((x) => x.answeredAt),
     ...db.reasoningDecisions.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.impressions.filter((x) => x.assessmentId === id).map((x) => x.at),
+    ...(db.examFindings ?? []).filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.amendments.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.safetyResponses.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.testPlans.filter((x) => x.assessmentId === id).map((x) => x.createdAt),
@@ -315,7 +316,7 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     `${c.protocolId}@${c.protocolVersion}${c.side ? ` (${c.side})` : ''}`,
     `${c.provenance.poseModel ?? '—'} ${c.provenance.poseModelVersion ?? ''} · ${c.result.algorithmVersion} · filter ${c.provenance.filter ?? '—'}`,
     `${c.result.quality.verdict}; coverage ${Math.round(c.result.quality.coverage * 100)}%; conf ${c.result.quality.meanConfidence ?? '—'}; ${c.result.quality.meanFps ?? '—'} fps`,
-    `${c.provenance.device?.videoWidth ?? '—'}×${c.provenance.device?.videoHeight ?? '—'}, roll ${c.config?.cameraRollDeg ?? 'unknown'}${c.provenance.source === 'simulated_demo' ? ' · SIMULATED' : ''}${c.conditionMatch ? ` · baseline match ${Math.round(c.conditionMatch.score * 100)}%` : ''}`,
+    `${c.provenance.device?.videoWidth ?? '—'}×${c.provenance.device?.videoHeight ?? '—'}, roll ${c.config?.cameraRollDeg ?? 'unknown'}${c.provenance.source === 'simulated_demo' ? ' · SIMULATED' : ''}${c.conditionMatch ? ` · baseline match ${Math.round(c.conditionMatch.score * 100)}%` : ''}${c.cueLatency?.p50 != null ? ` · cue latency p50 ${c.cueLatency.p50} ms (n ${c.cueLatency.n})` : ''}`,
   ]);
   add(14, 'Technical appendix', [
     tech.length ? { kind: 'table', head: ['Capture', 'Model / algorithm', 'Quality', 'Device / conditions'], rows: tech } : { kind: 'missing', text: 'No captures.' },

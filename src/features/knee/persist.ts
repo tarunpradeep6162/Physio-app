@@ -168,6 +168,7 @@ export function buildCaptureRows(a: Pick<Assessment, 'id' | 'patientId' | 'isDem
     config: o.config,
     baselineCaptureId: baseline?.id,
     conditionMatch: o.conditionMatch,
+    cueLatency: o.cueLatency,
     setupNotes: o.setupNotes,
     provenance: { ...prov, createdAt: at, algorithmVersion: o.result.algorithmVersion },
     createdAt: at,

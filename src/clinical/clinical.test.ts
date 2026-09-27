@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DB } from '../data/models';
-import { emptyDb, migrate } from '../data/store';
+import { emptyDb, migrate, SCHEMA_VERSION } from '../data/store';
 import { cameraProvenance } from '../engine/provenance';
 import { SIM_PROVIDER, simulateCapture } from '../engine/protocols/simulate';
 import { buildEvidence } from './evidence';
@@ -114,15 +114,18 @@ describe('evidence and reasoning', () => {
 });
 
 describe('data migration', () => {
-  it('preserves v1 records when upgrading to v2', () => {
+  it('preserves v1 records when upgrading to the current version', () => {
     const v1 = { ...emptyDb(), schemaVersion: 1 } as DB;
     v1.assessments = [{ id: 'old', patientId: 'p', createdBy: 'u', status: 'reviewed', createdAt: '2025-01-01', step: 5 }];
     delete (v1 as Partial<DB>).captures;
     const m = migrate(v1);
-    expect(m.schemaVersion).toBe(2);
+    expect(m.schemaVersion).toBe(SCHEMA_VERSION);
     expect(m.assessments[0].id).toBe('old');
     expect(m.assessments[0].type).toBe('initial');
     expect(m.captures).toEqual([]);
+    // v3 tables start empty.
+    expect(m.draftDecisions).toEqual([]);
+    expect(m.examFindings).toEqual([]);
   });
 });
 

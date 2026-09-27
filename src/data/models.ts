@@ -196,6 +196,8 @@ export interface CaptureSession {
   config: CaptureConfig | null;
   baselineCaptureId?: ID;
   conditionMatch?: ConditionMatch;
+  /** Frame-to-screen coaching cue latency measured during this capture (ms). */
+  cueLatency?: { n: number; p50: number | null; p95: number | null };
   /** Free-text setup the camera cannot see, e.g. chair height. */
   setupNotes?: string;
   provenance: Provenance;
@@ -223,6 +225,39 @@ export interface ReasoningDecision {
 export interface Impression {
   id: ID;
   assessmentId: ID;
+  text: string;
+  by: ID;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+/**
+ * A clinician's decision on one statement of an AI consultation draft (Phase 8). The AI proposal is
+ * kept verbatim with its evidence, next to the human decision — the audit shows both.
+ */
+export interface DraftDecision {
+  id: ID;
+  assessmentId: ID;
+  draftSchema: string;
+  generator: string;
+  section: string;
+  /** The AI-proposed statement exactly as shown. */
+  proposal: string;
+  evidence: string[];
+  action: 'accept' | 'reject' | 'edit' | 'defer';
+  /** Clinician wording when action = edit. */
+  editedText?: string;
+  note?: string;
+  by: ID;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+/** Clinician examination finding (Phase 8) — what the camera cannot establish. */
+export interface ExamFinding {
+  id: ID;
+  assessmentId: ID;
+  area: string;
   text: string;
   by: ID;
   at: ISODate;
@@ -472,6 +507,8 @@ export interface DB {
   reasoningDecisions: ReasoningDecision[];
   impressions: Impression[];
   reports: Report[];
+  draftDecisions: DraftDecision[];
+  examFindings: ExamFinding[];
   settings: ClinicSettings;
 }
 

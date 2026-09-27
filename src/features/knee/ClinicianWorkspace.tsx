@@ -1,3 +1,4 @@
+import { DraftReview } from './DraftReview';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../../app/hooks';
@@ -25,7 +26,7 @@ import { BilateralTable, CaptureCard, ComparisonTable } from './Results';
 
 const ReportPanel = lazy(() => import('../report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
 
-type Tab = 'summary' | 'plan' | 'captures' | 'compare' | 'reasoning' | 'report';
+type Tab = 'summary' | 'plan' | 'captures' | 'compare' | 'draft' | 'reasoning' | 'report';
 const CAT_BADGE = { patient_reported: 'pro', camera_estimated: 'camera', algorithmic: 'observation', clinician: 'clinician' } as const;
 const CAT_TITLE = { patient_reported: 'Patient-reported', camera_estimated: 'Camera-estimated', algorithmic: 'Algorithmic observations', clinician: 'Clinician-entered' } as const;
 const PATH_COLORS: Record<string, string> = { pain: '#e65a5a', stiffness: '#0d9488', weakness: '#8a5a00', numbness: '#7c5cd6', tingling: '#2563eb' };
@@ -43,6 +44,7 @@ export function KneeWorkspace({ a }: { a: Assessment }) {
     { id: 'plan', label: 'Test plan' },
     { id: 'captures', label: 'Captures & replay' },
     { id: 'compare', label: a.type === 'reassessment' ? 'Baseline → current' : 'Left / right' },
+    { id: 'draft', label: 'AI draft' },
     { id: 'reasoning', label: 'Evidence & reasoning' },
     { id: 'report', label: 'Report' },
   ];
@@ -86,6 +88,7 @@ export function KneeWorkspace({ a }: { a: Assessment }) {
           {a.type === 'reassessment' && <ComparisonTable db={db} current={a} />}
         </div>
       )}
+      {tab === 'draft' && <DraftReview db={db} a={a} actorId={user.id} />}
       {tab === 'reasoning' && <ReasoningTab db={db} a={a} actorId={user.id} />}
       {tab === 'report' && (
         <Suspense fallback={<Loader />}>

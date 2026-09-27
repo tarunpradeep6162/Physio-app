@@ -1,3 +1,4 @@
+import { CaptureCueEngine, latencySummary, type CaptureCue } from '../../engine/protocols/cues';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LightingSampler } from '../../camera/camera';
 import { useDeviceRoll } from '../../camera/deviceRoll';
@@ -31,6 +32,8 @@ import { SetupGuide } from './SetupGuide';
 
 export interface CaptureOutcome {
   result: ProtocolResult;
+  /** Frame-to-screen cue latency during this capture (ms). */
+  cueLatency?: { n: number; p50: number | null; p95: number | null };
   config: CaptureConfig | null;
   conditionMatch?: ConditionMatch;
   setupNotes?: string;
@@ -40,14 +43,6 @@ export interface CaptureOutcome {
 
 type Phase = 'setup' | 'countdown' | 'recording' | 'review';
 
-const PHASE_TEXT: Record<string, string> = {
-  waiting: 'Get into the start position and hold still',
-  rest: 'Ready — begin',
-  moving: 'Moving…',
-  engaged: 'Target position reached',
-  returning: 'Returning…',
-  paused: 'Measurement paused',
-};
 
 export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }: { protocolId: string; side: Side | null; baseline?: CaptureSession; onSave: (o: CaptureOutcome) => void; onCancel: () => void }) {
   const { t, locale } = useT();
@@ -90,6 +85,11 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   const ctxInfo = useRef<{ provider: PoseProviderInfo; device: DeviceContext } | null>(null);
   const voice = useRef<VoiceCoach | null>(null);
   const simRef = useRef<SimulatedPoseProvider | null>(null);
+  const cueEngine = useRef(new CaptureCueEngine());
+  const [cue, setCue] = useState<CaptureCue | null>(null);
+  /** Capture time of the frame that produced each cue, for cue-latency measurement. */
+  const cueFrameT = useRef(new Map<string, number>());
+  const cueLatencies = useRef<number[]>([]);
   const focus = useMemo(() => def.requiredLandmarks(side), [def, side]);
   const views = useMemo(() => def.views(side), [def, side]);
   const baseCfg = baseline?.config ?? null;
@@ -106,6 +106,10 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
     if (phase !== 'countdown') return;
     if (countdown <= 0) {
       recorder.current = new ProtocolRecorder(def, side);
+      cueEngine.current = new CaptureCueEngine();
+      cueFrameT.current.clear();
+      cueLatencies.current = [];
+      setCue(null);
       config.current = null;
       engineKey.current = null;
       simRef.current?.startProtocol();
@@ -129,6 +133,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
       conditionMatch: baseCfg && cfg ? compareConfig(baseCfg, cfg) : undefined,
       provider: ctxInfo.current?.provider ?? { id: providerId, model: 'unknown', version: 'unknown', simulated },
       device: ctxInfo.current?.device ?? { userAgent: navigator.userAgent, platform: navigator.platform, videoWidth: 0, videoHeight: 0, facingMode: 'user', cameraRollDeg: null, meanFps: null, meanInferenceMs: null },
+      cueLatency: latencySummary(cueLatencies.current),
     };
     setOutcome(o);
     setPhase('review');
@@ -185,7 +190,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         const c = evaluateCalibration({
           frame: f,
           req: fr
-            ? { landmarks: focus, views, heightRange: fr.range, extentAxis: fr.axis, extentLandmarks: fr.extentLandmarks(side), minConfidence: fr.minConfidence, maxRollDeg: fr.maxRollDeg }
+            ? { landmarks: focus, views, heightRange: fr.range, extentAxis: fr.axis, extentLandmarks: fr.extentLandmarks(side), minConfidence: fr.minConfidence, maxRollDeg: fr.maxRollDeg, armReach: fr.armReach ? { side: side ?? 'left', mode: fr.armReach } : undefined }
             : { landmarks: focus, views, heightRange: def.position === 'supine' ? [0.45, 0.98] : [0.4, 0.98], extentAxis: def.position === 'supine' ? 'horizontal' : 'vertical', minConfidence: 0.65, maxRollDeg: 4 },
           lighting: lighting.current,
           cameraRollDeg: simulated ? 0 : rollRef.current,
@@ -237,10 +242,12 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         return;
       }
       const events = r.update(f, ctx.now, ctx.stats.fps);
-      for (const e of events) {
-        if (e.type === 'complete') voice.current?.say(`${r.state.validCycles}`, `rep${r.state.validCycles}`, 4, 0);
-        if (e.type === 'incomplete') voice.current?.say('That one did not count', 'incomplete', 3, 2500);
-        if (e.type === 'paused') voice.current?.say(t('cue.paused_reposition'), 'paused', 5, 5000);
+      // Deterministic coaching decision; phrasing comes from i18n. Tracking recovery pre-empts coaching.
+      const u = cueEngine.current.update(r.state, events, f.t);
+      for (const sp of u.speech) voice.current?.say(sp.key === 'pcue.rep_counted' ? `${sp.params?.n}` : t(sp.key, sp.params), sp.key === 'pcue.rep_counted' ? `rep${sp.params?.n}` : sp.key, sp.priority, sp.cooldownMs);
+      if (u.changed) {
+        cueFrameT.current.set(u.display.key, f.t);
+        setCue(u.display);
       }
       if (f.smoothed) drawSkeleton(c2d, f.smoothed, f.width, f.height, { mirrored, focus, state: r.state.value === null ? 'low' : r.state.phase === 'engaged' ? 'target' : 'tracked' });
       if (ctx.now - lastUi.current > 100) {
@@ -285,12 +292,22 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   };
 
   const liveCue = useStableCue(
-    phase === 'recording' && live
-      ? live.value === null
-        ? { key: `p:${live.reason}:${(live.missing ?? []).join(',')}`, tone: 'warning' as const, text: streamStalled ? 'Tracking delayed — hold position or retry' : pauseText(t, live.reason, live.missing) }
-        : { key: `m:${live.phase}`, tone: (live.phase === 'engaged' ? 'success' : 'info') as 'success' | 'info', text: PHASE_TEXT[live.phase] ?? def.cueStart }
+    phase === 'recording' && (cue || streamStalled)
+      ? streamStalled
+        ? { key: 'p:stalled', raw: 'pause:tracking_stalled', tone: 'warning' as const, text: 'Tracking delayed — hold position or retry' }
+        : cue!.key.startsWith('pause:')
+          ? { key: `p:${live?.reason}:${(live?.missing ?? []).join(',')}`, raw: cue!.key, tone: 'warning' as const, text: pauseText(t, live?.reason ?? String(cue!.params?.reason ?? ''), live?.missing) }
+          : { key: cue!.key, raw: cue!.key, tone: cue!.tone, text: cue!.key === 'pcue.begin' ? def.cueStart : t(cue!.key, cue!.params) }
       : null,
   );
+  // Cue latency: frame capture → the cue being painted (includes the anti-flicker hold).
+  useEffect(() => {
+    if (!liveCue) return;
+    const ft = cueFrameT.current.get(liveCue.raw);
+    if (ft === undefined) return;
+    cueFrameT.current.delete(liveCue.raw);
+    requestAnimationFrame(() => cueLatencies.current.push(performance.now() - ft));
+  }, [liveCue]);
   const measurePaused = phase === 'recording' && !!live && live.value === null;
   const unit = def.signalUnit === 'deg' ? '°' : '%';
   const title = `${def.title}${side && def.sided ? ` — ${side}` : ''}`;
@@ -428,6 +445,11 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
               ))}
             </div>
             {outcome.conditionMatch && <span className="xs">Setup match with baseline: {Math.round(outcome.conditionMatch.score * 100)}%</span>}
+            {outcome.cueLatency?.p50 != null && (
+              <span className="xs">
+                Coaching cue latency (frame → screen): p50 {outcome.cueLatency.p50} ms · p95 {outcome.cueLatency.p95} ms · {outcome.cueLatency.n} cues
+              </span>
+            )}
             <div style={{ background: '#f5f8f7', color: 'var(--ink)', borderRadius: 12, padding: '0.5rem' }}>
               <Replay result={outcome.result} focus={focus} height={180} label={def.signalLabel} unit={unit} />
             </div>

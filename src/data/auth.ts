@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Clinician, Patient, Role, User } from './models';
-import { getDb, insert, uuid } from './store';
+import { bindSession, getDb, insert, sessionChanged, uuid } from './store';
 
 /**
  * Local authentication for the MVP. Passwords are hashed with PBKDF2-SHA256 (210k iterations)
@@ -27,6 +27,7 @@ async function hash(password: string, saltB64: string): Promise<string> {
 
 let sessionUserId: string | null = readSession();
 const listeners = new Set<() => void>();
+bindSession(() => sessionUserId);
 
 function readSession(): string | null {
   try {
@@ -51,6 +52,7 @@ function setSession(id: string | null) {
     /* storage disabled */
   }
   listeners.forEach((l) => l());
+  sessionChanged();
 }
 
 export function useSessionUserId(): string | null {

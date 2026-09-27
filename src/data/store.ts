@@ -1,5 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { AuditEvent, ClinicSettings, DB, ID, Table } from './models';
+import { applyScope, scopeFor } from './scope';
 
 /**
  * Local repository (MVP). Persists to localStorage on this device only.
@@ -11,7 +12,7 @@ import type { AuditEvent, ClinicSettings, DB, ID, Table } from './models';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -77,6 +78,8 @@ export function emptyDb(): DB {
     captures: [],
     reasoningDecisions: [],
     impressions: [],
+    draftDecisions: [],
+    examFindings: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -109,6 +112,7 @@ export function migrate(parsed: DB): DB {
     // v1 → v2: knee pathway tables; existing assessments are 'general' initial assessments.
     out.assessments = parsed.assessments.map((a) => ({ region: 'general', type: 'initial', ...a }));
   }
+  // v2 → v3: draftDecisions and examFindings start empty (added by the base spread above).
   return out;
 }
 
@@ -142,9 +146,37 @@ export function subscribe(l: () => void): () => void {
   return () => listeners.delete(l);
 }
 
-/** React binding. The selector result is memoised on the (immutable) db reference. */
+// ---- Read scope (Phase 6) ------------------------------------------------------------------
+// Screens read through a scope derived from the signed-in account (see scope.ts), so a demo
+// session never shows a real sign-up's records on the same device and a patient sees only their
+// own. Writes, persistence and exports use the unscoped database.
+let sessionUser: () => string | null = () => null;
+let scoped: { db: DB; key: string; out: DB } | null = null;
+
+/** Registered by the auth module (avoids a circular import). */
+export function bindSession(getter: () => string | null) {
+  sessionUser = getter;
+}
+
+/** Called when the signed-in account changes. */
+export function sessionChanged() {
+  scoped = null;
+  listeners.forEach((l) => l());
+}
+
+export function getScopedDb(): DB {
+  const uid = sessionUser();
+  const user = uid ? (db.users.find((u) => u.id === uid) ?? null) : null;
+  const key = `${uid ?? '-'}|${user?.role ?? '-'}|${user?.isDemo ? 'demo' : 'real'}`;
+  if (scoped && scoped.db === db && scoped.key === key) return scoped.out;
+  const out = applyScope(db, scopeFor(user, db), user);
+  scoped = { db, key, out };
+  return out;
+}
+
+/** React binding. The selector result is memoised on the (immutable) scoped db reference. */
 export function useDb<T>(selector: (d: DB) => T, deps: unknown[] = []): T {
-  const snapshot = useSyncExternalStore(subscribe, getDb, getDb);
+  const snapshot = useSyncExternalStore(subscribe, getScopedDb, getScopedDb);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => selector(snapshot), [snapshot, ...deps]);
 }
@@ -155,8 +187,40 @@ function auditEvent(actorId: ID, action: string, entity: string, entityId: ID, d
   return { id: uuid(), actorId, action, entity, entityId, at: new Date().toISOString(), detail };
 }
 
+// ---- Authorization boundary for clinical decisions (Phase 8) ---------------------------------
+// Clinical conclusions, plans and approvals are written only by a clinician account. A patient
+// session (or anything acting for one, such as an AI draft) cannot put them into an approved state.
+// The server enforces the same rule with row-level security (clinician-write policies).
+type Guard = (row: Record<string, unknown>) => boolean;
+const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
+  impressions: () => true,
+  draftDecisions: () => true,
+  examFindings: () => true,
+  reasoningDecisions: () => true,
+  amendments: () => true,
+  programs: () => true,
+  programExercises: () => true,
+  notes: () => true,
+  reports: (r) => r.status === 'clinician_reviewed',
+  testPlans: (r) => r.source === 'clinician',
+  measurements: (r) => r.reviewStatus !== undefined && r.reviewStatus !== 'pending' && r.category === 'camera_estimate',
+};
+
+export class AuthorizationError extends Error {}
+
+function assertMayWrite(table: Table, row: Record<string, unknown>, actorId: ID, isUpdate = false) {
+  const guard = CLINICIAN_ONLY[table];
+  if (!guard) return;
+  // A clinician-review update of a measurement is the only guarded measurement write.
+  if (table === 'measurements' && !isUpdate) return;
+  if (!guard(row)) return;
+  const actor = db.users.find((u) => u.id === actorId);
+  if (!actor || actor.role === 'patient') throw new AuthorizationError(`Only a clinician can record ${table} (actor ${actorId}).`);
+}
+
 /** Every write goes through these helpers so that it is always audited. */
 export function insert<T extends Table>(table: T, row: Row<T>, actorId: ID, detail?: string): Row<T> {
+  assertMayWrite(table, row as unknown as Record<string, unknown>, actorId);
   const r = row as Row<T> & { id: ID };
   const next = { ...db, [table]: [...(db[table] as Row<T>[]), row] } as DB;
   if (table !== 'audit') next.audit = [...next.audit, auditEvent(actorId, 'create', table, r.id, detail)];
@@ -166,6 +230,7 @@ export function insert<T extends Table>(table: T, row: Row<T>, actorId: ID, deta
 
 export function insertMany<T extends Table>(table: T, rows: Row<T>[], actorId: ID, detail?: string) {
   if (rows.length === 0) return;
+  for (const r of rows) assertMayWrite(table, r as unknown as Record<string, unknown>, actorId);
   const next = { ...db, [table]: [...(db[table] as Row<T>[]), ...rows] } as DB;
   next.audit = [...next.audit, ...rows.map((r) => auditEvent(actorId, 'create', table, (r as { id: ID }).id, detail))];
   commit(next);
@@ -173,6 +238,8 @@ export function insertMany<T extends Table>(table: T, rows: Row<T>[], actorId: I
 
 export function update<T extends Table>(table: T, id: ID, patch: Partial<Row<T>>, actorId: ID, detail?: string) {
   const rows = db[table] as (Row<T> & { id: ID })[];
+  const cur = rows.find((r) => r.id === id);
+  if (cur) assertMayWrite(table, { ...cur, ...patch } as unknown as Record<string, unknown>, actorId, true);
   const next = { ...db, [table]: rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) } as DB;
   next.audit = [...next.audit, auditEvent(actorId, 'update', table, id, detail ?? Object.keys(patch).join(','))];
   commit(next);
