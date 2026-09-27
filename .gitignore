@@ -1,0 +1,7 @@
+node_modules
+dist
+*.log
+.DS_Store
+# Pose runtime assets are fetched/copied by scripts/prepare-pose-assets.mjs
+public/pose/wasm
+public/pose/models/*.task

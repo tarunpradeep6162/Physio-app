@@ -1,0 +1,23 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  build: {
+    target: 'es2022',
+    rollupOptions: {
+      output: {
+        // Keep the pose runtime in its own chunk so the camera path never waits on dashboard code.
+        manualChunks(id) {
+          if (id.includes('@mediapipe/tasks-vision')) return 'pose-runtime';
+          if (id.includes('node_modules/react')) return 'react';
+          return undefined;
+        },
+      },
+    },
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
+  },
+});
