@@ -160,6 +160,8 @@ Tamil text for strings added in these phases falls back to English and needs a c
 
 ## Unresolved bugs and limits
 
+**Post-report engineering update (2026-09-27):** the camera screen now withholds a stale reading when frames stop, and a worker timeout triggers fallback (commit `314318c`). The migration export now follows demo record relationships so child rows without a patient ID are excluded; an import-boundary integrity verifier is implemented but not connected to a server. Narrow-screen NPRS choices use four columns for larger tap targets. These updates do not change the real-device, clinical-approval, agreement-study or server gates below. The deployment row at the end of this historical report refers to the earlier measured release; check current Vercel deployment metadata for the latest commit.
+
 1. **Free-standing object over the torso** (no hands on it): the model reports the covered landmarks as visible and on the body, so a value can still be shown. The held-phone case is fixed by the hands-in-front rule. The segmentation mask did not separate the object in tests.
 2. **Bystander:** when the model itself switches to the second person without a large jump, the identity guard cannot tell. A few unsafe frames remain in the lab scenario.
 3. **Heel slide on the mannequin:** some frames in the first cycle read the wrong side before the lateral lock settles. Those frames are refused, not mis-measured, but they reduce coverage.
