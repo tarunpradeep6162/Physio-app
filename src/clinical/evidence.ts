@@ -84,17 +84,22 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
     });
 
   // --- Patient-reported: history answers ----------------------------------------------------
-  const rows = db.intakeAnswers.filter((r) => r.assessmentId === assessmentId && !r.supersededBy);
-  const answers = currentAnswers(rows);
+  const own = db.intakeAnswers.filter((r) => r.assessmentId === assessmentId && !r.supersededBy);
+  // A reassessment re-asks only some questions; the rest are carried from the baseline, labelled.
+  const baseRows = a.baselineAssessmentId ? db.intakeAnswers.filter((r) => r.assessmentId === a.baselineAssessmentId && !r.supersededBy) : [];
+  const ownAnswers = currentAnswers(own);
+  const answers = { ...currentAnswers(baseRows), ...ownAnswers };
   for (const q of HISTORY_QUESTIONNAIRE.questions) {
     const v = answers[q.id];
     if (v === undefined || v === null || v === '') continue;
+    const fromBaseline = ownAnswers[q.id] === undefined;
+    const rows = fromBaseline ? baseRows : own;
     const row = rows.filter((r) => r.questionId === q.id).sort((x, y) => y.answeredAt.localeCompare(x.answeredAt))[0];
     const facts = Array.isArray(v) ? v.map((x) => `${q.id}:${x}`) : [`${q.id}:${v}`];
     out.push({
       id: `ans:${q.id}`,
       category: 'patient_reported',
-      label: q.text,
+      label: fromBaseline ? `${q.text} (from baseline)` : q.text,
       value: formatAnswer(q.id, v),
       facts,
       source: { kind: 'intake_answer', answerId: row.id, questionId: q.id, questionText: row.questionText, answeredAt: row.answeredAt, questionnaire: `${row.questionnaireId}@${row.questionnaireVersion}` },

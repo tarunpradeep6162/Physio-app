@@ -61,6 +61,7 @@ export function TrainSession() {
       painBefore: painBefore ?? undefined,
       painAfter: painAfter ?? undefined,
       rpe: rpe ?? undefined,
+      painEvents: outcomes.current.flatMap((o) => o.painEvents),
       results: outcomes.current.map((o) => ({ ...o.result, programExerciseId: o.programExerciseId })),
       provenance,
       isDemo: patient.isDemo,
@@ -111,6 +112,7 @@ export function TrainSession() {
       <MotionMirror
         key={pe.id}
         rx={pe.prescription}
+        painBefore={painBefore}
         onCancel={exitEarly}
         onDone={(o) => {
           outcomes.current.push({ ...o, programExerciseId: pe.id });

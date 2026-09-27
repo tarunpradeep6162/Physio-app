@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateCalibration, CalibrationGate, lightingFromPixels, type CalibrationRequirements } from './calibration';
 import { defaultPrescription, validatePrescription } from './exercises/definitions';
+import { painRuleOutcome } from './exercises/painRule';
 import { ExerciseRunner, type RunnerEvent } from './exerciseRunner';
 import { EmaFilter, KalmanFilter1D, OneEuroFilter } from './filters';
 import { FULL_BODY_LANDMARKS, LM } from './landmarks';
@@ -336,5 +337,15 @@ describe('exercise runner (end-to-end on synthetic frames)', () => {
   it('rejects unsafe prescriptions', () => {
     const rx = { ...defaultPrescription('straight_leg_raise', 'right'), target: { min: 70, max: 120 } };
     expect(validatePrescription(rx)).toContain('target_out_of_range');
+  });
+});
+
+describe('pain-pause rule', () => {
+  it('stops only under the clinician-configured limits', () => {
+    const rx = { ...defaultPrescription('knee_flexion', 'left'), painStopAt: 7, painRiseStop: 3 };
+    expect(painRuleOutcome(rx, 6, 4).stop).toBe(false);
+    expect(painRuleOutcome(rx, 7, 4).stop).toBe(true);
+    expect(painRuleOutcome(rx, 5, 2).stop).toBe(true);
+    expect(painRuleOutcome({ ...rx, painStopAt: undefined, painRiseStop: undefined }, 9, 1)).toEqual({ stop: false, rule: 'no pain rule configured' });
   });
 });

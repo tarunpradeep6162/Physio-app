@@ -6,9 +6,10 @@ import { CategoryBadge, DemoBadge, Notice, Stat, fmtDeg } from '../../components
 import { signOut } from '../../data/auth';
 import type { ConsentType } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
-import { activeProgram, adherence, fmtDate, fmtDateTime, latestAssessment, programExercises, sessionsFor } from '../../data/queries';
+import { activeProgram, adherence, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../../data/queries';
 import { getDb, insert, replaceDb, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
+import { reportStatus } from '../../clinical/report';
 import { LOCALES, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
@@ -23,7 +24,6 @@ export function PatientHome() {
   const exs = program ? programExercises(db, program.id) : [];
   const last = sessionsFor(db, patient.id)[0];
   const adh = adherence(db, patient.id, 7);
-  const assessment = latestAssessment(db, patient.id);
   const clinician = program ? db.clinicians.find((c) => c.id === program.approvedBy) : undefined;
   const alerts = db.alerts.filter((a) => a.patientId === patient.id && !a.resolvedAt && a.type.startsWith('red_flag'));
 
@@ -86,16 +86,53 @@ export function PatientHome() {
             sub={last ? `${fmtDate(last.startedAt)} · ${t('session.peak_rom')}` : undefined}
           />
         </div>
-        <Link to="/p/assess" className="panel" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="row between">
-            <Stat label={t('home.assessment_status')} value={<IconScan width={30} />} sub={assessment ? t(assessment.status === 'reviewed' ? 'assess.reviewed' : assessment.status === 'in_progress' ? 'assess.resume' : 'assess.submitted') : t('assess.start')} />
-            <IconChevron width={20} />
-          </div>
-        </Link>
+        <KneeCard patientId={patient.id} />
       </div>
       <Link to="/p/progress" className="btn secondary">
         {t('home.recent_progress')} <IconChevron width={18} />
       </Link>
+    </div>
+  );
+}
+
+/** Knee assessment status: resume, matched reassessment and the approved report. */
+function KneeCard({ patientId }: { patientId: string }) {
+  const db = useDb((d) => d);
+  const knee = db.assessments.filter((a) => a.patientId === patientId && a.region === 'knee').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const open = knee.find((a) => !a.submittedAt);
+  const lastDone = knee.find((a) => a.submittedAt);
+  const reviewed = knee.find((a) => a.status === 'reviewed');
+  const approved = lastDone ? reportStatus(db, lastDone.id).state === 'clinician_reviewed' : false;
+  return (
+    <div className="panel stack tight">
+      <span className="stat-label">Knee assessment</span>
+      {open ? (
+        <>
+          <strong>In progress</strong>
+          <Link to="/p/assess" className="btn primary sm">
+            <IconScan width={16} /> Resume
+          </Link>
+        </>
+      ) : lastDone ? (
+        <>
+          <strong>{lastDone.status === 'reviewed' ? 'Reviewed by your physiotherapist' : lastDone.status === 'safety_hold' ? 'Waiting for physiotherapist (safety review)' : 'Submitted — awaiting review'}</strong>
+          <span className="xs muted">{fmtDate(lastDone.submittedAt!)}</span>
+          {approved && (
+            <Link to={`/report/${lastDone.id}?audience=patient`} className="btn secondary sm">
+              View report
+            </Link>
+          )}
+          {reviewed && (
+            <Link to={`/p/assess?reassess=${reviewed.id}`} className="btn secondary sm">
+              Start matched reassessment
+            </Link>
+          )}
+        </>
+      ) : (
+        <Link to="/p/assess" className="btn primary sm">
+          <IconScan width={16} /> Start knee assessment
+        </Link>
+      )}
     </div>
   );
 }

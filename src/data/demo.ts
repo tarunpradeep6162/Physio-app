@@ -1,361 +1,192 @@
-import type { ExerciseResult } from '../engine/exerciseRunner';
-import { defaultPrescription } from '../engine/exercises/definitions';
-import type { ExerciseId, ExercisePrescription } from '../engine/exercises/types';
-import { MEASUREMENT_ALGORITHM_VERSION } from '../engine/measurements';
+import { HISTORY_QUESTIONNAIRE, type AnswerValue } from '../clinical/intake';
+import { evaluate, RULE_SET } from '../clinical/reasoning';
+import { buildEvidence } from '../clinical/evidence';
+import { REPORT_TEMPLATE_VERSION } from '../clinical/report';
+import { evaluateSafety, SAFETY_QUESTIONNAIRE } from '../clinical/safety';
+import { defaultPrescription, getDefinition } from '../engine/exercises/definitions';
+import { simulateExercise } from '../engine/exercises/simulateSession';
+import type { ExercisePrescription } from '../engine/exercises/types';
+import { MotionPipeline } from '../engine/pipeline';
 import { synthesize } from '../engine/pose/synthetic';
-import { ENGINE_VERSION, type Provenance } from '../engine/provenance';
+import { getProtocol } from '../engine/protocols/knee';
+import { captureConfig, compareConfig } from '../engine/protocols/recorder';
+import { sceneAt, SIM_PROVIDER, simulateCapture, type SimParams } from '../engine/protocols/simulate';
+import { cameraProvenance, type DeviceContext } from '../engine/provenance';
 import type { Side } from '../engine/types';
-import type { DB, Measurement, Patient, TrainingSession } from './models';
+import { buildCaptureRows } from '../features/knee/persist';
+import type { Assessment, CaptureSession, DB, Measurement, Patient, TrainingSession } from './models';
 import { emptyDb, getDb, replaceDb, uuid } from './store';
 
 /**
- * DEMONSTRATION DATA. Every row is flagged `isDemo: true` and every measurement carries
- * provenance source "simulated_demo". The UI shows a DEMO badge/banner wherever it appears.
- * Names are fictional.
+ * DEMONSTRATION DATA — knee pathway.
+ *
+ * - Patients are pseudonymous (DP-01 …); no real or realistic identifying details.
+ * - Every camera number is produced by running the REAL pipeline, protocol recorder and exercise
+ *   runner over synthetic landmark sequences (source = simulated_demo, shown as SIMULATED).
+ * - Patient answers are fictional and flagged demo. No hand-typed clinical measurement values.
  */
 
 const DAY = 86_400_000;
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
-const dateOnly = (msAgo: number) => iso(msAgo).slice(0, 10);
+const SIM_DEVICE: DeviceContext = { userAgent: 'simulator', platform: 'simulator', videoWidth: 720, videoHeight: 1280, facingMode: 'user', cameraRollDeg: 0, meanFps: 30, meanInferenceMs: 4 };
 
-function demoProv(createdBy: string, confidence: number, exercise?: { id: string; version: string }): Provenance {
-  return {
-    source: 'simulated_demo',
-    createdBy,
-    createdAt: new Date().toISOString(),
-    engineVersion: ENGINE_VERSION,
-    algorithmVersion: MEASUREMENT_ALGORITHM_VERSION,
-    poseModel: 'synthetic-skeleton',
-    poseModelVersion: '1.0.0',
-    poseProvider: 'simulated',
-    exerciseDefinition: exercise?.id,
-    exerciseDefinitionVersion: exercise?.version,
-    filter: 'one_euro',
-    confidence,
-  };
-}
-
-function trajectory(peak: number, reps: number, hold: number): { t: number; angle: number | null }[] {
-  const out: { t: number; angle: number | null }[] = [];
-  const cycle = 1.2 + 1.6 + hold + 1.8;
-  for (let i = 0; i < reps * cycle * 10; i++) {
-    const t = i / 10;
-    const k = t % cycle;
-    const e = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * x);
-    let a = 4;
-    if (k >= 1.2 && k < 2.8) a = 4 + e((k - 1.2) / 1.6) * (peak - 4);
-    else if (k >= 2.8 && k < 2.8 + hold) a = peak + Math.sin(t * 7) * 1.2;
-    else if (k >= 2.8 + hold) a = peak - e((k - 2.8 - hold) / 1.8) * (peak - 4);
-    out.push({ t: Math.round(t * 10) / 10, angle: Math.round(a * 10) / 10 });
-  }
-  return out;
-}
-
-function result(rx: ExercisePrescription, peak: number, completedReps: number, withTrajectory: boolean, seed: number): ExerciseResult {
-  const attempts = completedReps + (seed % 3);
-  const reps = Array.from({ length: attempts }, (_, i) => {
-    const counted = i < completedReps;
-    const p = counted ? peak - (i % 4) * 1.5 : rx.target.min - 6;
-    return {
-      index: i + 1,
-      set: Math.min(rx.sets, Math.floor(i / rx.reps) + 1),
-      startT: i * 6000,
-      endT: i * 6000 + 5200,
-      peak: p,
-      reachedTarget: counted,
-      heldSeconds: counted ? rx.holdSeconds : 0,
-      holdRequired: rx.holdSeconds,
-      holdAchieved: counted,
-      concentricMs: counted ? 1500 + (i % 3) * 120 : null,
-      eccentricMs: counted ? 1800 - (i % 2) * 200 : null,
-      maxVelocity: 90 + (i % 5) * 8,
-      tooFast: i % 7 === 3,
-      counted,
-      reason: counted ? undefined : ('target_not_reached' as const),
-    };
-  });
-  const peaks = reps.map((r) => r.peak);
-  return {
-    definitionId: rx.definitionId,
-    definitionVersion: rx.definitionVersion,
-    algorithmVersion: MEASUREMENT_ALGORITHM_VERSION,
-    side: rx.side,
-    prescription: rx,
-    setsCompleted: rx.sets,
-    repsCompleted: completedReps,
-    repsAttempted: attempts,
-    reps,
-    peakRom: Math.max(...peaks),
-    meanPeakRom: peaks.reduce((a, b) => a + b, 0) / peaks.length,
-    holdsAchieved: completedReps,
-    holdsRequired: completedReps,
-    meanConcentricMs: 1620,
-    meanEccentricMs: 1700,
-    fastReps: reps.filter((r) => r.tooFast).length,
-    formCues: seed % 2 ? { trunk_upright: 1 } : {},
-    trackingCoverage: 0.93 + (seed % 5) / 100,
-    meanConfidence: 0.88,
-    trajectory: withTrajectory ? trajectory(peak, Math.min(4, completedReps), rx.holdSeconds) : [],
-    durationSec: attempts * 6,
-    endedEarly: false,
-  };
-}
-
-interface Course {
-  exercises: { id: ExerciseId; side: Side; target: [number, number]; start: number; end: number }[];
-  weeks: number;
-  sessionsPerWeek: number[];
-  pain: number[];
+function simConfig(protocolId: string, side: Side | null, p: SimParams) {
+  const scene = sceneAt(protocolId, side, 0, p)!;
+  const pipe = new MotionPipeline('none');
+  let f = pipe.process({ timestamp: 0, width: 720, height: 1280, poses: [synthesize(scene)], inferenceMs: 4, provider: SIM_PROVIDER });
+  for (let i = 1; i < 10; i++) f = pipe.process({ timestamp: i * 33, width: 720, height: 1280, poses: [synthesize(scene)], inferenceMs: 4, provider: SIM_PROVIDER });
+  return captureConfig(f, 'user', 0);
 }
 
 export function buildDemoDb(): DB {
   const db = emptyDb();
   const now = new Date().toISOString();
-
   const clinUser = { id: uuid(), email: 'demo.clinician@physiovision.local', passwordHash: '', passwordSalt: '', role: 'clinician' as const, displayName: 'Dheepika', createdAt: now, isDemo: true };
   const clin = { id: uuid(), userId: clinUser.id, name: 'Dheepika', title: 'Physiotherapist', clinic: 'PhysioVision Clinic', createdAt: now, isDemo: true };
   db.users.push(clinUser);
   db.clinicians.push(clin);
-  db.settings = { ...db.settings, clinicName: 'PhysioVision Clinic' };
 
-  const mkPatient = (name: string, sex: Patient['sex'], age: number, concern: string, goal: string, withUser = false): Patient => {
+  const mkPatient = (code: string, sex: Patient['sex'], age: number, withUser: boolean): Patient => {
     let userId: string | null = null;
     if (withUser) {
-      const u = { id: uuid(), email: 'demo.patient@physiovision.local', passwordHash: '', passwordSalt: '', role: 'patient' as const, displayName: name, createdAt: now, isDemo: true };
+      const u = { id: uuid(), email: 'demo.patient@physiovision.local', passwordHash: '', passwordSalt: '', role: 'patient' as const, displayName: code, createdAt: now, isDemo: true };
       db.users.push(u);
       userId = u.id;
     }
-    const p: Patient = {
-      id: uuid(),
-      userId,
-      name,
-      sex,
-      dob: `${new Date().getFullYear() - age}-04-12`,
-      preferredLanguage: 'en',
-      concern,
-      goal,
-      createdAt: iso(40 * DAY),
-      isDemo: true,
-    };
+    const p: Patient = { id: uuid(), userId, name: `Demo patient ${code}`, sex, dob: `${new Date().getFullYear() - age}-06-01`, preferredLanguage: 'en', createdAt: iso(40 * DAY), isDemo: true };
     db.patients.push(p);
     db.careRelationships.push({ id: uuid(), patientId: p.id, clinicianId: clin.id, status: 'active', createdAt: p.createdAt });
-    for (const type of ['camera_processing', 'data_storage'] as const) {
-      db.consents.push({ id: uuid(), patientId: p.id, type, granted: true, textVersion: '2026-09', at: p.createdAt });
-    }
+    for (const type of ['camera_processing', 'data_storage'] as const) db.consents.push({ id: uuid(), patientId: p.id, type, granted: true, textVersion: '2026-09', at: p.createdAt });
     return p;
   };
 
-  const course = (p: Patient, c: Course, clinicianBaseline: Record<string, [number, number]>) => {
-    const startAgo = c.weeks * 7 * DAY;
-    const program = {
-      id: uuid(),
-      patientId: p.id,
-      clinicianId: clin.id,
-      title: 'Phase 1 — range of motion',
-      status: 'active' as const,
-      startDate: dateOnly(startAgo),
-      endDate: dateOnly(-3 * 7 * DAY),
-      approvedAt: iso(startAgo),
-      approvedBy: clin.id,
-      notes: 'Progress targets at reassessment.',
-      createdAt: iso(startAgo),
-      isDemo: true,
-    };
-    db.programs.push(program);
-    const pes = c.exercises.map((e, i) => {
-      const rx = { ...defaultPrescription(e.id, e.side), target: { min: e.target[0], max: e.target[1] }, sets: 2, reps: 10 };
-      const pe = { id: uuid(), programId: program.id, order: i, prescription: rx };
-      db.programExercises.push(pe);
-      return { pe, e };
-    });
-    // Baseline assessment (reviewed)
-    const assessment = { id: uuid(), patientId: p.id, createdBy: p.userId ?? clin.id, status: 'reviewed' as const, createdAt: iso(startAgo + DAY), submittedAt: iso(startAgo + DAY), reviewedAt: iso(startAgo), reviewedBy: clin.id, step: 5, isDemo: true };
-    db.assessments.push(assessment);
-    db.pros.push({ id: uuid(), patientId: p.id, assessmentId: assessment.id, type: 'nprs_now', value: c.pain[0], recordedAt: assessment.createdAt, isDemo: true });
-
-    let sessionIdx = 0;
-    const totalSessions = c.sessionsPerWeek.reduce((a, b) => a + b, 0);
-    c.sessionsPerWeek.forEach((n, week) => {
-      for (let s = 0; s < n; s++) {
-        const ago = startAgo - week * 7 * DAY - s * Math.floor(7 / Math.max(1, n)) * DAY - DAY;
-        if (ago < DAY / 2) continue;
-        const frac = sessionIdx / Math.max(1, totalSessions - 1);
-        const painIdx = Math.min(c.pain.length - 1, Math.round(frac * (c.pain.length - 1)));
-        const sid = uuid();
-        const results = pes.map(({ pe, e }, k) => {
-          const peak = e.start + (e.end - e.start) * frac + ((sessionIdx * 7 + k * 3) % 5) - 2;
-          const done = Math.min(pe.prescription.reps * pe.prescription.sets, 14 + Math.round(frac * 6));
-          return { ...result(pe.prescription, Math.round(peak * 10) / 10, done, sessionIdx >= totalSessions - 3, sessionIdx + k), programExerciseId: pe.id };
-        });
-        const session: TrainingSession = {
-          id: sid,
-          patientId: p.id,
-          programId: program.id,
-          startedAt: iso(ago),
-          endedAt: iso(ago - 18 * 60_000),
-          status: 'completed',
-          painBefore: c.pain[painIdx],
-          painAfter: Math.max(0, c.pain[painIdx] - (sessionIdx % 3 === 0 ? 1 : 0)),
-          rpe: 4 + (sessionIdx % 3),
-          results,
-          provenance: demoProv(p.userId ?? p.id, 0.88),
-          isDemo: true,
-        };
-        db.sessions.push(session);
-        for (const r of results) {
-          db.measurements.push({
-            id: uuid(),
-            patientId: p.id,
-            sessionId: sid,
-            type: getMeasureType(r.definitionId as ExerciseId),
-            value: r.peakRom!,
-            unit: 'deg',
-            side: r.side,
-            confidence: 0.88,
-            category: 'camera_estimate',
-            provenance: demoProv(p.userId ?? p.id, 0.88, { id: r.definitionId, version: r.definitionVersion }),
-            reviewStatus: 'accepted',
-            reviewedBy: clin.id,
-            reviewedAt: session.endedAt,
-            createdAt: session.startedAt,
-            isDemo: true,
-          });
-        }
-        sessionIdx++;
-      }
-    });
-
-    // Clinician goniometer measurements at baseline and at the latest reassessment.
-    for (const [type, [baseline, latest]] of Object.entries(clinicianBaseline)) {
-      const side = c.exercises[0].side;
-      const mk = (value: number, ago: number): Measurement => ({
-        id: uuid(),
-        patientId: p.id,
-        type,
-        value,
-        unit: 'deg',
-        side,
-        confidence: 1,
-        category: 'clinician_measured',
-        provenance: { ...demoProv(clin.id, 1), source: 'clinician_goniometer' },
-        reviewStatus: 'accepted',
-        createdAt: iso(ago),
-        isDemo: true,
-      });
-      db.measurements.push(mk(baseline, startAgo), mk(latest, 3 * DAY));
-    }
-    return program;
+  const mkAssessment = (p: Patient, ago: number, extra: Partial<Assessment> = {}): Assessment => {
+    const a: Assessment = { id: uuid(), patientId: p.id, createdBy: p.userId ?? clin.id, status: 'submitted', createdAt: iso(ago), submittedAt: iso(ago - 3600_000), step: 5, region: 'knee', type: 'initial', safetyLevel: 'clear', isDemo: true, ...extra };
+    db.assessments.push(a);
+    return a;
   };
+  const answer = (a: Assessment, ago: number, answers: Record<string, AnswerValue>) => {
+    for (const [qid, v] of Object.entries(answers))
+      db.intakeAnswers.push({ id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: HISTORY_QUESTIONNAIRE.id, questionnaireVersion: HISTORY_QUESTIONNAIRE.version, questionId: qid, questionText: HISTORY_QUESTIONNAIRE.questions.find((q) => q.id === qid)?.text ?? qid, answer: v, answeredAt: iso(ago), isDemo: true });
+  };
+  const safety = (a: Assessment, ago: number, yes: string[] = []) => {
+    const ans = Object.fromEntries(SAFETY_QUESTIONNAIRE.items.map((i) => [i.id, yes.includes(i.id)]));
+    for (const it of SAFETY_QUESTIONNAIRE.items)
+      db.safetyResponses.push({ id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: SAFETY_QUESTIONNAIRE.id, questionnaireVersion: SAFETY_QUESTIONNAIRE.version, questionId: it.id, questionText: it.text, answer: ans[it.id], triggered: ans[it.id], action: ans[it.id] ? it.action : null, at: iso(ago), isDemo: true });
+    return evaluateSafety(ans).level;
+  };
+  const plan = (a: Assessment, ago: number) => {
+    const items = [
+      { protocolId: 'knee_supported_flexion', side: 'left' as const },
+      { protocolId: 'knee_supported_flexion', side: 'right' as const },
+      { protocolId: 'knee_sit_to_stand', side: 'left' as const },
+      { protocolId: 'knee_squat', side: null },
+    ].map((i) => ({ ...i, protocolVersion: getProtocol(i.protocolId).version }));
+    db.testPlans.push({ id: uuid(), assessmentId: a.id, items, source: a.type === 'reassessment' ? 'baseline_copy' : 'protocol_default', createdBy: clin.id, createdAt: iso(ago) });
+  };
+  const capture = (a: Assessment, ago: number, protocolId: string, side: Side | null, p: SimParams, baseline?: CaptureSession): CaptureSession => {
+    const result = simulateCapture(protocolId, side, { seed: Math.floor(Math.random() * 1000), ...p });
+    const config = simConfig(protocolId, side, p);
+    const conditionMatch = baseline?.config && config ? compareConfig(baseline.config, config) : undefined;
+    const { cap, ms } = buildCaptureRows(a, a.createdBy, protocolId, side, { result, config, conditionMatch, provider: SIM_PROVIDER, device: SIM_DEVICE, setupNotes: protocolId === 'knee_sit_to_stand' ? 'Chair 45 cm, trainers (demo)' : undefined }, baseline, iso(ago));
+    db.captures.push(cap);
+    db.measurements.push(...ms);
+    return cap;
+  };
+  const kneeRegion = (a: Assessment, side: Side, sub: string[], symptoms: ('pain' | 'stiffness' | 'weakness' | 'numbness' | 'tingling')[]) =>
+    db.painRegions.push({ id: uuid(), assessmentId: a.id, regionId: `knee_${side}`, anatomy: 'knee', side, symptomTypes: symptoms, subLocations: sub });
 
-  // 1) Demo patient user (post-operative knee) — primary patient-experience demo.
-  const arun = mkPatient('Arun Kumar', 'male', 34, 'Left knee stiffness after ACL reconstruction 6 weeks ago.', 'Climb stairs and return to badminton.', true);
-  course(
-    arun,
-    {
-      exercises: [
-        { id: 'knee_flexion', side: 'left', target: [85, 105], start: 72, end: 91 },
-        { id: 'straight_leg_raise', side: 'left', target: [35, 50], start: 28, end: 44 },
-      ],
-      weeks: 4,
-      sessionsPerWeek: [4, 5, 4, 3],
-      pain: [6, 5, 5, 4, 3],
-    },
-    { knee_flexion: [75, 94] },
-  );
-
-  // 2) Shoulder
-  const meena = mkPatient('Meena Rajan', 'female', 52, 'Right shoulder stiffness; cannot reach the top shelf.', 'Comb hair and hang washing without pain.');
-  course(
-    meena,
-    {
-      exercises: [{ id: 'shoulder_flexion', side: 'right', target: [140, 170], start: 108, end: 141 }],
-      weeks: 5,
-      sessionsPerWeek: [3, 4, 4, 5, 3],
-      pain: [7, 6, 5, 4, 4],
-    },
-    { shoulder_flexion: [112, 145] },
-  );
-
-  // 3) Low adherence + pain increase (older adult knee)
-  const lakshmi = mkPatient('Lakshmi Devi', 'female', 68, 'Right knee pain when walking and on stairs, several months.', 'Walk to the temple without stopping.');
-  course(
-    lakshmi,
-    {
-      exercises: [{ id: 'knee_flexion', side: 'right', target: [80, 100], start: 78, end: 84 }],
-      weeks: 3,
-      sessionsPerWeek: [3, 1, 1],
-      pain: [5, 5, 6, 7],
-    },
-    {},
-  );
-  db.alerts.push(
-    { id: uuid(), patientId: lakshmi.id, type: 'pain_increase', severity: 'warning', detail: 'Session pain 5 → 7 over the last week', createdAt: iso(2 * DAY), isDemo: true },
-    { id: uuid(), patientId: lakshmi.id, type: 'low_adherence', severity: 'info', detail: '2 of 10 planned sessions in 14 days', createdAt: iso(DAY), isDemo: true },
-  );
-
-  // 4) New patient with a submitted assessment awaiting review.
-  const karthik = mkPatient('Karthik S', 'male', 27, 'Lower back and right shoulder ache after long hours at a desk.', 'Work a full day without pain.');
-  const a = { id: uuid(), patientId: karthik.id, createdBy: karthik.id, status: 'submitted' as const, createdAt: iso(DAY), submittedAt: iso(DAY - 3600_000), step: 5, isDemo: true };
-  db.assessments.push(a);
-  for (const r of ['lower_back_center', 'shoulder_right_back', 'neck_back']) db.painRegions.push({ id: uuid(), assessmentId: a.id, regionId: r });
-  const pro = (type: import('./models').ProType, value: import('./models').PatientReportedOutcome['value']) =>
-    db.pros.push({ id: uuid(), patientId: karthik.id, assessmentId: a.id, type, value, recordedAt: a.createdAt, isDemo: true });
-  pro('nprs_now', 4);
-  pro('nprs_worst_24h', 6);
-  pro('pain_quality', ['dull', 'stiffness']);
-  pro('duration', '6_12w');
-  pro('onset', 'gradual');
-  pro('aggravating', ['sitting', 'bending']);
-  pro('pattern', 'intermittent');
-  pro('red_flags', {});
-  db.alerts.push({ id: uuid(), patientId: karthik.id, type: 'assessment_submitted', severity: 'info', createdAt: a.submittedAt, isDemo: true });
-
-  const scanLm = synthesize({ kind: 'standing_anterior', shoulderTiltDeg: 3.4, pelvicTiltDeg: 1.1 }, { noisePx: 0.5 });
-  const scan = { id: uuid(), patientId: karthik.id, assessmentId: a.id, kind: 'static_posture' as const, view: 'anterior', frameWidth: 720, frameHeight: 1280, landmarks: scanLm, provenance: demoProv(karthik.id, 0.91), createdAt: a.createdAt, isDemo: true };
-  const scanLat = { id: uuid(), patientId: karthik.id, assessmentId: a.id, kind: 'static_posture' as const, view: 'lateral_right', frameWidth: 720, frameHeight: 1280, landmarks: synthesize({ kind: 'standing_lateral', side: 'right', trunkLean: 6 }, { noisePx: 0.5 }), provenance: demoProv(karthik.id, 0.86), createdAt: a.createdAt, isDemo: true };
-  db.scans.push(scan, scanLat);
-  const pm = (scanId: string, type: string, value: number, confidence: number, direction?: string, sd = 0.6): Measurement => ({
-    id: uuid(),
-    patientId: karthik.id,
-    assessmentId: a.id,
-    scanId,
-    type: `posture.${type}`,
-    value,
-    unit: 'deg',
-    direction,
-    sd,
-    confidence,
-    category: 'camera_estimate',
-    provenance: demoProv(karthik.id, confidence),
-    reviewStatus: 'pending',
-    createdAt: a.createdAt,
-    isDemo: true,
+  // ---- DP-01: post-injury knee — reviewed baseline, program, sessions, matched reassessment ----
+  const p1 = mkPatient('DP-01', 'male', 34, true);
+  const base = mkAssessment(p1, 30 * DAY, { status: 'reviewed', reviewedAt: iso(29 * DAY), reviewedBy: clin.id });
+  kneeRegion(base, 'left', ['medial'], ['pain', 'stiffness']);
+  answer(base, 30 * DAY, { onset: 'sudden', mechanism: ['twisting'], duration: '1_6w', nprs_now: 5, nprs_worst: 7, nprs_best: 2, pattern: 'intermittent', time_of_day: ['during_activity'], night: 'position', aggravating: ['squatting', 'stairs_down', 'pivoting'], easing: ['rest', 'ice'], swelling: 'after_6h', locking: 'catching', giving_way: 'no', func_stairs: 2, func_squat: 3, func_walk: 1, func_chair: 2, prev_injury: 'no', conditions: ['none'], prior_care: ['none'], occupation: 'desk', activity: 'recreational', goal: 'Play badminton again (demo)' });
+  safety(base, 30 * DAY);
+  plan(base, 30 * DAY);
+  const bFlexL = capture(base, 30 * DAY, 'knee_supported_flexion', 'left', { peak: 98 });
+  const bFlexR = capture(base, 30 * DAY - 60_000, 'knee_supported_flexion', 'right', { peak: 131 });
+  const bSts = capture(base, 30 * DAY - 120_000, 'knee_sit_to_stand', 'left', { tempo: 1.3 });
+  const bSq = capture(base, 30 * DAY - 180_000, 'knee_squat', null, { valgusLeft: 11, valgusRight: 3, peak: 0.26 });
+  // Clinician review of the baseline (actions preserved with the suggestion snapshot).
+  const evB = evaluate(buildEvidence(db, base.id), 'clear');
+  const decide = (id: string, action: 'accept' | 'reject' | 'defer', note: string) => {
+    const r = evB.find((x) => x.rule.id === id)!;
+    db.reasoningDecisions.push({ id: uuid(), assessmentId: base.id, ruleSetId: RULE_SET.id, ruleSetVersion: RULE_SET.version, considerationId: id, suggestion: { state: r.state, supporting: r.supporting.map((s) => s.label), conflicting: r.conflicting.map((s) => s.label), missing: r.missing }, action, note, by: clinUser.id, at: iso(29 * DAY), isDemo: true });
+  };
+  decide('meniscal', 'accept', 'Demo: medial joint-line tenderness on examination.');
+  decide('ligamentous', 'reject', 'Demo: Lachman negative, no instability.');
+  decide('patellofemoral', 'defer', 'Demo: reassess once swelling settles.');
+  db.impressions.push({ id: uuid(), assessmentId: base.id, text: 'Demo impression: presentation consistent with a medial meniscal-related knee problem after a twisting injury; left knee flexion reduced compared with right. Graded range-of-motion and loading program; reassess in 4 weeks.', by: clinUser.id, at: iso(29 * DAY), isDemo: true });
+  db.measurements.filter((m) => m.assessmentId === base.id && m.validity === 'valid').forEach((m) => {
+    m.reviewStatus = 'accepted';
+    m.reviewedBy = clinUser.id;
+    m.reviewedAt = iso(29 * DAY);
   });
-  const m1 = pm(scan.id, 'shoulder_level', 3.4, 0.91, 'left_higher');
-  const m2 = pm(scan.id, 'pelvic_level', 1.1, 0.89, 'left_higher');
-  const m3 = pm(scan.id, 'trunk_lateral_lean', 0.8, 0.9, 'neutral');
-  const m4 = pm(scanLat.id, 'trunk_sagittal', 6.2, 0.84, undefined, 1.1);
-  const m5 = pm(scanLat.id, 'ear_shoulder_line', 17.5, 0.78, undefined, 1.8);
-  const m6: Measurement = { ...pm(scanLat.id, 'x', 158, 0.83), type: 'shoulder_flexion', side: 'right', scanId: undefined, provenance: demoProv(karthik.id, 0.83, { id: 'shoulder_flexion', version: '1.0.0' }) };
-  db.measurements.push(m1, m2, m3, m4, m5, m6);
-  const thr = db.settings.thresholds;
-  db.observations.push(
-    { id: uuid(), patientId: karthik.id, assessmentId: a.id, measurementId: m1.id, rule: 'shoulder_level', threshold: thr.shoulder_level, value: 3.4, status: 'pending', createdAt: a.createdAt, isDemo: true },
-    { id: uuid(), patientId: karthik.id, assessmentId: a.id, measurementId: m5.id, rule: 'ear_shoulder_line', threshold: thr.ear_shoulder_line, value: 17.5, status: 'pending', createdAt: a.createdAt, isDemo: true },
-  );
+  db.reports.push({ id: uuid(), assessmentId: base.id, version: 1, status: 'clinician_reviewed', generatedAt: iso(29 * DAY - 60_000), generatedBy: clinUser.id, approvedBy: clin.id, approvedAt: iso(29 * DAY - 60_000), templateVersion: REPORT_TEMPLATE_VERSION, isDemo: true });
 
-  db.notes.push({ id: uuid(), patientId: arun.id, authorId: clin.id, body: 'Wound healed. Good quadriceps activation. Progress flexion target to 95–110° next week if pain ≤ 3/10.', createdAt: iso(3 * DAY), isDemo: true });
-  db.messages.push(
-    { id: uuid(), patientId: arun.id, fromUserId: clinUser.id, fromName: 'Dheepika', body: 'Hi Arun, your knee flexion is improving well. Keep the holds slow and controlled.', at: iso(2 * DAY), isDemo: true },
-  );
+  // Program + engine-derived sessions.
+  const program = { id: uuid(), patientId: p1.id, clinicianId: clin.id, title: 'Phase 1 — knee range and control', status: 'active' as const, startDate: iso(28 * DAY).slice(0, 10), endDate: iso(-14 * DAY).slice(0, 10), approvedAt: iso(28 * DAY), approvedBy: clin.id, notes: 'Demo program', createdAt: iso(28 * DAY), isDemo: true };
+  db.programs.push(program);
+  const rxs: ExercisePrescription[] = [
+    { ...defaultPrescription('knee_flexion', 'left'), target: { min: 90, max: 110 }, sets: 1, reps: 6, holdSeconds: 2, painStopAt: 7, painRiseStop: 3, progression: 'Raise target 10° when pain ≤ 3/10 and target met in 2 consecutive sessions (clinician decision at review).' },
+    { ...defaultPrescription('straight_leg_raise', 'left'), sets: 1, reps: 6, holdSeconds: 2, painStopAt: 7 },
+  ];
+  const pes = rxs.map((rx, i) => ({ id: uuid(), programId: program.id, order: i, prescription: rx }));
+  db.programExercises.push(...pes);
+  const sessionDays = [26, 23, 20, 16, 12, 9, 6, 3];
+  sessionDays.forEach((d, k) => {
+    const frac = k / (sessionDays.length - 1);
+    const sid = uuid();
+    const results = pes.map((pe, j) => ({ ...simulateExercise(pe.prescription, pe.prescription.definitionId === 'knee_flexion' ? 92 + frac * 14 : 38 + frac * 8, 10, k * 10 + j), programExerciseId: pe.id }));
+    const painBefore = Math.round(5 - frac * 3);
+    const session: TrainingSession = { id: sid, patientId: p1.id, programId: program.id, startedAt: iso(d * DAY), endedAt: iso(d * DAY - 15 * 60_000), status: 'completed', painBefore, painAfter: Math.max(0, painBefore - (k % 2)), rpe: 4 + (k % 3), painEvents: [], results, provenance: cameraProvenance({ createdBy: p1.userId!, provider: SIM_PROVIDER, confidence: 0.9, filter: 'one_euro' }), isDemo: true };
+    db.sessions.push(session);
+    for (const r of results) {
+      if (r.peakRom === null) continue;
+      const m: Measurement = { id: uuid(), patientId: p1.id, sessionId: sid, type: getDefinition(r.prescription.definitionId).primary, value: Math.round(r.peakRom * 10) / 10, unit: 'deg', side: r.side, confidence: r.meanConfidence ?? 0, category: 'camera_estimate', provenance: session.provenance, reviewStatus: 'pending', createdAt: session.startedAt, isDemo: true };
+      db.measurements.push(m);
+    }
+  });
+
+  // Matched reassessment (submitted, awaiting review).
+  const re = mkAssessment(p1, 2 * DAY, { type: 'reassessment', baselineAssessmentId: base.id });
+  kneeRegion(re, 'left', ['medial'], ['pain']);
+  answer(re, 2 * DAY, { nprs_now: 2, nprs_worst: 4, nprs_best: 0, pattern: 'intermittent', night: 'none', aggravating: ['squatting'], swelling: 'none', locking: 'no', giving_way: 'no', func_stairs: 1, func_squat: 2, func_walk: 0, func_chair: 1 });
+  safety(re, 2 * DAY);
+  plan(re, 2 * DAY);
+  capture(re, 2 * DAY, 'knee_supported_flexion', 'left', { peak: 117 }, bFlexL);
+  capture(re, 2 * DAY - 60_000, 'knee_supported_flexion', 'right', { peak: 132 }, bFlexR);
+  capture(re, 2 * DAY - 120_000, 'knee_sit_to_stand', 'left', { tempo: 1.05 }, bSts);
+  capture(re, 2 * DAY - 180_000, 'knee_squat', null, { valgusLeft: 7, valgusRight: 3, peak: 0.3 }, bSq);
+  db.alerts.push({ id: uuid(), patientId: p1.id, type: 'assessment_submitted', severity: 'info', detail: 'Knee reassessment', createdAt: iso(2 * DAY), isDemo: true });
+
+  // ---- DP-02: gradual-onset knee pain, initial assessment awaiting review ----------------------
+  const p2 = mkPatient('DP-02', 'female', 58, false);
+  const a2 = mkAssessment(p2, 1 * DAY);
+  kneeRegion(a2, 'right', ['anterior', 'medial'], ['pain', 'stiffness']);
+  answer(a2, 1 * DAY, { onset: 'gradual', duration: 'gt3m', nprs_now: 4, nprs_worst: 6, pattern: 'intermittent', time_of_day: ['morning', 'after_activity'], morning_stiffness: 'lt30', night: 'position', aggravating: ['stairs_down', 'walking', 'standing'], easing: ['rest', 'medication'], swelling: 'comes_goes', locking: 'no', giving_way: 'occasional', func_stairs: 2, func_squat: 3, func_walk: 2, func_chair: 2, prev_injury: 'no', conditions: ['none'], prior_care: ['medication'], occupation: 'home', activity: 'sedentary', goal: 'Walk to the market without stopping (demo)' });
+  safety(a2, 1 * DAY);
+  plan(a2, 1 * DAY);
+  capture(a2, 1 * DAY, 'knee_supported_flexion', 'left', { peak: 124 });
+  capture(a2, 1 * DAY - 60_000, 'knee_supported_flexion', 'right', { peak: 109 });
+  capture(a2, 1 * DAY - 120_000, 'knee_sit_to_stand', 'right', { tempo: 1.5 });
+  // An invalid capture (joint occluded) — kept for audit, excluded from results.
+  capture(a2, 1 * DAY - 180_000, 'knee_squat', null, { valgusLeft: 4, valgusRight: 5, perturb: (l, t) => (t > 3 ? l.map((x, i) => (i === 26 ? { ...x, visibility: 0.2 } : x)) : l) });
+  db.alerts.push({ id: uuid(), patientId: p2.id, type: 'assessment_submitted', severity: 'info', detail: 'Knee assessment', createdAt: iso(DAY), isDemo: true });
+
+  // ---- DP-03: safety pathway triggered ---------------------------------------------------------
+  const p3 = mkPatient('DP-03', 'female', 45, false);
+  const a3 = mkAssessment(p3, 0.3 * DAY, { status: 'safety_hold' });
+  kneeRegion(a3, 'left', ['whole'], ['pain']);
+  answer(a3, 0.3 * DAY, { onset: 'after_surgery', surgery_type: 'replacement', duration: '1_6w', nprs_now: 6, nprs_worst: 8 });
+  const lvl = safety(a3, 0.3 * DAY, ['calf']);
+  a3.safetyLevel = lvl;
+  db.alerts.push({ id: uuid(), patientId: p3.id, type: 'red_flag_urgent', severity: 'critical', detail: `${lvl}: calf (${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version})`, createdAt: iso(0.3 * DAY), isDemo: true });
+
   return db;
 }
 
-function getMeasureType(id: ExerciseId): string {
-  return id === 'knee_flexion' ? 'knee_flexion' : id === 'straight_leg_raise' ? 'hip_flexion_slr' : 'shoulder_flexion';
-}
-
-/** Seeds demo data on first run (or when the store has no demo rows and the user asks). */
+/** Seeds demo data (idempotent). */
 export function ensureDemoData() {
   const cur = getDb();
   if (cur.users.some((u) => u.isDemo)) return;

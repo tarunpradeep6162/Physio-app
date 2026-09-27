@@ -29,6 +29,8 @@ export interface ConsiderationRule {
   /** Question/test ids whose absence means information is missing. */
   informative: { key: string; label: string }[];
   requiresExamination: boolean;
+  /** Defining feature: without it the consideration can never be "supportive". */
+  defining?: { fact: string; label: string; questionKey: string };
   furtherExamination: string[];
   whatWouldChange: string[];
   references?: string[];
@@ -145,6 +147,7 @@ export const KNEE_RULES: ConsiderationRule[] = [
       { fact: 'rom:flexion_asymmetry', label: 'Left/right flexion difference (algorithmic)' },
     ],
     conflicting: [],
+    defining: { fact: 'onset:after_surgery', label: 'Onset after surgery', questionKey: 'onset' },
     informative: [
       { key: 'surgery_type', label: 'Type of surgery' },
       { key: 'surgery_date', label: 'Date of surgery' },
@@ -225,7 +228,15 @@ export function evaluate(evidence: EvidenceItem[], safety: SafetyLevel | undefin
     const conflicting = rule.conflicting.map((p) => ({ label: p.label, evidence: matchFacts(p.fact, facts) })).filter((x) => x.evidence.length);
     const missing = rule.informative.filter((i) => !isKnown(i.key, evidence)).map((i) => i.label);
     let state: ConsiderationState;
+    const definingPresent = !rule.defining || matchFacts(rule.defining.fact, facts).length > 0;
+    if (rule.defining && !definingPresent) {
+      if (isKnown(rule.defining.questionKey, evidence)) {
+        const answered = evidence.filter((e) => e.id === `ans:${rule.defining!.questionKey}`);
+        conflicting.push({ label: `Defining feature absent: ${rule.defining.label.toLowerCase()}`, evidence: answered });
+      } else missing.unshift(rule.defining.label);
+    }
     if (safety && safety !== 'clear') state = 'safety_hold';
+    else if (!definingPresent) state = conflicting.length ? 'conflicting' : 'insufficient_evidence';
     else if (supporting.length === 0) state = 'insufficient_evidence';
     else if (conflicting.length > supporting.length) state = 'conflicting';
     else if (rule.requiresExamination || conflicting.length > 0) state = 'additional_examination_required';

@@ -3,6 +3,11 @@ import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../../app/hooks';
 import { CategoryBadge, Notice, Segmented, Stat } from '../../components/ui';
 import { ensureDemoData } from '../../data/demo';
+import { OBSERVATION_RULES_VERSION } from '../../clinical/evidence';
+import { HISTORY_QUESTIONNAIRE } from '../../clinical/intake';
+import { RULE_SET } from '../../clinical/reasoning';
+import { SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
+import { PROTOCOLS } from '../../engine/protocols/knee';
 import type { ObservationThresholds } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
@@ -113,6 +118,14 @@ export function Analytics() {
   );
 }
 
+const RULESETS = [
+  { key: `${HISTORY_QUESTIONNAIRE.id}@${HISTORY_QUESTIONNAIRE.version}`, label: 'Adaptive history questionnaire' },
+  { key: `${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version}`, label: 'Safety (red-flag) questionnaire' },
+  { key: `${RULE_SET.id}@${RULE_SET.version}`, label: 'Reasoning considerations' },
+  { key: OBSERVATION_RULES_VERSION, label: 'Algorithmic observation rules' },
+  ...Object.values(PROTOCOLS).map((p) => ({ key: `${p.id}@${p.version}`, label: p.title })),
+];
+
 const THRESHOLD_LABELS: Record<keyof ObservationThresholds, string> = {
   shoulder_level: 'Shoulder level difference (°)',
   pelvic_level: 'Pelvic level difference (°)',
@@ -167,6 +180,52 @@ export function ClinicSettingsPage() {
         <button className="btn primary" onClick={() => updateSettings({ thresholds: thr }, user.id)}>
           Save thresholds
         </button>
+      </section>
+
+      <section className="panel stack">
+        <h2>Clinical rule sets & protocols</h2>
+        <p className="small muted">Safety criteria, reasoning rules, observation thresholds and test protocols are versioned. They show as DRAFT everywhere until a clinical lead records approval of that exact version here (audited).</p>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Rule set / protocol</th>
+                <th>Status</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {RULESETS.map((r) => {
+                const ap = settings.ruleApprovals[r.key];
+                return (
+                  <tr key={r.key}>
+                    <td className="small">
+                      {r.label} <span className="mono xs">{r.key}</span>
+                    </td>
+                    <td className="small">{ap ? `approved ${fmtDateTime(ap.approvedAt)}` : 'DRAFT'}</td>
+                    <td>
+                      {!ap && (
+                        <button
+                          className="btn sm secondary"
+                          disabled={!!users.find((u) => u.id === user.id)?.isDemo}
+                          onClick={() => {
+                            if (confirm(`Record that you, as clinical lead, have reviewed and approve ${r.key}?`)) updateSettings({ ruleApprovals: { ...settings.ruleApprovals, [r.key]: { approvedBy: user.id, approvedAt: new Date().toISOString() } } }, user.id);
+                          }}
+                        >
+                          Record approval
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <label className="field">
+          <span>Landmark data retention (days, 0 = keep until deleted). Raw video is never stored.</span>
+          <input className="input num" type="number" min={0} defaultValue={settings.retentionDays} onBlur={(e) => updateSettings({ retentionDays: Math.max(0, Number(e.target.value) || 0) }, user.id)} style={{ maxWidth: 160 }} />
+        </label>
       </section>
 
       <section className="panel stack">

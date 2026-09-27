@@ -24,7 +24,8 @@ const ClinicianOverview = lazy(() => named(import('../features/clinician/Clinici
 const PatientList = lazy(() => named(import('../features/clinician/ClinicianPages'), 'PatientList'));
 const PatientDetail = lazy(() => named(import('../features/clinician/ClinicianPages'), 'PatientDetail'));
 const AssessmentQueue = lazy(() => named(import('../features/clinician/AssessmentReview'), 'AssessmentQueue'));
-const AssessmentReview = lazy(() => named(import('../features/clinician/AssessmentReview'), 'AssessmentReview'));
+const AssessmentRoute = lazy(() => named(import('../features/knee/AssessmentRoute'), 'AssessmentRoute'));
+const ReportRoute = lazy(() => named(import('../features/report/ReportView'), 'ReportRoute'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
@@ -237,13 +238,14 @@ export function App() {
               <Route path="patients" element={<PatientList />} />
               <Route path="patients/:id" element={<PatientDetail />} />
               <Route path="assessments" element={<AssessmentQueue />} />
-              <Route path="assessments/:id" element={<AssessmentReview />} />
+              <Route path="assessments/:id" element={<AssessmentRoute />} />
               <Route path="programs" element={<ProgramsIndex />} />
               <Route path="programs/new" element={<ProgramBuilder />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<ClinicSettingsPage />} />
             </Route>
             <Route path="/validation" element={<ValidationGate />} />
+            <Route path="/report/:id" element={<ReportRoute />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

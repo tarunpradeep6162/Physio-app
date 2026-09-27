@@ -85,6 +85,12 @@ describe('evidence and reasoning', () => {
     expect(ev.some((e) => e.facts.includes('rom:flexion_asymmetry'))).toBe(true);
     const post = evaluate(ev, 'clear').find((r) => r.rule.id === 'post_operative')!;
     expect(post.state).toBe('supportive');
+    // Without its defining feature (onset after surgery) ROM findings alone are not supportive.
+    const db2 = dbWith({ onset: 'sudden' }, [{ regionId: 'knee_left' }]);
+    db2.captures = db.captures;
+    const post2 = evaluate(buildEvidence(db2, 'a'), 'clear').find((r) => r.rule.id === 'post_operative')!;
+    expect(post2.state).toBe('conflicting');
+    expect(post2.conflicting[0].label).toMatch(/Defining feature absent/);
 
     // A later INVALID recapture replaces the left result: no numeric facts may be drawn from it.
     mk('left', 95, true);

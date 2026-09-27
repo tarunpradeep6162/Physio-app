@@ -140,7 +140,8 @@ export function baselineCapture(db: DB, a: Assessment, protocolId: string, side:
   return latestCapture(db, a.baselineAssessmentId, protocolId, side);
 }
 
-export function saveCapture(a: Assessment, actorId: ID, protocolId: string, side: Side | null, o: CaptureOutcome, baseline?: CaptureSession): CaptureSession {
+/** Pure construction of a capture row and its measurement rows (used by the app and demo seeding). */
+export function buildCaptureRows(a: Pick<Assessment, 'id' | 'patientId' | 'isDemo'>, actorId: ID, protocolId: string, side: Side | null, o: CaptureOutcome, baseline?: CaptureSession, at = new Date().toISOString()): { cap: CaptureSession; ms: Measurement[] } {
   const def = getProtocol(protocolId);
   const prov = cameraProvenance({
     createdBy: actorId,
@@ -163,11 +164,10 @@ export function saveCapture(a: Assessment, actorId: ID, protocolId: string, side
     baselineCaptureId: baseline?.id,
     conditionMatch: o.conditionMatch,
     setupNotes: o.setupNotes,
-    provenance: { ...prov, algorithmVersion: o.result.algorithmVersion },
-    createdAt: new Date().toISOString(),
+    provenance: { ...prov, createdAt: at, algorithmVersion: o.result.algorithmVersion },
+    createdAt: at,
     isDemo: a.isDemo,
   };
-  insert('captures', cap, actorId, `${protocolId}:${o.result.quality.verdict}`);
   const ms: Measurement[] = o.result.metrics
     .filter((m) => m.value !== null)
     .map((m) => ({
@@ -189,6 +189,12 @@ export function saveCapture(a: Assessment, actorId: ID, protocolId: string, side
       createdAt: cap.createdAt,
       isDemo: a.isDemo,
     }));
+  return { cap, ms };
+}
+
+export function saveCapture(a: Assessment, actorId: ID, protocolId: string, side: Side | null, o: CaptureOutcome, baseline?: CaptureSession): CaptureSession {
+  const { cap, ms } = buildCaptureRows(a, actorId, protocolId, side, o, baseline);
+  insert('captures', cap, actorId, `${protocolId}:${o.result.quality.verdict}`);
   insertMany('measurements', ms, actorId);
   return cap;
 }

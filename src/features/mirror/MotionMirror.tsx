@@ -9,6 +9,7 @@ import { CalibrationGate, evaluateCalibration, lightingFromPixels, type Calibrat
 import { ExerciseRunner, type ExerciseResult, type RunnerSnapshot } from '../../engine/exerciseRunner';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { requiredView, type ExercisePrescription } from '../../engine/exercises/types';
+import { painRuleOutcome } from '../../engine/exercises/painRule';
 import { FeedbackEngine, type Cue } from '../../engine/feedback';
 import { MEASUREMENTS } from '../../engine/measurements';
 import type { ProcessedFrame } from '../../engine/pipeline';
@@ -27,11 +28,19 @@ import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from '../sc
  * The prescription is executed exactly as approved — the engine never alters targets.
  */
 
+export interface PainEvent {
+  at: string;
+  nprs: number;
+  paused: boolean;
+  rule: string;
+}
+
 export interface MirrorOutcome {
   result: ExerciseResult;
   provider: PoseProviderInfo;
   device: DeviceContext;
   filter: string;
+  painEvents: PainEvent[];
 }
 
 type Phase = 'setup' | 'countdown' | 'active' | 'done';
@@ -41,8 +50,10 @@ export function MotionMirror({
   mode = 'train',
   onDone,
   onCancel,
+  painBefore = null,
 }: {
   rx: ExercisePrescription;
+  painBefore?: number | null;
   mode?: 'train' | 'test';
   onDone: (o: MirrorOutcome) => void;
   onCancel: () => void;
@@ -60,6 +71,9 @@ export function MotionMirror({
   const [voiceOn, setVoiceOn] = useState(prefs.voice);
   const [captionsOn, setCaptionsOn] = useState(prefs.captions);
   const [caption, setCaption] = useState<string | null>(null);
+  const [painOpen, setPainOpen] = useState(false);
+  const [painStop, setPainStop] = useState<string | null>(null);
+  const painEvents = useRef<PainEvent[]>([]);
   const [paused, setPaused] = useState(false);
   const { roll } = useDeviceRoll();
 
@@ -110,6 +124,7 @@ export function MotionMirror({
         provider: ctx?.provider ?? { id: providerId, model: 'unknown', version: 'unknown', simulated },
         device: ctx?.device ?? { userAgent: navigator.userAgent, platform: navigator.platform, videoWidth: 0, videoHeight: 0, facingMode: 'user', cameraRollDeg: null, meanFps: null, meanInferenceMs: null },
         filter: prefs.filter,
+        painEvents: painEvents.current,
       });
     },
     [onDone, prefs.filter, providerId, simulated],
@@ -272,6 +287,18 @@ export function MotionMirror({
         <button className="stage-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)} aria-label={voiceOn ? t('mirror.voice_on') : t('mirror.voice_off')}>
           {voiceOn ? <IconVolume width={20} /> : <IconMute width={20} />}
         </button>
+        {phase === 'active' && (
+          <button
+            className="stage-btn"
+            onClick={() => {
+              setPainOpen(true);
+              setPaused(true);
+            }}
+            aria-label="Report pain"
+          >
+            Pain
+          </button>
+        )}
         <button className="stage-btn" aria-pressed={captionsOn} onClick={() => setCaptionsOn((v) => !v)} aria-label={t('mirror.captions')}>
           <IconCC width={20} />
         </button>
@@ -284,7 +311,49 @@ export function MotionMirror({
 
       <RuntimeOverlay status={runtime.status} error={runtime.error} onRetry={runtime.retry} onUseDemo={() => setProviderId('simulated')} />
 
-      {paused && (
+      {painOpen && (
+        <div className="stage-center" style={{ background: 'rgba(7,16,18,0.85)', zIndex: 6 }}>
+          <div className="glass stack" style={{ padding: '1.25rem', maxWidth: 440 }} role="dialog" aria-label="Report pain">
+            {painStop ? (
+              <>
+                <strong style={{ fontSize: '1.3rem' }}>Stop this exercise</strong>
+                <p>Your pain reached the limit your physiotherapist set ({painStop}). Rest now. Your physiotherapist will see this report.</p>
+                <button className="btn primary lg" onClick={() => finish(true)}>
+                  End exercise
+                </button>
+              </>
+            ) : (
+              <>
+                <strong>How much pain right now? (0–10)</strong>
+                <div className="nprs" role="radiogroup" aria-label="Pain now">
+                  {Array.from({ length: 11 }, (_, n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      role="radio"
+                      aria-checked={false}
+                      onClick={() => {
+                        const o = painRuleOutcome(rx, n, painBefore);
+                        painEvents.current.push({ at: new Date().toISOString(), nprs: n, paused: o.stop, rule: o.rule });
+                        if (o.stop) setPainStop(o.rule);
+                        else {
+                          setPainOpen(false);
+                          setPaused(false);
+                        }
+                      }}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p className="xs" style={{ color: '#8fb0aa' }}>Stop straight away if pain is sharp or getting worse, whatever the number.</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {paused && !painOpen && (
         <div className="stage-center" style={{ background: 'rgba(7,16,18,0.7)' }}>
           <div className="stack" style={{ alignItems: 'center' }}>
             <strong style={{ fontSize: '1.6rem' }}>{t('mirror.paused_overlay')}</strong>

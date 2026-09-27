@@ -176,6 +176,14 @@ export function ProgramBuilder() {
               <span>Special instructions (shown to patient)</span>
               <input className="input" value={r.rx.instructions ?? ''} onChange={(e) => setRx(r.key, { instructions: e.target.value || undefined })} />
             </label>
+            <label className="field">
+              <span>Progression plan / criteria (clinician-applied — never automatic)</span>
+              <input className="input" value={r.rx.progression ?? ''} placeholder="e.g. If pain ≤ 3/10 and target met 2 sessions running, raise target by 10° at review" onChange={(e) => setRx(r.key, { progression: e.target.value || undefined })} />
+            </label>
+            <div className="grid cols-2">
+              <NumField label="Pause session if patient-reported pain ≥ (0–10, blank = off)" value={r.rx.painStopAt ?? NaN} onChange={(v) => setRx(r.key, { painStopAt: v === '' ? undefined : Math.max(0, Math.min(10, Number(v))) })} />
+              <NumField label="…or if pain rises by ≥ (points above pre-session)" value={r.rx.painRiseStop ?? NaN} onChange={(v) => setRx(r.key, { painRiseStop: v === '' ? undefined : Math.max(1, Math.min(10, Number(v))) })} />
+            </div>
             {errs.length > 0 && (
               <Notice tone="danger">
                 {errs.map((e) => (
