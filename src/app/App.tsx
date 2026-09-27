@@ -31,6 +31,7 @@ const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsInd
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
 const ClinicSettingsPage = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'ClinicSettingsPage'));
 const ValidationMode = lazy(() => named(import('../features/validation/ValidationMode'), 'ValidationMode'));
+const BrandPreview = lazy(() => named(import('../features/brand/BrandPreview'), 'BrandPreview'));
 
 function useDocumentPrefs() {
   const prefs = usePrefs();
@@ -255,6 +256,7 @@ export function App() {
               <Route path="settings" element={<ClinicSettingsPage />} />
             </Route>
             <Route path="/validation" element={<ValidationGate />} />
+            <Route path="/brand/dheepika-lab" element={<BrandPreview />} />
             <Route path="/report/:id" element={<ReportRoute />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
