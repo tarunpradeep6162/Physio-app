@@ -1,6 +1,9 @@
 import '@fontsource/outfit/latin-400.css';
 import '@fontsource/outfit/latin-600.css';
 import '@fontsource/outfit/latin-700.css';
+import '@fontsource/instrument-sans/latin-400.css';
+import '@fontsource/instrument-sans/latin-600.css';
+import '@fontsource/instrument-sans/latin-700.css';
 import '@fontsource/work-sans/latin-400.css';
 import '@fontsource/work-sans/latin-500.css';
 import '@fontsource/work-sans/latin-600.css';
@@ -11,6 +14,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { RouteErrorBoundary } from './app/RouteErrorBoundary';
 import './styles/app.css';
+import './styles/experience.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

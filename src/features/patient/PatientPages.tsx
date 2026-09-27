@@ -85,7 +85,7 @@ export function PatientHome() {
 
       <DailyCompanion patient={patient} userId={user.id} />
 
-      <div className="grid cols-3 patient-overview">
+      <div className="grid cols-3 patient-overview" aria-label="Progress and assessments">
         <div className="panel metric-card">
           <Stat label={t('home.adherence')} value={adh.pct === null ? '–' : `${Math.round(adh.pct * 100)}%`} sub={t('home.sessions_done', { done: adh.done, planned: adh.planned })} />
         </div>

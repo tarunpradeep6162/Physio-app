@@ -34,12 +34,12 @@ export function DailyCompanion({ patient, userId }: { patient: Patient; userId: 
   };
 
   return (
-    <div className="stack">
+    <div className="daily-companion stack">
       {!online && <Notice>{t('companion.offline')}</Notice>}
       {conflicts > 0 && <Notice tone="warn">{t('companion.sync_conflict', { n: conflicts })}</Notice>}
 
       {v.plan === 'active' && (
-        <p className="small muted" aria-live="polite">
+        <p className="daily-rhythm small" aria-live="polite">
           {v.doneToday > 0 ? t('companion.done_today') : v.today === 'scheduled' ? t('companion.scheduled_today') : v.today === 'rest' ? t('companion.rest_day') : t('companion.flexible_today')}
           {' · '}
           {t('companion.week', { done: v.weekDone, target: v.weekTarget })}
@@ -47,7 +47,7 @@ export function DailyCompanion({ patient, userId }: { patient: Patient; userId: 
       )}
       {recovery !== 'none' && <Notice>{t(`companion.${recovery}`)}</Notice>}
 
-      <section className="panel stack tight" aria-labelledby="checkin-h">
+      <section className="panel stack tight daily-checkin" aria-labelledby="checkin-h">
         <h2 id="checkin-h">{t('companion.checkin_title')}</h2>
         {v.checkin.today && !editing ? (
           <div className="row between wrap">
@@ -74,7 +74,7 @@ export function DailyCompanion({ patient, userId }: { patient: Patient; userId: 
         )}
       </section>
 
-      <section className="panel stack tight" aria-labelledby="next-h">
+      <section className="panel stack tight daily-appointment" aria-labelledby="next-h">
         <h2 id="next-h">{t('companion.next_title')}</h2>
         {v.nextAppointment ? (
           <p className="small">
@@ -86,7 +86,7 @@ export function DailyCompanion({ patient, userId }: { patient: Patient; userId: 
         )}
       </section>
 
-      <section className="panel stack tight" aria-labelledby="log-h">
+      <section className="panel stack tight daily-log" aria-labelledby="log-h">
         <h2 id="log-h">{t('companion.log_title')}</h2>
         {v.sessionLog.length === 0 ? (
           <p className="small muted">{t('companion.log_empty')}</p>

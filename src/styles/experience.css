@@ -1,0 +1,141 @@
+/* Dheepika Lab experience v3. The three modes share type and geometry; each has a
+   different information density. This file contains presentation only. */
+:root {
+  --font-heading: 'Instrument Sans', 'Noto Sans Tamil', sans-serif;
+  --font-metric: 'Outfit', 'Noto Sans Tamil', sans-serif;
+  --dl-ink: #102b2d;
+  --dl-forest: #0b2427;
+  --dl-mint: #d6f1e5;
+  --dl-rule: #d7e2dd;
+  --dl-canvas: #f4f7f3;
+  --dl-ease: cubic-bezier(.2,.7,.2,1);
+  --dl-radius-card: 20px;
+  --dl-radius-control: 10px;
+}
+
+body { background: var(--dl-canvas); }
+h1, h2, h3 { text-wrap: balance; }
+h1 { letter-spacing: -.045em; }
+h2 { letter-spacing: -.032em; }
+.num, .stat-value, .hud-value, .metric-value { font-variant-numeric: tabular-nums lining-nums; }
+.stat-value, .hud-value, .metric-value { font-family: var(--font-metric); }
+.panel { border-color: var(--dl-rule); }
+.btn { border-radius: var(--dl-radius-control); }
+.btn, .bottom-nav a, .side-rail .nav-link { transition: background-color .18s var(--dl-ease), border-color .18s var(--dl-ease), color .18s var(--dl-ease), transform .18s var(--dl-ease); }
+.btn:focus-visible, .bottom-nav a:focus-visible, .side-rail a:focus-visible { outline-offset: 3px; }
+
+/* Patient: a single next action, followed by a usable daily record. */
+.patient-shell { background: var(--dl-canvas); }
+.patient-shell .topbar { border-bottom-color: var(--dl-rule); }
+.patient-home { gap: clamp(1.25rem, 2.4vw, 2rem); }
+.patient-home .page-intro { align-items: end; padding-block: .75rem .25rem; }
+.patient-home .page-intro h1 { font-size: clamp(2.25rem, 4vw, 3.7rem); line-height: 1.02; }
+.patient-home .page-intro .eyebrow { margin-bottom: .5rem; }
+.patient-home .session-hero {
+  border: 1px solid #35605c;
+  background: linear-gradient(120deg, #0b2427 5%, #123b3e 72%, #0e2d30);
+  padding: clamp(1.5rem, 3.5vw, 3rem);
+  box-shadow: 0 20px 50px rgba(11,36,39,.13);
+}
+.patient-home .session-hero::after {
+  right: clamp(12px, 4vw, 60px); top: 50%; transform: translateY(-50%);
+  width: clamp(100px, 19vw, 250px); height: clamp(160px, 28vw, 340px);
+  border: 1px solid rgba(175,238,216,.27);
+  border-left-width: 2px; border-radius: 52% 48% 50% 48%;
+  box-shadow: none;
+  background: radial-gradient(circle at 25% 18%, #b9efda 0 4px, transparent 5px),
+              radial-gradient(circle at 8% 49%, #b9efda 0 4px, transparent 5px),
+              radial-gradient(circle at 22% 83%, #b9efda 0 4px, transparent 5px);
+  opacity: .75;
+}
+.patient-home .session-hero > * { position: relative; z-index: 1; }
+.patient-home .session-hero h2 { font-size: clamp(1.7rem, 3vw, 2.5rem); line-height: 1.1; }
+.patient-home .session-hero .row.between.small { max-width: 620px; gap: .75rem; align-items: baseline; }
+.patient-home .session-hero .row.between.small > span:last-child { color: #d7eee5; font-variant-numeric: tabular-nums; }
+.patient-home .session-hero .btn.primary { margin-top: .75rem; min-width: min(100%, 245px); }
+
+.daily-companion { gap: 1rem; }
+.daily-rhythm {
+  margin: 0; padding: .75rem 1rem; border-left: 3px solid var(--teal);
+  background: #e8f2eb; border-radius: 0 9px 9px 0;
+  color: #254b49; font-weight: 600;
+}
+.daily-companion .panel { padding: clamp(1.25rem, 2.2vw, 1.8rem); border-radius: var(--dl-radius-card); }
+.daily-companion .panel h2 { font-size: clamp(1.25rem, 1.6vw, 1.55rem); }
+.daily-checkin { border-top: 3px solid var(--teal); }
+.daily-checkin h2 { margin-bottom: .35rem; }
+.daily-checkin .btn.primary { align-self: flex-start; min-width: 142px; }
+.daily-appointment, .daily-log { background: #fbfcfa; }
+.daily-log ul { gap: 0 !important; }
+.daily-log li { min-height: 46px; padding: .5rem 0; gap: .75rem; border-top: 1px solid var(--dl-rule); }
+.daily-log li:first-child { border-top: 0; }
+.patient-overview { gap: .8rem; }
+.patient-overview .metric-card { border-top-width: 1px; box-shadow: none; border-radius: 16px; background: #fbfcfa; }
+.patient-overview .metric-card:has(.stat-value) { border-left: 3px solid #9bcfbe; }
+.patient-overview .knee-card { border-left: 3px solid var(--teal); }
+.patient-overview .stat-value { line-height: 1.05; font-family: var(--font-metric); }
+
+/* Clinician: evidence is dense, but still grouped and readable. */
+.clinician-shell { background: #f2f5f1; }
+.clinician-shell .content { max-width: 1380px; }
+.clinician-intro h1 { line-height: 1.05; }
+.clinician-shell .panel { border-radius: 14px; }
+.clinician-shell .overview-stats .panel { border-top: 1px solid var(--dl-rule); border-left: 3px solid #9bcfbe; }
+.clinician-shell .overview-stats a.panel:hover { border-left-color: var(--teal); }
+.clinician-shell .table-wrap { border: 1px solid var(--dl-rule); }
+.clinician-shell table.data th { font-size: .75rem; letter-spacing: .055em; text-transform: uppercase; }
+.clinician-shell table.data td { font-variant-numeric: tabular-nums; }
+
+/* Camera: affordance and validity above embellishment. */
+.camera-lab, .stage { --focus: #b5f1db; }
+.stage .hud-value { font-family: var(--font-metric); letter-spacing: -.055em; }
+.stage .hud-value.hud-hero { font-size: clamp(3rem, 7vmin, 5.5rem); }
+.stage .cue { max-width: min(92vw, 38rem); border: 1px solid rgba(225,255,244,.28); }
+.stage .cue.warning, .stage .cue.attention { border-color: #ffd39a; }
+
+@media (min-width: 900px) {
+  .patient-shell .bottom-nav {
+    order: 1; position: sticky; top: 55px; bottom: auto;
+    display: flex; justify-content: center; gap: clamp(.5rem, 1.4vw, 1.5rem);
+    min-height: 56px; padding: 0 1rem; background: #f4f7f3;
+    border-top: 0; border-bottom: 1px solid var(--dl-rule); box-shadow: none;
+  }
+  .patient-shell .bottom-nav a {
+    flex-direction: row; gap: .5rem; min-height: 56px;
+    padding: 0 .85rem; border-bottom: 2px solid transparent;
+    color: #405a59; font-size: .86rem;
+  }
+  .patient-shell .bottom-nav a:hover { background: #e9f1eb; color: var(--dl-ink); }
+  .patient-shell .bottom-nav a.active { border-bottom-color: var(--teal); color: var(--dl-ink); }
+  .patient-shell .bottom-nav a.active svg { color: var(--teal); }
+  .patient-shell .bottom-nav svg { width: 18px; height: 18px; }
+  .patient-shell main { order: 2; }
+  .patient-shell .content { padding-bottom: 3rem; }
+  .daily-companion {
+    display: grid; grid-template-columns: minmax(0, 1.32fr) minmax(280px, .8fr);
+    grid-template-areas: 'rhythm rhythm' 'checkin appointment' 'checkin log';
+    align-items: stretch;
+  }
+  .daily-rhythm { grid-area: rhythm; }
+  .daily-checkin { grid-area: checkin; }
+  .daily-appointment { grid-area: appointment; }
+  .daily-log { grid-area: log; }
+}
+
+@media (max-width: 599px) {
+  .patient-home .session-hero::after { right: -30px; opacity: .35; }
+  .patient-home .session-hero .row.between.small { flex-wrap: wrap; }
+  .daily-companion .panel { padding: 1.15rem; }
+  .daily-log li { align-items: flex-start; }
+  .patient-overview .metric-card { min-height: 0; }
+  .bottom-nav a { min-height: calc(var(--nav-h) + 4px); }
+  .bottom-nav a.active { background: #14393c; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn, .bottom-nav a, .side-rail .nav-link { transition: none; }
+}
+@media print {
+  .daily-rhythm { background: transparent; }
+  .panel, .session-hero { box-shadow: none !important; }
+}
