@@ -173,6 +173,16 @@ function ClinicianLayout() {
         </nav>
         <div className="grow" style={{ minWidth: 0 }}>
           <Banners />
+          {/* The side rail (with Sign out) is hidden on narrow screens, so phones and tablets get a top bar. */}
+          <header className="topbar clin-topbar">
+            <NavLink to="/c/overview" className="brand">
+              <BrandMark />
+              {t('app.name')}
+            </NavLink>
+            <button className="btn ghost small" style={{ marginLeft: 'auto' }} onClick={() => signOut()}>
+              {t('nav.sign_out')}
+            </button>
+          </header>
           <main id="main">
             <Suspense fallback={<Loader />}>
               <Outlet />

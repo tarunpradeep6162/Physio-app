@@ -655,6 +655,9 @@ textarea.input {
   display: none;
 }
 @media (min-width: 900px) {
+  .clin-topbar {
+    display: none;
+  }
   .side-rail {
     display: flex;
     flex-direction: column;

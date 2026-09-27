@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../../app/hooks';
 import { CategoryBadge, Notice, Segmented, Stat } from '../../components/ui';
+import { signOut } from '../../data/auth';
+import { useT } from '../../i18n';
 import { ensureDemoData } from '../../data/demo';
 import { OBSERVATION_RULES_VERSION } from '../../clinical/evidence';
 import { HISTORY_QUESTIONNAIRE } from '../../clinical/intake';
@@ -139,6 +141,7 @@ const THRESHOLD_LABELS: Record<keyof ObservationThresholds, string> = {
 };
 
 export function ClinicSettingsPage() {
+  const { t } = useT();
   const user = useCurrentUser();
   const settings = useDb((d) => d.settings);
   const audit = useDb((d) => [...d.audit].sort((a, b) => b.at.localeCompare(a.at)).slice(0, 40));
@@ -318,6 +321,11 @@ export function ClinicSettingsPage() {
             </tbody>
           </table>
         </div>
+      </section>
+      <section className="panel">
+        <button className="btn ghost" onClick={() => signOut()}>
+          {t('nav.sign_out')}
+        </button>
       </section>
     </div>
   );
