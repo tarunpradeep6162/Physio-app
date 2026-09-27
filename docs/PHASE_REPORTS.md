@@ -197,3 +197,22 @@ Details: `docs/CONTENT_TRENDS_INTEROP.md`.
   - Voice and caption cues, camera-permission denial and offline recording were already in place (offline and multi-tab: Phase 10).
 - **Localisation:** 152 of 545 UI strings have Tamil drafts; a test enforces matching placeholders and no stale keys. Clinical questionnaires stay English-only until professionally translated, back-translated and reviewed. They are not machine-translated.
 - **Gates:** Tamil clinical translation and review; usability with real patients on real low-end phones; VoiceOver/TalkBack testing; security review of the server deployment (Phase 6).
+
+## Phase 20 — evidence, clinical validation and controlled release
+- **Files:**
+  - `src/release/intendedUses.ts` (+ `release.test.ts`: 2 tests)
+  - `features/clinician/AnalyticsSettings.tsx` (Release readiness panel)
+  - `docs/VALIDATION_STUDY_PLAN.md`, `docs/INCIDENT_PROCESS.md`, `docs/DHEEPIKA_APPROVAL_PACKET.md`
+- **Before:** no single place stated what each test may claim, what evidence exists, or what blocks release.
+- **After:**
+  - One intended-use entry per protocol (14), locked to its version, with claims, exclusions, the proposed population, reference measure and evidence level (synthetic or lab only). All are `not_validated`.
+  - A computed go/no-go checklist in Settings (15 items; the occlusion item is **fail**, the rest pending).
+  - Real-patient use is hard-disabled in the build, with no in-app control that could record the clinical lead's approval.
+  - The approval packet collects claims, evidence, limits, rules, content, the incident process, privacy and regulatory questions, and the go/no-go list, with a blank approval record.
+- **Migration:** none.
+- **Risks:** the packet summarises the regulatory and privacy questions but draws no conclusions; qualified advisers are needed.
+- **Tests:**
+  - 231 unit tests pass;
+  - every protocol has a version-locked intended use with exclusions;
+  - the gate stays closed even with thresholds locked.
+- **Gate:** only reviewed, validated intended uses may enter real-patient release; Dheepika's approval remains pending until she acts.

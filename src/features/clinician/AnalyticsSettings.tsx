@@ -17,6 +17,31 @@ import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
 import { getDb, purgeDemo, recordAudit, updateSettings, useDb } from '../../data/store';
 import { ExceptionRulesEditor } from './Trends';
 import { clearIncidents, readIncidents } from '../../app/incidents';
+import { INTENDED_USES, releaseGate } from '../../release/intendedUses';
+
+/** Go/no-go checklist for real-patient release (Phase 20). Read-only: approval is never recorded here. */
+function ReleasePanel() {
+  const gate = useDb((d) => releaseGate(d));
+  const tone = (s: string) => (s === 'pass' ? 'clinical' : s === 'fail' ? 'danger' : 'warn');
+  return (
+    <section className="panel stack tight">
+      <div className="row between wrap">
+        <h2>Release readiness</h2>
+        <span className="badge danger">Real-patient use: disabled</span>
+      </div>
+      <p className="xs muted">Every item must pass, and the build flag must be changed by a reviewed release, before any real patient use. The clinical lead's approval is recorded outside the app; there is no button for it here. Intended uses: {INTENDED_USES.length}, validated: {INTENDED_USES.filter((u) => u.status === 'validated').length}.</p>
+      {gate.map((g) => (
+        <div key={g.id} className="row between wrap small" style={{ borderTop: '1px solid var(--line)', paddingTop: '0.35rem' }}>
+          <span>
+            {g.label}
+            <span className="xs muted"> · {g.detail} · owner: {g.owner}</span>
+          </span>
+          <span className={`badge ${tone(g.status)}`}>{g.status}</span>
+        </div>
+      ))}
+    </section>
+  );
+}
 
 /** Redacted error log kept on this device only (Phase 19). Nothing is sent anywhere. */
 function IncidentsPanel() {
@@ -213,6 +238,7 @@ export function ClinicSettingsPage() {
       </section>
 
       <ExceptionRulesEditor rules={settings.exceptionRules} actorId={user.id} reviewerName={clinicianName} />
+      <ReleasePanel />
       <IncidentsPanel />
 
       <section className="panel stack">

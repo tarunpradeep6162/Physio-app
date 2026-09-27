@@ -50,7 +50,7 @@ A phase is never marked **done** on a clean build alone.
 | 17 | Clinician intelligence and longitudinal trends | 8, 10 | **engineering done – gate pending** | Trends break on incomparable data with reasons; exception queue with configurable rules shown as unreviewed until reviewed. **Clinical review of thresholds pending.** |
 | 18 | Reference measurements and interoperability | 6 | **engineering done – gate pending** | Device measurements (units, calibration, device, time, source) via entry and CSV; FHIR R4 export with round-trip test. **Real device files and care-system conformance testing pending.** |
 | 19 | Accessibility, localization, privacy and mobile hardening | all | **engineering done – gate pending** | Linkage-based data export and erasure covering every table; redacted local incident log; source scan for telemetry and logging; axe clean on 16 new screens at 390 px; larger live numerals in large-text mode; Tamil review sheet (152 of 545 drafts, questionnaires English-only). **Tamil clinical translation, real-phone usability and screen-reader testing pending.** |
-| 20 | Evidence, clinical validation and controlled release | all | not started | Studies and Dheepika's approval (on hold) |
+| 20 | Evidence, clinical validation and controlled release | all | **engineering done – gate pending** | Intended-use registry (14, all not validated), computed go/no-go gate in Settings, real-patient use hard-disabled, validation study plan, incident process, approval packet (`docs/DHEEPIKA_APPROVAL_PACKET.md`). **Studies not run; Dheepika's approval pending (on hold).** |
 
 ## Gap list (updated as work proceeds)
 
@@ -78,3 +78,45 @@ A phase is never marked **done** on a clean build alone.
 22. ~~A pressed chip's check mark was part of its accessible name.~~ **Fixed in Phase 19** with CSS alt text (`content: '✓' / ''`).
 
 Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.
+
+## Demonstration path (simulated data only)
+1. Open https://physiovision-ai-eta.vercel.app → **Explore demo — patient**. The home screen shows the companion: today's plan, check-in, recent sessions, next appointment. **Assess another area** offers hip, ankle, back and balance.
+2. **Assess** → knee (or `/p/assess/ankle`): symptom map → history → red-flag screen → camera tests with the simulated provider (setup guide, calibration, live capture, refusal when a joint is hidden) → results → submit.
+3. **Train** → the approved plan version (camera exercises plus any approved library items) → session with pain check-ins. **I need to pause my plan** pauses it.
+4. **Profile** → *Steps and walking*: consent per metric, import an Apple Health `export.xml`, 14-day table. Also data export and (for non-demo accounts) deletion.
+5. Sign out → **Explore demo — physiotherapist** → overview with the **exception queue** and alerts → assessment queue → DP-01 (knee) or DP-05 (hip):
+   - Captures & replay, Left / right, Evidence & reasoning ("Why?");
+   - **AI draft** (accept / edit / reject / defer, examination findings);
+   - Report (preliminary until signed).
+6. Patient record:
+   - **Programs**: version history, pauses, resume;
+   - **Trends**: absolute values with break reasons;
+   - **Devices & export**: dynamometer entry, CSV import, FHIR bundle download.
+7. **Program builder**: a new version with a diff, a reason required when it intensifies, approved alternatives and library items, reassessment triggers.
+8. **Library**: filter, the camera-guided subset with its QA label, submit → approve an item (demo).
+9. **Settings**: exception-rule review, **Release readiness** (no-go), redacted incident log, rule approvals, validation thresholds.
+
+## Pending human approval or real-device / clinical validation
+- **Dheepika's approval** of the claims, rules, content, validation plan, incident process and release: **pending (on hold)**. Nothing was recorded or simulated.
+- **Owner decisions:**
+  - the Phase 3 coverage check (keep gating, diagnostic only, or retune);
+  - hosting, identity provider and data-processing agreements (server deployment);
+  - LLM provider for the model draft (inactive);
+  - native iOS and Android apps for HealthKit / Health Connect.
+- **Real-device work:**
+  - phone benchmark across target devices (`docs/tracking/PHONE_RUN.md`);
+  - cue latency on phones;
+  - real-device QA of the camera-guided exercises;
+  - step-count validation.
+- **Clinical studies:** repeatability, inter-device, reference agreement and usability for all 14 protocols (`docs/VALIDATION_STUDY_PLAN.md`); stopwatch and walkway references for balance timing.
+- **Release blockers:** occlusion (elbow self-occlusion, object occlusion).
+- **Content and language:**
+  - licensed exercise media and bulk curated content;
+  - review of all 16 drafts;
+  - Tamil clinical translation of the UI and all questionnaires.
+- **External conformance:** FHIR export conformance with the receiving care system; vendor dynamometer formats.
+- **Advice and people:**
+  - privacy impact assessment and regulatory classification (qualified advisers);
+  - usability with real patients;
+  - VoiceOver / TalkBack testing;
+  - incident process agreed and staffed.
