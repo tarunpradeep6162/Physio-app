@@ -1,0 +1,204 @@
+import { LM } from '../engine/landmarks';
+import type { MeasurementType } from '../engine/measurements';
+import type { PostureMetricId } from '../engine/posture';
+import { sceneAt } from '../engine/protocols/simulate';
+import { synthesize, type SynthScene } from '../engine/pose/synthetic';
+import type { Landmark, Side } from '../engine/types';
+import type { Figure, Rect, RenderOptions } from './mannequin';
+
+/**
+ * Tracking-lab scenarios: reproducible, rendered test sequences for the failure modes named in
+ * the tracking audit. Each scenario is labelled SYNTHETIC (rendered mannequin) — none of these
+ * figures is a person, and no result from them is an accuracy claim.
+ */
+
+export type LabMeasure = { kind: 'angle'; type: MeasurementType; side: Side } | { kind: 'posture'; id: PostureMetricId };
+
+export interface ScenarioFrame {
+  figures: Figure[];
+  render: RenderOptions;
+  /** Index of the patient in `figures` (default 0). */
+  patient?: number;
+}
+
+export interface Scenario {
+  id: string;
+  title: string;
+  /** Failure mode this scenario reproduces. */
+  failure: string;
+  durationSec: number;
+  /** Camera frame rate of the rendered sequence. */
+  cameraFps: number;
+  /** Process every k-th camera frame (simulates slow inference / low delivered FPS). */
+  processEvery?: number;
+  /** Motion-blur exposure in ms (0 = sharp). Rendered as the mean of sub-frames. */
+  exposureMs?: number;
+  measure: LabMeasure;
+  frame(t: number): ScenarioFrame;
+}
+
+const W = 720;
+const H = 1280;
+
+export function translate(lms: Landmark[], dx: number, dy: number): Landmark[] {
+  return lms.map((l) => ({ ...l, x: l.x + dx, y: l.y + dy }));
+}
+
+const synth = (s: SynthScene) => synthesize(s, { width: W, height: H });
+const heel = (t: number, tempo = 1, peak = 110) => synth(sceneAt('knee_supported_flexion', 'left', t, { peak, tempo, cycles: 3 })!);
+const PHONE: Rect = { x: 0.33, y: 0.3, w: 0.34, h: 0.34 };
+const KNEE_L: LabMeasure = { kind: 'angle', type: 'knee_flexion', side: 'left' };
+
+export const SCENARIOS: Scenario[] = [
+  {
+    id: 'rest_supine',
+    title: 'Stationary, supine heel slide held at 45°',
+    failure: 'stationary jitter',
+    durationSec: 4,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: () => ({ figures: [{ lms: synth({ kind: 'supine_heel_slide', side: 'left', kneeFlexion: 45 }) }], render: { noise: 6, mat: true } }),
+  },
+  {
+    id: 'rest_standing',
+    title: 'Stationary, standing side view, knee bent 30°',
+    failure: 'stationary jitter',
+    durationSec: 4,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: () => ({ figures: [{ lms: synth({ kind: 'standing_lateral', side: 'left', kneeFlexion: 30 }) }], render: { noise: 6 } }),
+  },
+  {
+    id: 'heel_slide',
+    title: 'Heel slide, normal tempo (1.6 s up), 3 cycles',
+    failure: 'lag / peak suppression (normal speed)',
+    durationSec: 12,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => ({ figures: [{ lms: heel(t) }], render: { noise: 4, mat: true } }),
+  },
+  {
+    id: 'heel_slide_fast',
+    title: 'Heel slide, fast (0.56 s up) with 25 ms motion blur',
+    failure: 'fast movement',
+    durationSec: 6,
+    cameraFps: 30,
+    exposureMs: 25,
+    measure: KNEE_L,
+    frame: (t) => ({ figures: [{ lms: heel(t, 0.35) }], render: { noise: 4, mat: true } }),
+  },
+  {
+    id: 'low_light',
+    title: 'Heel slide in a dim room (22% brightness, heavy sensor noise)',
+    failure: 'low light',
+    durationSec: 12,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => ({ figures: [{ lms: heel(t) }], render: { brightness: 0.22, noise: 14, mat: true } }),
+  },
+  {
+    id: 'slow_inference',
+    title: 'Heel slide processed at 3 fps (slow device)',
+    failure: 'slow inference',
+    durationSec: 12,
+    cameraFps: 30,
+    processEvery: 10,
+    measure: KNEE_L,
+    frame: (t) => ({ figures: [{ lms: heel(t) }], render: { noise: 4, mat: true } }),
+  },
+  {
+    id: 'side_view_right',
+    title: 'Standing side view, RIGHT side toward camera, knee bending 0→70°',
+    failure: 'side view / left-right labelling',
+    durationSec: 5,
+    cameraFps: 30,
+    measure: { kind: 'angle', type: 'knee_flexion', side: 'right' },
+    frame: (t) => {
+      const f = 35 - 35 * Math.cos((2 * Math.PI * t) / 2.5);
+      return { figures: [{ lms: synth({ kind: 'standing_lateral', side: 'right', kneeFlexion: f }) }], render: { noise: 4 } };
+    },
+  },
+  {
+    id: 'mirrored_stream',
+    title: 'Same left-side movement, but the camera stream is mirrored',
+    failure: 'front-camera mirroring',
+    durationSec: 5,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => {
+      const f = 35 - 35 * Math.cos((2 * Math.PI * t) / 2.5);
+      return { figures: [{ lms: synth({ kind: 'standing_lateral', side: 'left', kneeFlexion: f }) }], render: { noise: 4, mirror: true } };
+    },
+  },
+  {
+    id: 'phone_occlusion',
+    title: 'Front view with a phone held over the torso and hips',
+    failure: 'phone obstruction',
+    durationSec: 4,
+    cameraFps: 30,
+    measure: { kind: 'posture', id: 'pelvic_level' },
+    frame: () => ({ figures: [{ lms: synth({ kind: 'standing_anterior', pelvicTiltDeg: 2 }) }], render: { noise: 4, occluders: [PHONE] } }),
+  },
+  {
+    id: 'knee_occlusion',
+    title: 'Heel slide with the tested knee hidden behind an object from 4 s',
+    failure: 'single-joint obstruction',
+    durationSec: 10,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => {
+      const lms = heel(t);
+      const k = lms[LM.leftKnee];
+      const occ: Rect[] = t > 4 ? [{ x: k.x - 0.09, y: k.y - 0.08, w: 0.18, h: 0.16 }] : [];
+      return { figures: [{ lms }], render: { noise: 4, mat: true, occluders: occ } };
+    },
+  },
+  {
+    id: 'partial_body',
+    title: 'Front view, camera too low: ankles below the frame',
+    failure: 'partial body',
+    durationSec: 3,
+    cameraFps: 30,
+    measure: { kind: 'posture', id: 'knee_frontal_left' },
+    frame: () => ({ figures: [{ lms: translate(synth({ kind: 'standing_anterior' }), 0, 0.14) }], render: { noise: 4 } }),
+  },
+  {
+    id: 'leave_frame',
+    title: 'Side view: patient walks out of frame and back',
+    failure: 'person leaving frame',
+    durationSec: 7,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => {
+      const dx = t < 2 ? 0 : t < 3.2 ? ((t - 2) / 1.2) * 0.85 : t < 4.5 ? 0.85 : t < 5.7 ? 0.85 - ((t - 4.5) / 1.2) * 0.85 : 0;
+      return { figures: [{ lms: translate(synth({ kind: 'standing_lateral', side: 'left', kneeFlexion: 30 }), dx, 0) }], render: { noise: 4 } };
+    },
+  },
+  {
+    id: 'second_person',
+    title: 'A second person walks into view behind the patient',
+    failure: 'multiple people',
+    durationSec: 6,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => {
+      const patient = translate(synth({ kind: 'standing_lateral', side: 'left', kneeFlexion: 30 }), -0.15, 0);
+      const figs: Figure[] = [{ lms: patient }];
+      if (t > 1.5) {
+        const x = Math.min(0.32, -0.6 + (t - 1.5) * 0.6);
+        figs.unshift({ lms: translate(synth({ kind: 'standing_anterior', scale: 0.8 }), x, -0.04), shirt: '#8a3b2f', pants: '#5a5040', skin: '#a86f4c' });
+      }
+      return { figures: figs, render: { noise: 4 }, patient: figs.length - 1 };
+    },
+  },
+];
+
+/** Landmarks of figure 0 hidden by occluders or outside the frame (ground truth). */
+export function hiddenLandmarks(lms: Landmark[], occluders: Rect[] = []): Set<number> {
+  const out = new Set<number>();
+  lms.forEach((l, i) => {
+    if (l.x < 0 || l.x > 1 || l.y < 0 || l.y > 1) out.add(i);
+    for (const r of occluders) if (l.x >= r.x && l.x <= r.x + r.w && l.y >= r.y && l.y <= r.y + r.h) out.add(i);
+  });
+  return out;
+}

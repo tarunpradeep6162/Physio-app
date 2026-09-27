@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>PhysioVision tracking lab</title>
+    <style>
+      body { font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 16px; background: #f5f8f7; color: #0e1a1c; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      .note { background: #fff4d6; border: 1px solid #e8c96a; padding: 8px 10px; border-radius: 8px; max-width: 900px; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+      select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #9aa9a6; background: #fff; min-height: 44px; }
+      button { background: #0d7a6c; color: #fff; border-color: #0d7a6c; }
+      #stage { width: 180px; height: 320px; border: 1px solid #ccd; background: #ddd; }
+      video { width: 180px; height: 320px; object-fit: cover; background: #222; }
+      table { border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+      th, td { border: 1px solid #cfd8d6; padding: 4px 6px; text-align: right; }
+      th:first-child, td:first-child, td:nth-child(2) { text-align: left; }
+      td.bad { background: #ffd9d6; font-weight: 700; }
+      .small { font-size: 11px; text-align: left; }
+      pre { background: #fff; border: 1px solid #cfd8d6; padding: 8px; max-width: 900px; overflow: auto; font-size: 11px; }
+      .wrap { overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>PhysioVision tracking lab</h1>
+    <p class="note">
+      Engineering tool. Scenarios use <strong>rendered synthetic figures</strong>, not people, run through the real on-device pose model and the
+      app's pipeline. Results describe pipeline behaviour (jitter, lag, dropout, occlusion handling) on this device — they are
+      <strong>not</strong> clinical accuracy figures. The live benchmark uses this device's camera; nothing is recorded or uploaded.
+    </p>
+    <div class="row">
+      <label>Model <select id="model"><option value="mediapipe-lite">Lite</option><option value="mediapipe-full">Full</option></select></label>
+      <label>Delegate <select id="delegate"><option value="">App default</option><option value="GPU">GPU</option><option value="CPU">CPU</option></select></label>
+      <label>Coordinate filter <select id="coord"><option value="one_euro">One Euro</option><option value="ema">EMA</option><option value="kalman">Kalman</option><option value="none">None</option></select></label>
+      <label>Angle filter <select id="angle"><option value="one_euro">One Euro</option><option value="ema">EMA</option><option value="kalman">Kalman</option><option value="none">None</option></select></label>
+    </div>
+    <div class="row">
+      <button id="run">Run scenarios</button>
+      <button id="live">Live camera benchmark</button>
+      <button id="save">Download JSON</button>
+      <span id="status"></span>
+    </div>
+    <div class="row"><canvas id="stage" width="720" height="1280"></canvas><video id="video" muted playsinline></video></div>
+    <div class="wrap" id="results"></div>
+    <pre id="liveOut"></pre>
+    <details><summary>Device</summary><pre id="env"></pre></details>
+    <script type="module" src="/src/lab/main.ts"></script>
+  </body>
+</html>

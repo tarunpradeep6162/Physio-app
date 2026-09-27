@@ -37,6 +37,8 @@ export interface PoseProviderInfo {
   version: string;
   /** True when frames are synthetic (demo / test). Must be surfaced in the UI. */
   simulated: boolean;
+  /** Runtime configuration actually in effect (delegate after any fallback, thresholds). */
+  config?: { delegate?: 'GPU' | 'CPU'; numPoses?: number; minDetection?: number; minPresence?: number; minTracking?: number; thread?: 'main' | 'worker' };
 }
 
 export type Side = 'left' | 'right';

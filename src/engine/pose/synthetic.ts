@@ -45,7 +45,35 @@ interface P {
   y: number;
 }
 
+/**
+ * Produces a PHYSICALLY POSSIBLE skeleton. The geometry below is built facing image-left (standing /
+ * sitting) or head at image-left (lying on the back). Those layouts only show one real side:
+ *   - standing/sitting facing image-left shows the LEFT side to the camera;
+ *   - lying on the back with the head at image-left shows the RIGHT side.
+ * The other side is produced by mirroring the image horizontally (labels unchanged), exactly as a
+ * real patient would turn around. A real pose model labels sides from anatomy, so a scene that
+ * violates this would be read as the opposite side.
+ */
 export function synthesize(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
+  const lms = synthesizeRaw(scene, opts);
+  if (needsMirror(scene)) for (const l of lms) l.x = 1 - l.x;
+  return lms;
+}
+
+function needsMirror(scene: SynthScene): boolean {
+  switch (scene.kind) {
+    case 'standing_lateral':
+    case 'sit_to_stand_lateral':
+      return scene.side === 'right';
+    case 'supine_lateral':
+    case 'supine_heel_slide':
+      return scene.side === 'left';
+    default:
+      return false;
+  }
+}
+
+function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
   const W = opts.width ?? 720;
   const H = opts.height ?? 1280;
   const noise = opts.noisePx ?? 0;

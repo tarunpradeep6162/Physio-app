@@ -1,6 +1,6 @@
 import type { ExerciseId } from '../exercises/types';
 import type { PoseFrame, PoseProviderInfo, Side } from '../types';
-import type { PoseProvider } from './provider';
+import type { PoseProvider, PoseSource } from './provider';
 import { sceneAt, type SimParams } from '../protocols/simulate';
 import { synthesize, type SynthScene } from './synthetic';
 
@@ -53,7 +53,7 @@ export class SimulatedPoseProvider implements PoseProvider {
     return (1 - ease((k - rest - up - hold) / down)) * peak;
   }
 
-  detect(_source: HTMLVideoElement, timestamp: number): PoseFrame {
+  detect(_source: PoseSource, timestamp: number): PoseFrame {
     const t0 = performance.now();
     const elapsed = (timestamp - this.start) / 1000;
     const a = this.angleAt(elapsed);

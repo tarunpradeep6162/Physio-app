@@ -6,6 +6,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     rollupOptions: {
+      // lab.html: tracking lab (rendered test figures + live camera benchmark) for device testing.
+      input: { main: 'index.html', lab: 'lab.html' },
       output: {
         // Keep the pose runtime in its own chunk so the camera path never waits on dashboard code.
         manualChunks(id) {

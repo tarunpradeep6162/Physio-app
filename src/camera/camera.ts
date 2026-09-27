@@ -8,7 +8,13 @@ export class CameraError extends Error {
   }
 }
 
-export async function openCamera(facing: 'user' | 'environment', video: HTMLVideoElement): Promise<MediaStream> {
+export interface CameraConstraints {
+  width?: number;
+  height?: number;
+  frameRate?: number;
+}
+
+export async function openCamera(facing: 'user' | 'environment', video: HTMLVideoElement, c: CameraConstraints = {}): Promise<MediaStream> {
   if (typeof window !== 'undefined' && !window.isSecureContext) throw new CameraError('insecure');
   if (!navigator.mediaDevices?.getUserMedia) throw new CameraError('unsupported');
   let stream: MediaStream;
@@ -18,9 +24,9 @@ export async function openCamera(facing: 'user' | 'environment', video: HTMLVide
       video: {
         facingMode: { ideal: facing },
         // 720p is a good balance of landmark precision and inference cost on phones.
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        frameRate: { ideal: 30, max: 30 },
+        width: { ideal: c.width ?? 1280 },
+        height: { ideal: c.height ?? 720 },
+        frameRate: { ideal: c.frameRate ?? 30, max: 30 },
       },
     });
   } catch (e) {
