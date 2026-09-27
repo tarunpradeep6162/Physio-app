@@ -15,6 +15,7 @@ export type MeasurementType =
   | 'knee_flexion'
   | 'hip_flexion_slr'
   | 'shoulder_flexion'
+  | 'shoulder_abduction'
   | 'knee_extension_angle'
   | 'elbow_extension_angle'
   | 'trunk_sagittal_lean';
@@ -81,6 +82,23 @@ export const MEASUREMENTS: Record<MeasurementType, MeasurementDef> = {
     compute: (p, s) => jointAngle(p(idx('hip', s)), p(idx('shoulder', s)), p(idx('elbow', s))),
     compute3d: (w, s) => jointAngle3(w[idx('hip', s)], w[idx('shoulder', s)], w[idx('elbow', s)]),
   },
+  shoulder_abduction: {
+    type: 'shoulder_abduction',
+    labelKey: 'measure.shoulder_abduction',
+    unit: 'deg',
+    landmarks: (s) => [idx('hip', s), idx('shoulder', s), idx('elbow', s)],
+    validViews: () => ['anterior'],
+    method: 'Arm elevation away from image vertical = angle of shoulder→elbow in the frontal plane; requires a level camera. Trunk lean and scapular motion are not separated.',
+    compute: (p, s) => {
+      const sh = p(idx('shoulder', s));
+      const el = p(idx('elbow', s));
+      const outward = (s === 'left' ? 1 : -1) * (el.x - sh.x);
+      const down = el.y - sh.y;
+      if (Math.hypot(outward, down) < 1) return null;
+      const angle = Math.atan2(outward, down) * 180 / Math.PI;
+      return angle < 0 ? null : angle;
+    },
+  },
   knee_extension_angle: {
     type: 'knee_extension_angle',
     labelKey: 'measure.knee_extension_angle',
@@ -95,7 +113,7 @@ export const MEASUREMENTS: Record<MeasurementType, MeasurementDef> = {
     labelKey: 'measure.elbow_extension_angle',
     unit: 'deg',
     landmarks: (s) => [idx('shoulder', s), idx('elbow', s), idx('wrist', s)],
-    validViews: anyLateral,
+    validViews: () => ['lateral_left', 'lateral_right', 'anterior'],
     method: 'Interior elbow angle ∠(shoulder, elbow, wrist); 180° = fully straight.',
     compute: (p, s) => jointAngle(p(idx('shoulder', s)), p(idx('elbow', s)), p(idx('wrist', s))),
   },

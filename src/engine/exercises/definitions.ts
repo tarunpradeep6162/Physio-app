@@ -143,10 +143,46 @@ export const SHOULDER_FLEXION: ExerciseDefinition = {
   allowedTargetRange: { min: 30, max: 180 },
 };
 
+/** Draft front-view movement, available only inside a clinician-authored program. */
+export const SHOULDER_ABDUCTION: ExerciseDefinition = {
+  id: 'shoulder_abduction',
+  version: '1.0.0',
+  nameKey: 'ex.shoulder_abduction.name',
+  summaryKey: 'ex.shoulder_abduction.summary',
+  setupKeys: ['ex.shoulder_abduction.setup1', 'ex.shoulder_abduction.setup2', 'ex.shoulder_abduction.setup3'],
+  position: 'standing',
+  primary: 'shoulder_abduction',
+  view: 'anterior',
+  cues: { approachKey: 'cue.shoulder.raise_higher', beginKey: 'cue.shoulder.abduct' },
+  defaults: {
+    target: { min: 70, max: 90 },
+    reps: 8,
+    sets: 2,
+    holdSeconds: 2,
+    restSeconds: 45,
+    tempo: { minRepMs: 2500, maxVelocityDegPerSec: 160 },
+  },
+  thresholds: {
+    restThreshold: 25,
+    startDelta: 10,
+    approachMargin: 12,
+    holdTolerance: 8,
+    overTolerance: 12,
+    pauseResetMs: 2500,
+    readyStableMs: 600,
+  },
+  formRules: [{
+    id: 'elbow_straight', measurement: 'elbow_extension_angle', on: 'same', op: 'lt', threshold: 145,
+    cueKey: 'cue.form.keep_elbow_straight', activeIn: ['moving', 'target_approach', 'hold'], sustainMs: 500,
+  }],
+  allowedTargetRange: { min: 45, max: 120 },
+};
+
 export const EXERCISES: Record<ExerciseId, ExerciseDefinition> = {
   knee_flexion: KNEE_FLEXION,
   straight_leg_raise: STRAIGHT_LEG_RAISE,
   shoulder_flexion: SHOULDER_FLEXION,
+  shoulder_abduction: SHOULDER_ABDUCTION,
 };
 
 export const EXERCISE_LIST: ExerciseDefinition[] = Object.values(EXERCISES);

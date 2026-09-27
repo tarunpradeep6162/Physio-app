@@ -7,7 +7,7 @@ import type { Side, ViewOrientation } from '../types';
  * historical results remain interpretable after thresholds or algorithms change.
  */
 
-export type ExerciseId = 'knee_flexion' | 'straight_leg_raise' | 'shoulder_flexion';
+export type ExerciseId = 'knee_flexion' | 'straight_leg_raise' | 'shoulder_flexion' | 'shoulder_abduction';
 
 export interface Range {
   min: number;
@@ -64,7 +64,7 @@ export interface ExerciseDefinition {
   position: 'standing' | 'supine' | 'seated';
   primary: MeasurementType;
   /** Camera view requirement relative to the exercised side. */
-  view: 'same_side_lateral';
+  view: 'same_side_lateral' | 'anterior';
   /** Exercise-specific cue keys. */
   cues: {
     approachKey: string;
@@ -106,5 +106,5 @@ export interface ExercisePrescription {
 }
 
 export function requiredView(def: ExerciseDefinition, side: Side): ViewOrientation[] {
-  return def.view === 'same_side_lateral' ? [side === 'left' ? 'lateral_left' : 'lateral_right'] : [];
+  return def.view === 'same_side_lateral' ? [side === 'left' ? 'lateral_left' : 'lateral_right'] : ['anterior'];
 }

@@ -73,6 +73,9 @@ export class SimulatedPoseProvider implements PoseProvider {
       case 'shoulder_flexion':
         scene = { kind: 'standing_lateral', side: s.side, shoulderFlexion: 8 + a };
         break;
+      case 'shoulder_abduction':
+        scene = { kind: 'standing_anterior', armSide: s.side, shoulderAbduction: a };
+        break;
       case 'straight_leg_raise':
         scene = { kind: 'supine_lateral', side: s.side, legRaise: a };
         break;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateCalibration, CalibrationGate, lightingFromPixels, type CalibrationRequirements } from './calibration';
 import { defaultPrescription, validatePrescription } from './exercises/definitions';
+import { simulateExercise } from './exercises/simulateSession';
 import { painRuleOutcome } from './exercises/painRule';
 import { ExerciseRunner, type RunnerEvent } from './exerciseRunner';
 import { EmaFilter, KalmanFilter1D, OneEuroFilter } from './filters';
@@ -56,6 +57,20 @@ describe('filters', () => {
 });
 
 describe('measurements', () => {
+  it('gates draft shoulder abduction to the front view and refuses a hidden elbow', () => {
+    const lms = synthesize({ kind: 'standing_anterior', armSide: 'left', shoulderAbduction: 85 });
+    const e = estimate('shoulder_abduction', lms, W, H, 'left', { view: 'anterior' });
+    expect(e.value).not.toBeNull();
+    expect(e.value!).toBeCloseTo(85, 0);
+    expect(estimate('shoulder_abduction', lms, W, H, 'left', { view: 'lateral_left' }).reason).toBe('wrong_orientation');
+    lms[LM.leftElbow] = { ...lms[LM.leftElbow], visibility: 0.2 };
+    expect(estimate('shoulder_abduction', lms, W, H, 'left', { view: 'anterior' }).reason).toBe('occluded');
+  });
+  it('runs prescribed shoulder abduction through the same rep engine', () => {
+    const rx = { ...defaultPrescription('shoulder_abduction', 'left'), reps: 2, sets: 1, restSeconds: 0 };
+    const result = simulateExercise(rx, 80, 15);
+    expect(result.repsCompleted).toBe(2);
+  });
   it('estimates knee flexion from a lateral view', () => {
     for (const flex of [0, 45, 90, 120]) {
       const lms = synthesize({ kind: 'standing_lateral', side: 'left', kneeFlexion: flex });

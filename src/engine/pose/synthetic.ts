@@ -20,7 +20,7 @@ export interface SynthOptions {
 export type SynthScene =
   | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number }
   | { kind: 'supine_lateral'; side: Side; legRaise?: number; kneeBend?: number }
-  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; offsetX?: number; scale?: number; handsInFront?: boolean }
+  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; shoulderAbduction?: number; armSide?: Side; offsetX?: number; scale?: number; handsInFront?: boolean }
   /** Supine heel slide seen from the side: knee flexes with the heel on the floor. */
   | { kind: 'supine_heel_slide'; side: Side; kneeFlexion: number }
   /** Sit-to-stand seen from the side: kneeFlexion ~90 seated → ~0 standing; trunk leans forward to rise. */
@@ -141,6 +141,14 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
         // Holding something (e.g. a phone) in front of the belly with both hands.
         set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 6, y: hipY - 0.1 * H * s }, 0, 0.95);
         set(L ? LM.leftWrist : LM.rightWrist, { x: cx + sign * 0.05 * H * s, y: hipY - 0.08 * H * s }, -0.2, 0.93);
+      } else if (scene.armSide === side && scene.shoulderAbduction !== undefined) {
+        const a = rad(scene.shoulderAbduction);
+        const shY = hipY - 0.28 * H * s + (side === 'left' ? -1 : 1) * Math.sin(shTilt) * halfSh;
+        const upper = 0.15 * H * s;
+        const forearm = 0.14 * H * s;
+        const direction = { x: sign * Math.sin(a), y: Math.cos(a) };
+        set(L ? LM.leftElbow : LM.rightElbow, { x: shX + direction.x * upper, y: shY + direction.y * upper }, 0, 0.95);
+        set(L ? LM.leftWrist : LM.rightWrist, { x: shX + direction.x * (upper + forearm), y: shY + direction.y * (upper + forearm) }, 0, 0.93);
       } else {
         set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 12, y: hipY - 0.12 * H * s }, 0, 0.95);
         set(L ? LM.leftWrist : LM.rightWrist, { x: shX + sign * 16, y: hipY + 0.02 * H * s }, 0, 0.93);

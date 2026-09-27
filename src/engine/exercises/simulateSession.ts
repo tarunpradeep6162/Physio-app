@@ -27,6 +27,8 @@ export function simulateExercise(rx: ExercisePrescription, peak: number, fps = 1
       ? { kind: 'supine_lateral', side: rx.side, legRaise: a }
       : rx.definitionId === 'shoulder_flexion'
         ? { kind: 'standing_lateral', side: rx.side, shoulderFlexion: 8 + a }
+        : rx.definitionId === 'shoulder_abduction'
+          ? { kind: 'standing_anterior', armSide: rx.side, shoulderAbduction: a }
         : { kind: 'standing_lateral', side: rx.side, kneeFlexion: 5 + a };
   const maxT = (rx.sets * rx.reps + 2) * cycle + rx.sets * rx.restSeconds;
   let t = 0;
