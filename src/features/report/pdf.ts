@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { REPORT_TEMPLATE_VERSION, type Block, type ReportModel } from '../../clinical/report';
+import type { Block, ReportModel } from '../../clinical/report';
 import { SKELETON_SEGMENTS } from '../../engine/landmarks';
 import { regionLabel } from '../bodymap/regions';
 
@@ -33,7 +33,7 @@ export function pdfText(s: string): string {
 
 export function renderPdf(model: ReportModel): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-  doc.setProperties({ title: `Dheepika Lab knee report ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'Dheepika Lab' });
+  doc.setProperties({ title: `Dheepika Lab ${model.title} ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'Dheepika Lab' });
   let y = 0;
   const prelim = model.state !== 'clinician_reviewed';
 
@@ -209,7 +209,7 @@ export function renderPdf(model: ReportModel): jsPDF {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(...INK);
-  doc.text(model.audience === 'patient' ? 'Knee assessment — your summary' : 'Knee assessment report', M, y + 4);
+  doc.text(model.title, M, y + 4);
   y += 11;
 
   for (const s of model.sections) {
@@ -248,7 +248,7 @@ export function renderPdf(model: ReportModel): jsPDF {
     doc.setFontSize(7);
     doc.setTextColor(...MUTED);
     doc.text(pdfText(`Page ${i} of ${pages}`), PAGE_W - M, PAGE_H - 7, { align: 'right' });
-    doc.text(pdfText(`Generated ${new Date(model.generatedAt).toLocaleString('en-GB')} · document v${model.documentVersion} · ${REPORT_TEMPLATE_VERSION} · ${prelim ? 'AI preliminary' : 'clinician-reviewed'}`), M, PAGE_H - 7);
+    doc.text(pdfText(`Generated ${new Date(model.generatedAt).toLocaleString('en-GB')} · document v${model.documentVersion} · ${model.templateVersion} · ${prelim ? 'AI preliminary' : 'clinician-reviewed'}`), M, PAGE_H - 7);
   }
   return doc;
 }

@@ -135,7 +135,7 @@ export class ProtocolRecorder {
     return {
       protocolId: this.def.id,
       protocolVersion: this.def.version,
-      algorithmVersion: KNEE_ALGORITHM_VERSION,
+      algorithmVersion: this.def.algorithmVersion ?? KNEE_ALGORITHM_VERSION,
       side: this.side,
       view: this.view,
       durationSec: Math.round(((t - t0) / 1000) * 10) / 10,

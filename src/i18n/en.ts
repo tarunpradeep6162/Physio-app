@@ -107,6 +107,9 @@ export const en = {
   'onb.concern.placeholder': 'e.g. Left knee pain after a fall 3 weeks ago, difficulty climbing stairs',
   'onb.concern.goal': 'What would you like to be able to do again?',
   'onb.concern.goal_placeholder': 'e.g. Walk to the market without pain',
+  'onb.area': 'Which area do you want assessed first?',
+  'onb.area_knee': 'Knee',
+  'onb.area_shoulder': 'Shoulder',
   'onb.finish': 'Start my assessment',
 
   // Assessment

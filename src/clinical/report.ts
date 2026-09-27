@@ -1,14 +1,15 @@
 import type { Assessment, DB, ID, Report } from '../data/models';
 import { activeProgram, age, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../data/queries';
 import { getDefinition } from '../engine/exercises/definitions';
-import { getProtocol } from '../engine/protocols/knee';
+import { getProtocol } from '../engine/protocols/registry';
 import type { Keyframe } from '../engine/protocols/types';
 import type { Landmark } from '../engine/types';
 import { regionLabel } from '../features/bodymap/regions';
 import { buildEvidence, capturesFor, metricReview, reviewBlocks } from './evidence';
-import { currentAnswers, formatAnswer, HISTORY_QUESTIONNAIRE, organiseHistory } from './intake';
+import { currentAnswers, formatAnswer, organiseHistory } from './intake';
+import { pathwayFor } from './pathways';
 import { evaluate, RULE_SET, STATE_LABEL } from './reasoning';
-import { levelFromResponses, SAFETY_QUESTIONNAIRE } from './safety';
+import { levelFromResponses } from './safety';
 
 /**
  * Report model: built only from stored data. Every section marks missing or invalid data
@@ -16,6 +17,7 @@ import { levelFromResponses, SAFETY_QUESTIONNAIRE } from './safety';
  * PDF. Conclusions appear as clinician conclusions ONLY in a clinician-reviewed report.
  */
 
+/** Knee template (kept for existing records); each pathway declares its own template version. */
 export const REPORT_TEMPLATE_VERSION = 'pv-knee-report-1.0.0';
 
 export type Block =
@@ -43,6 +45,9 @@ export interface ReportModel {
   documentVersion: number;
   generatedAt: string;
   assessmentId: ID;
+  /** e.g. "Knee assessment report" — from the assessment's pathway. */
+  title: string;
+  templateVersion: string;
   patientLabel: string;
   clinicianName: string;
   approvedBy?: string;
@@ -91,6 +96,10 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   const safety = db.safetyResponses.filter((r) => r.assessmentId === a.id);
   const level = safety.length ? levelFromResponses(safety) : a.safetyLevel;
   const impression = db.impressions.filter((i) => i.assessmentId === a.id).sort((x, y) => y.at.localeCompare(x.at))[0];
+  const pathway = pathwayFor(a);
+  const qn = pathway.history;
+  const SAFETY_QUESTIONNAIRE = pathway.safety;
+  const qText = (q: string) => qn.questions.find((x) => x.id === q)?.text ?? q;
   const S: ReportSection[] = [];
   const add = (n: number, title: string, blocks: Block[], label?: string) => S.push({ n, title, blocks, label });
   const valid = (c: (typeof caps)[number] | undefined, id: string) => {
@@ -108,7 +117,7 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
         ['Age', age(p.dob) === null ? 'not recorded' : `${age(p.dob)} years`],
         ['Assessment ID', a.id.slice(0, 8).toUpperCase()],
         ['Assessment date', fmtDateTime(a.createdAt)],
-        ['Type', `Knee ${a.type === 'reassessment' ? `reassessment (baseline ${baseline ? fmtDate(baseline.createdAt) : '—'})` : 'initial assessment'}`],
+        ['Type', `${pathway.label} ${a.type === 'reassessment' ? `reassessment (baseline ${baseline ? fmtDate(baseline.createdAt) : '—'})` : 'initial assessment'}`],
         ['Clinician', clinician ? `${clinician.name}, ${clinician.title}` : 'not assigned'],
         ['Review status', reviewed ? `Clinician-reviewed (v${st.approved!.version}, ${fmtDateTime(st.approved!.approvedAt!)})` : st.stale ? 'AI preliminary — data changed after the last approval; requires re-review' : 'AI preliminary — requires clinician review'],
       ],
@@ -124,13 +133,13 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   if (paths.length) concerns.push({ kind: 'para', text: `Radiation drawn: ${paths.map((x) => `${x.symptomType} (${x.view} view)`).join(', ')}.` });
   concerns.push({
     kind: 'kv',
-    rows: ['nprs_now', 'nprs_worst', 'duration', 'aggravating', 'easing', 'func_stairs', 'func_squat', 'func_walk', 'func_chair'].map((q) => [HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === q)!.text, answers[q] === undefined ? 'not answered' : formatAnswer(q, answers[q])]),
+    rows: ['nprs_now', 'nprs_worst', 'duration', 'aggravating', 'easing', ...qn.questions.filter((q) => q.section === 'function').map((q) => q.id)].map((q) => [qText(q), answers[q] === undefined ? 'not answered' : formatAnswer(q, answers[q], qn)]),
   });
   add(2, 'Concerns', concerns, 'Patient-reported');
 
   // 3. History
   const amend = db.amendments.filter((m) => m.assessmentId === a.id);
-  const lines = organiseHistory(answers, regions);
+  const lines = organiseHistory(answers, regions, qn);
   add(
     3,
     'History',
@@ -160,25 +169,22 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
           { kind: 'table', head: ['View / measure', 'Estimate', 'SD', 'Confidence', 'Review'], rows: scanMs.map((m) => [`${m.provenance.view ?? ''} · ${m.type.replace('posture.', '').replace(/_/g, ' ')}${m.direction ? ` (${m.direction.replace(/_/g, ' ')})` : ''}`, `${m.value}${m.unit === 'deg' ? '°' : '%'}`, m.sd !== undefined ? `±${m.sd}` : '—', m.confidence.toFixed(2), m.reviewStatus]) },
           { kind: 'para', text: 'Camera-estimated from 2D landmarks with a level camera assumption. No population norms are applied.', tone: 'muted' },
         ]
-      : [{ kind: 'missing', text: 'No static posture capture in this assessment (optional for the knee pathway).' }],
+      : [{ kind: 'missing', text: 'No static posture capture in this assessment (optional for the ${pathway.label.toLowerCase()} pathway).' }],
     'Camera-estimated',
   );
 
   // 5. ROM
   const romRows: string[][] = [];
   for (const side of ['left', 'right'] as const) {
-    const c = caps.find((x) => x.protocolId === 'knee_supported_flexion' && x.side === side);
-    const b = bCaps.find((x) => x.protocolId === 'knee_supported_flexion' && x.side === side);
-    for (const [id, label] of [
-      ['knee_flexion_peak', 'Flexion (peak)'],
-      ['knee_extension_position', 'Most-extended position'],
-    ] as const) {
+    for (const { protocolId, metricId: id, label } of pathway.sidedRows) {
+      const c = caps.find((x) => x.protocolId === protocolId && x.side === side);
+      const b = bCaps.find((x) => x.protocolId === protocolId && x.side === side);
       const cv = valid(c, id);
       const bv = valid(b, id);
-      romRows.push([`Knee ${side} — ${label}`, baseline ? (b ? fmtMetric(bv, 'deg') + (bv === null ? ' (invalid)' : '') : 'not captured') : '—', c ? fmtMetric(cv, 'deg') + (cv === null ? ' (invalid — recapture)' : '') : 'not captured', bv !== null && cv !== null ? `${cv - bv >= 0 ? '+' : ''}${Math.round((cv - bv) * 10) / 10}°` : '—', c ? `${getProtocol(c.protocolId).id}@${c.protocolVersion}, ${c.result.quality.verdict}` : '—']);
+      romRows.push([`${pathway.label} ${side} — ${label}`, baseline ? (b ? fmtMetric(bv, 'deg') + (bv === null ? ' (invalid)' : '') : 'not captured') : '—', c ? fmtMetric(cv, 'deg') + (cv === null ? ' (invalid — recapture)' : '') : 'not captured', bv !== null && cv !== null ? `${cv - bv >= 0 ? '+' : ''}${Math.round((cv - bv) * 10) / 10}°` : '—', c ? `${getProtocol(c.protocolId).id}@${c.protocolVersion}, ${c.result.quality.verdict}` : '—']);
     }
   }
-  add(5, 'Range of motion', [{ kind: 'table', head: ['Joint / side', 'Baseline', 'Current', 'Difference', 'Method / validity'], rows: romRows }, { kind: 'para', text: 'Camera-estimated, 2D lateral view, active movement. Not interchangeable with goniometry until validated.', tone: 'muted' }], 'Camera-estimated');
+  add(5, 'Range of motion', [{ kind: 'table', head: ['Joint / side', 'Baseline', 'Current', 'Difference', 'Method / validity'], rows: romRows }, { kind: 'para', text: pathway.romNote, tone: 'muted' }], 'Camera-estimated');
 
   // 6. Movement
   const mv: Block[] = [];
@@ -192,18 +198,22 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
 
   // 7. Symmetry
   const sym: string[][] = [];
-  const fl = valid(caps.find((x) => x.protocolId === 'knee_supported_flexion' && x.side === 'left'), 'knee_flexion_peak');
-  const fr = valid(caps.find((x) => x.protocolId === 'knee_supported_flexion' && x.side === 'right'), 'knee_flexion_peak');
-  sym.push(['Knee flexion (peak)', fmtMetric(fl, 'deg'), fmtMetric(fr, 'deg'), fl !== null && fr !== null ? `${Math.round(Math.abs(fl - fr) * 10) / 10}°` : 'not available']);
-  const sq = caps.find((x) => x.protocolId === 'knee_squat');
-  const sl = valid(sq, 'squat_fppa_left');
-  const sr = valid(sq, 'squat_fppa_right');
-  sym.push(['Squat FPPA (+ toward midline)', fmtMetric(sl, 'deg'), fmtMetric(sr, 'deg'), sl !== null && sr !== null ? `${Math.round(Math.abs(sl - sr) * 10) / 10}°` : 'not available']);
+  for (const row of pathway.symmetryRows) {
+    const fl = valid(caps.find((x) => x.protocolId === row.protocolId && x.side === 'left'), row.metricId);
+    const fr = valid(caps.find((x) => x.protocolId === row.protocolId && x.side === 'right'), row.metricId);
+    sym.push([row.label, fmtMetric(fl, 'deg'), fmtMetric(fr, 'deg'), fl !== null && fr !== null ? `${Math.round(Math.abs(fl - fr) * 10) / 10}°` : 'not available']);
+  }
+  if (pathway.region === 'knee') {
+    const sq = caps.find((x) => x.protocolId === 'knee_squat');
+    const sl = valid(sq, 'squat_fppa_left');
+    const sr = valid(sq, 'squat_fppa_right');
+    sym.push(['Squat FPPA (+ toward midline)', fmtMetric(sl, 'deg'), fmtMetric(sr, 'deg'), sl !== null && sr !== null ? `${Math.round(Math.abs(sl - sr) * 10) / 10}°` : 'not available']);
+  }
   add(7, 'Symmetry', [{ kind: 'table', head: ['Measure', 'Left', 'Right', 'Difference'], rows: sym }, { kind: 'para', text: 'Descriptive comparison only; a left/right difference is not, by itself, evidence of pathology.', tone: 'muted' }], 'Camera-estimated');
 
   // 8. Functional tests
   const fn: string[][] = [];
-  for (const pid of ['knee_sit_to_stand', 'knee_squat']) {
+  for (const pid of pathway.functionalProtocols) {
     const def = getProtocol(pid);
     const c = caps.find((x) => x.protocolId === pid);
     const b = bCaps.find((x) => x.protocolId === pid);
@@ -215,7 +225,7 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
       fn.push([`${def.shortTitle} — ${m.label}`, c ? fmtMetric(valid(c, m.id), m.unit) : 'not captured', c ? fmtDate(c.createdAt) : '—', c ? `${c.result.quality.verdict}, ${Math.round(c.result.quality.coverage * 100)}% coverage${c.setupNotes ? `, setup: ${c.setupNotes}` : ''}` : '—', baseline ? (b ? `${fmtMetric(valid(b, m.id), m.unit)} (${fmtDate(b.createdAt)})` : 'no baseline') : '—']);
     }
   }
-  add(8, 'Functional tests', [{ kind: 'table', head: ['Test / result', 'Value', 'Date', 'Quality', 'Baseline'], rows: fn }], 'Camera-estimated');
+  add(8, 'Functional tests', fn.length ? [{ kind: 'table', head: ['Test / result', 'Value', 'Date', 'Quality', 'Baseline'], rows: fn }] : [{ kind: 'missing', text: `No camera functional tests are defined for the ${pathway.label.toLowerCase()} pathway in this version.` }], 'Camera-estimated');
 
   // 9. Reported outcomes
   const sess = sessionsFor(db, p.id).slice(0, 8);
@@ -223,7 +233,7 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     9,
     'Reported outcomes',
     [
-      { kind: 'kv', rows: ['nprs_now', 'nprs_worst', 'nprs_best'].map((q) => [HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === q)!.text, answers[q] === undefined ? 'not answered' : formatAnswer(q, answers[q])]) },
+      { kind: 'kv', rows: ['nprs_now', 'nprs_worst', 'nprs_best'].map((q) => [qText(q), answers[q] === undefined ? 'not answered' : formatAnswer(q, answers[q], qn)]) },
       sess.length ? { kind: 'table', head: ['Session', 'Pain before → after', 'Exertion (RPE)'], rows: sess.map((s) => [fmtDate(s.startedAt), `${s.painBefore ?? '—'} → ${s.painAfter ?? '—'}`, `${s.rpe ?? '—'}/10`]) } : { kind: 'missing', text: 'No exercise sessions recorded yet.' },
       { kind: 'para', text: 'No licensed outcome instruments were administered in this version.', tone: 'muted' },
     ],
@@ -244,10 +254,12 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   ]);
 
   // 11. Reasoning
-  const results = evaluate(evidence, level);
+  const results = pathway.hasConsiderationRules ? evaluate(evidence, level) : [];
   const decisions = db.reasoningDecisions.filter((d) => d.assessmentId === a.id);
   add(11, 'Reasoning', [
-    { kind: 'para', text: `Differential considerations generated by rule set ${RULE_SET.id}@${RULE_SET.version} (${db.settings.ruleApprovals[`${RULE_SET.id}@${RULE_SET.version}`] ? 'approved' : 'DRAFT'}). No probabilities; not diagnoses.`, tone: 'muted' },
+    pathway.hasConsiderationRules
+      ? { kind: 'para', text: `Differential considerations generated by rule set ${RULE_SET.id}@${RULE_SET.version} (${db.settings.ruleApprovals[`${RULE_SET.id}@${RULE_SET.version}`] ? 'approved' : 'DRAFT'}). No probabilities; not diagnoses.`, tone: 'muted' }
+      : { kind: 'para', text: `No automated considerations: the ${pathway.label.toLowerCase()} pathway has no reasoning rules, so nothing is inferred. ${pathway.scopeLimits.join(' ')}`, tone: 'muted' },
     {
       kind: 'table',
       head: ['Consideration', 'Evidence state', 'For', 'Against', 'Missing / further tests', 'Clinician action'],
@@ -282,17 +294,17 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   // 13. Progress
   const flexSeries = (side: 'left' | 'right') =>
     db.assessments
-      .filter((x) => x.patientId === p.id && x.region === 'knee')
-      .map((x) => ({ at: x.createdAt, v: valid(capturesFor(db, x.id).find((c) => c.protocolId === 'knee_supported_flexion' && c.side === side), 'knee_flexion_peak') }))
+      .filter((x) => x.patientId === p.id && x.region === pathway.region)
+      .map((x) => ({ at: x.createdAt, v: valid(capturesFor(db, x.id).find((c) => c.protocolId === pathway.trend.protocolId && c.side === side), pathway.trend.metricId) }))
       .sort((x, y) => x.at.localeCompare(y.at));
   const L = flexSeries('left');
   const R = flexSeries('right');
   add(
     13,
     'Progress',
-    L.length + R.length > 1
+    new Set([...L, ...R].map((x) => x.at)).size > 1
       ? [
-          { kind: 'chart', title: 'Camera-estimated knee flexion by assessment', unit: '°', xLabel: 'date', xFormat: 'date', series: [{ label: 'Left', points: L.map((x) => ({ x: new Date(x.at).getTime(), y: x.v })) }, { label: 'Right', dashed: true, points: R.map((x) => ({ x: new Date(x.at).getTime(), y: x.v })) }] },
+          { kind: 'chart', title: `Camera-estimated ${pathway.trend.label} by assessment`, unit: '°', xLabel: 'date', xFormat: 'date', series: [{ label: 'Left', points: L.map((x) => ({ x: new Date(x.at).getTime(), y: x.v })) }, { label: 'Right', dashed: true, points: R.map((x) => ({ x: new Date(x.at).getTime(), y: x.v })) }] },
           { kind: 'para', text: `Dates: ${L.map((x) => `${fmtDate(x.at)} L ${x.v ?? 'missing/invalid'}`).join(' · ')}. Gaps mean no valid capture that day.`, tone: 'muted' },
         ]
       : [{ kind: 'missing', text: 'Only one assessment so far — progress needs a matched reassessment.' }],
@@ -310,10 +322,10 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     {
       kind: 'kv',
       rows: [
-        ['Report template', REPORT_TEMPLATE_VERSION],
-        ['History questionnaire', `${HISTORY_QUESTIONNAIRE.id}@${HISTORY_QUESTIONNAIRE.version}`],
+        ['Report template', pathway.reportTemplate],
+        ['History questionnaire', `${qn.id}@${qn.version}`],
         ['Safety questionnaire', `${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version} (${db.settings.ruleApprovals[`${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version}`] ? 'approved' : 'draft'})`],
-        ['Reasoning rules', `${RULE_SET.id}@${RULE_SET.version} (${db.settings.ruleApprovals[`${RULE_SET.id}@${RULE_SET.version}`] ? 'approved' : 'draft'})`],
+        ['Reasoning rules', pathway.hasConsiderationRules ? `${RULE_SET.id}@${RULE_SET.version} (${db.settings.ruleApprovals[`${RULE_SET.id}@${RULE_SET.version}`] ? 'approved' : 'draft'})` : 'none for this pathway'],
       ],
     },
     { kind: 'para', text: 'Known limitations: camera measurements are 2D estimates from a single phone/laptop camera and have not been clinically validated; they cannot establish tissue diagnosis, force or laboratory-grade 3D kinematics. No regulatory clearance is claimed. Raw video is not stored; results derive from stored landmarks.', tone: 'muted' },
@@ -331,6 +343,8 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     documentVersion: st.approved && !st.stale ? st.approved.version : st.nextVersion,
     generatedAt: new Date().toISOString(),
     assessmentId,
+    title: audience === 'patient' ? `${pathway.label} assessment — your summary` : `${pathway.label} assessment report`,
+    templateVersion: pathway.reportTemplate,
     patientLabel: `${p.name} · ${p.id.slice(0, 8).toUpperCase()}`,
     clinicianName: clinician?.name ?? '—',
     approvedBy: reviewed ? db.clinicians.find((c) => c.id === st.approved!.approvedBy)?.name : undefined,

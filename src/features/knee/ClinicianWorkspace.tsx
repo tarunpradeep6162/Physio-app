@@ -4,13 +4,14 @@ import { useCurrentUser } from '../../app/hooks';
 import { buildEvidence, capturesFor, type EvidenceItem } from '../../clinical/evidence';
 import { currentAnswers, formatAnswer, organiseHistory } from '../../clinical/intake';
 import { evaluate, RULE_SET, STATE_LABEL, type EvaluatedConsideration } from '../../clinical/reasoning';
-import { levelFromResponses, SAFETY_ACTION_TEXT, SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
+import { pathwayFor } from '../../clinical/pathways';
+import { levelFromResponses, SAFETY_ACTION_TEXT } from '../../clinical/safety';
 import { IconClose } from '../../components/icons';
 import { CategoryBadge, DemoBadge, Loader, Notice, Segmented } from '../../components/ui';
 import type { Assessment, DB, Measurement, ReasoningAction, ReviewStatus, TestPlanItem } from '../../data/models';
 import { age, fmtDate, fmtDateTime } from '../../data/queries';
 import { insert, update, useDb, uuid } from '../../data/store';
-import { getProtocol, PROTOCOLS } from '../../engine/protocols/knee';
+import { getProtocol, protocolsForRegion } from '../../engine/protocols/registry';
 import type { Side } from '../../engine/types';
 import { jointList } from '../../engine/landmarks';
 import { POSTURE_METRICS, type PostureMetricId } from '../../engine/posture';
@@ -49,7 +50,9 @@ export function KneeWorkspace({ a }: { a: Assessment }) {
     <div className="content stack loose">
       <div className="row between wrap">
         <div>
-          <p className="eyebrow">Knee {a.type === 'reassessment' ? 'reassessment' : 'assessment'} · {a.status.replace('_', ' ')}</p>
+          <p className="eyebrow">
+            {pathwayFor(a).label} {a.type === 'reassessment' ? 'reassessment' : 'assessment'} · {a.status.replace('_', ' ')}
+          </p>
           <h1>
             <Link to={`/c/patients/${patient.id}`} style={{ color: 'inherit' }}>
               {patient.name}
@@ -98,7 +101,9 @@ function SummaryTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string
   const answers = currentAnswers(rows);
   const regions = db.painRegions.filter((r) => r.assessmentId === a.id);
   const paths = db.radiationPaths.filter((p) => p.assessmentId === a.id);
-  const lines = organiseHistory(answers, regions);
+  const pathway = pathwayFor(a);
+  const lines = organiseHistory(answers, regions, pathway.history);
+  const SAFETY_QUESTIONNAIRE = pathway.safety;
   const amendments = db.amendments.filter((m) => m.assessmentId === a.id);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -176,7 +181,7 @@ function SummaryTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string
                         <li key={s}>
                           {r ? (
                             <>
-                              “{r.questionText}” → <strong>{formatAnswer(s, r.answer)}</strong> ({fmtDateTime(r.answeredAt)}, {r.questionnaireId}@{r.questionnaireVersion})
+                              “{r.questionText}” → <strong>{formatAnswer(s, r.answer, pathway.history)}</strong> ({fmtDateTime(r.answeredAt)}, {r.questionnaireId}@{r.questionnaireVersion})
                             </>
                           ) : (
                             s === 'symptom_map' ? 'Symptom map' : s
@@ -226,7 +231,7 @@ function SummaryTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string
               {[...rows].sort((x, y) => x.answeredAt.localeCompare(y.answeredAt)).map((r) => (
                 <tr key={r.id}>
                   <td className="small">{r.questionText}</td>
-                  <td className="small">{formatAnswer(r.questionId, r.answer)}</td>
+                  <td className="small">{formatAnswer(r.questionId, r.answer, pathway.history)}</td>
                   <td className="xs">{fmtDateTime(r.answeredAt)}</td>
                   <td className="xs">{r.supersededBy ? 'superseded' : 'current'}</td>
                 </tr>
@@ -275,7 +280,7 @@ function PlanTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string })
   const history = db.testPlans.filter((p) => p.assessmentId === a.id).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
   const [items, setItems] = useState<TestPlanItem[]>(plan?.items ?? []);
   const [note, setNote] = useState('');
-  const [add, setAdd] = useState<{ protocolId: string; side: Side | null }>({ protocolId: 'knee_supported_flexion', side: 'left' });
+  const [add, setAdd] = useState<{ protocolId: string; side: Side | null }>(() => ({ protocolId: pathwayFor(a).defaultPlan[0].protocolId, side: 'left' }));
   const def = getProtocol(add.protocolId);
   return (
     <div className="stack">
@@ -302,7 +307,7 @@ function PlanTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string })
         </div>
         <div className="row wrap">
           <select className="input" style={{ width: 'auto', maxWidth: '100%' }} value={add.protocolId} onChange={(e) => setAdd({ protocolId: e.target.value, side: getProtocol(e.target.value).sided ? 'left' : null })} aria-label="Protocol">
-            {Object.values(PROTOCOLS).map((p) => (
+            {protocolsForRegion(pathwayFor(a).region).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.title} (v{p.version})
               </option>
@@ -428,7 +433,8 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
 function ReasoningTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string }) {
   const evidence = useMemo(() => buildEvidence(db, a.id), [db, a.id]);
   const level = a.safetyLevel;
-  const results = useMemo(() => evaluate(evidence, level), [evidence, level]);
+  const pathway = pathwayFor(a);
+  const results = useMemo(() => (pathway.hasConsiderationRules ? evaluate(evidence, level) : []), [evidence, level, pathway.hasConsiderationRules]);
   const [focus, setFocus] = useState<string | null>(null);
   const [why, setWhy] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -465,7 +471,13 @@ function ReasoningTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: stri
   return (
     <div className="stack loose">
       <Notice tone="warn">
-        Evidence-linked considerations for clinician review — not diagnoses, and no probabilities are computed. Rule set {RULE_SET.id}@{RULE_SET.version}: {approved ? `approved ${fmtDate(approved.approvedAt)}` : RULE_SET.status}.
+        {pathway.hasConsiderationRules ? (
+          <>
+            Evidence-linked considerations for clinician review — not diagnoses, and no probabilities are computed. Rule set {RULE_SET.id}@{RULE_SET.version}: {approved ? `approved ${fmtDate(approved.approvedAt)}` : RULE_SET.status}.
+          </>
+        ) : (
+          <>Evidence for clinician review. The {pathway.label.toLowerCase()} pathway has no automated consideration rules: nothing is inferred, and the impression is yours alone.</>
+        )}
       </Notice>
 
       <section className="stack">
@@ -504,6 +516,16 @@ function ReasoningTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: stri
 
       <section className="stack">
         <h2>Differential considerations</h2>
+        {!pathway.hasConsiderationRules && (
+          <div className="stack tight">
+            <p className="small muted">No draft consideration rules exist for this pathway. Record examination findings and your impression below.</p>
+            <ul className="small">
+              {pathway.scopeLimits.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         {results.map((r) => {
           const hist = decisions.filter((d) => d.considerationId === r.rule.id).sort((x, y) => y.at.localeCompare(x.at));
           return (

@@ -18,7 +18,7 @@ export interface SynthOptions {
 }
 
 export type SynthScene =
-  | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number }
+  | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number; scale?: number }
   | { kind: 'supine_lateral'; side: Side; legRaise?: number; kneeBend?: number }
   | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; shoulderAbduction?: number; armSide?: Side; offsetX?: number; scale?: number; handsInFront?: boolean }
   /** Supine heel slide seen from the side: knee flexes with the heel on the floor. */
@@ -261,9 +261,11 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
   if (scene.kind === 'standing_lateral') {
     const cx = W * 0.5;
     const ankleY = H * 0.88;
-    const shin = 0.22 * H;
-    const thigh = 0.22 * H;
-    const torso = 0.28 * H;
+    // scale < 1 = standing further back (the figure shrinks toward the floor line, leaving headroom).
+    const sc = scene.scale ?? 1;
+    const shin = 0.22 * H * sc;
+    const thigh = 0.22 * H * sc;
+    const torso = 0.28 * H * sc;
     const lean = rad(scene.trunkLean ?? 0);
     const kneeFlex = rad(scene.kneeFlexion ?? 0);
     const shFlex = rad(scene.shoulderFlexion ?? 0);
@@ -280,15 +282,15 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
     pair(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + fwd * 40, y: ankle.y + 14 }, { x: farAnkle.x + fwd * 40, y: farAnkle.y + 14 });
     const sh: P = { x: hip.x + fwd * Math.sin(lean) * torso, y: hip.y - Math.cos(lean) * torso };
     pair(LM.leftShoulder, LM.rightShoulder, sh);
-    const ua = 0.16 * H;
-    const fa = 0.14 * H;
+    const ua = 0.16 * H * sc;
+    const fa = 0.14 * H * sc;
     // Arm flexion angle measured from the trunk-down direction, rotating forward.
     const armDir = { x: fwd * Math.sin(shFlex - lean), y: Math.cos(shFlex - lean) };
     const elbow: P = { x: sh.x + armDir.x * ua, y: sh.y + armDir.y * ua };
     const wrist: P = { x: elbow.x + armDir.x * fa, y: elbow.y + armDir.y * fa };
     pair(LM.leftElbow, LM.rightElbow, elbow, { x: sh.x, y: sh.y + ua });
     pair(LM.leftWrist, LM.rightWrist, wrist, { x: sh.x, y: sh.y + ua + fa });
-    const ear: P = { x: sh.x + fwd * 6, y: sh.y - 0.07 * H };
+    const ear: P = { x: sh.x + fwd * 6, y: sh.y - 0.07 * H * sc };
     pair(LM.leftEar, LM.rightEar, ear);
     pair(LM.leftEye, LM.rightEye, { x: ear.x + fwd * 30, y: ear.y - 6 });
     set(LM.nose, { x: ear.x + fwd * 45, y: ear.y + 4 }, -0.1, 0.95);

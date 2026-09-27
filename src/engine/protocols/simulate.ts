@@ -1,7 +1,10 @@
 import { MotionPipeline } from '../pipeline';
 import { synthesize, type SynthScene } from '../pose/synthetic';
 import type { Landmark, PoseProviderInfo, Side } from '../types';
-import { getProtocol } from './knee';
+import { getProtocol } from './registry';
+
+/** Protocol ids the synthetic scene generator can animate. */
+export const SIMULATED_PROTOCOLS = new Set(['knee_supported_flexion', 'knee_sit_to_stand', 'knee_squat', 'shoulder_flexion_active', 'shoulder_abduction_active']);
 import { ProtocolRecorder } from './recorder';
 import type { ProtocolResult } from './types';
 
@@ -18,6 +21,8 @@ export interface SimParams {
   peak?: number;
   valgusLeft?: number;
   valgusRight?: number;
+  /** Shoulder flexion: trunk lean (deg) reached at peak arm elevation. */
+  trunkLean?: number;
   /** Seconds per cycle multiplier (1 = default tempo). */
   tempo?: number;
   cycles?: number;
@@ -27,6 +32,9 @@ export interface SimParams {
   /** Mutate landmarks at time t (s) — e.g. inject occlusion. */
   perturb?: (lms: Landmark[], t: number) => Landmark[] | null;
 }
+
+/** Figure scale matching the shoulder protocols' framing guide (room above the head for the raised arm). */
+const SHOULDER_FRAMING_SCALE = 0.75;
 
 const ease = (x: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, x)));
 
@@ -66,6 +74,23 @@ export function sceneAt(protocolId: string, side: Side | null, t: number, p: Sim
     } else if (x < sit + rise + stand) f = 3;
     else f = 3 + ease((x - sit - rise - stand) / lower) * (seated - 3);
     return { kind: 'sit_to_stand_lateral', side: side ?? 'left', kneeFlexion: f, trunkLean: lean };
+  }
+  if (protocolId === 'shoulder_flexion_active' || protocolId === 'shoulder_abduction_active') {
+    const peak = p.peak ?? (protocolId === 'shoulder_flexion_active' ? 150 : 140);
+    const [rest, up, hold, down] = [1.0 * k, 1.5 * k, 0.3 * k, 1.5 * k];
+    const cyc = rest + up + hold + down;
+    const x = t < 1 ? 0 : (t - 1) % cyc;
+    let a = 5;
+    if (t >= 1 && t < 1 + (p.cycles ?? 3) * cyc) {
+      if (x < rest) a = 5;
+      else if (x < rest + up) a = 5 + ease((x - rest) / up) * (peak - 5);
+      else if (x < rest + up + hold) a = peak;
+      else a = peak - ease((x - rest - up - hold) / down) * (peak - 5);
+    }
+    const lean = (p.trunkLean ?? 0) * ((a - 5) / Math.max(1, peak - 5));
+    return protocolId === 'shoulder_flexion_active'
+      ? { kind: 'standing_lateral', side: side ?? 'left', shoulderFlexion: a, trunkLean: lean, scale: SHOULDER_FRAMING_SCALE }
+      : { kind: 'standing_anterior', armSide: side ?? 'left', shoulderAbduction: a, scale: SHOULDER_FRAMING_SCALE };
   }
   // knee_squat
   const peak = p.peak ?? 0.32;

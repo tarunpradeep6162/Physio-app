@@ -109,7 +109,7 @@ export function ReportBody({ model }: { model: ReportModel }) {
   return (
     <article className="report-page stack">
       {model.state !== 'clinician_reviewed' && <div className="report-watermark">{model.staleApproval ? 'AI PRELIMINARY — DATA CHANGED SINCE APPROVAL — REQUIRES RE-REVIEW' : 'AI PRELIMINARY — REQUIRES CLINICIAN REVIEW'}</div>}
-      <h1>{model.audience === 'patient' ? 'Knee assessment — your summary' : 'Knee assessment report'}</h1>
+      <h1>{model.title}</h1>
       {model.sections.map((s) => (
         <section key={`${s.n}-${s.title}`} className="report-section stack tight" style={{ borderTop: '1px solid var(--line)', paddingTop: '0.8rem' }}>
           <h2>

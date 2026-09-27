@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
-import { buildReport, REPORT_TEMPLATE_VERSION, reportStatus } from '../../clinical/report';
+import { buildReport, reportStatus } from '../../clinical/report';
 import { Notice } from '../../components/ui';
 import { fmtDateTime } from '../../data/queries';
 import { getDb, insert, useDb, uuid } from '../../data/store';
@@ -15,7 +15,7 @@ export function downloadReport(assessmentId: string, audience: 'clinician' | 'pa
   const model = buildReport(db, assessmentId, audience);
   // Every generated document is recorded (document version + state) for the audit trail.
   if (model.state !== 'clinician_reviewed') {
-    insert('reports', { id: uuid(), assessmentId, version: model.documentVersion, status: 'preliminary', generatedAt: model.generatedAt, generatedBy: actorId, templateVersion: REPORT_TEMPLATE_VERSION }, actorId, `pdf:${audience}`);
+    insert('reports', { id: uuid(), assessmentId, version: model.documentVersion, status: 'preliminary', generatedAt: model.generatedAt, generatedBy: actorId, templateVersion: model.templateVersion }, actorId, `pdf:${audience}`);
   }
   const doc = renderPdf(model);
   doc.save(`dheepika-lab-knee-${audience}-${assessmentId.slice(0, 8)}-v${model.documentVersion}.pdf`);
@@ -54,7 +54,7 @@ export function ReportPanel({ assessmentId }: { assessmentId: string }) {
             disabled={!hasImpression || !clinician || st.state === 'clinician_reviewed'}
             onClick={() => {
               const now = new Date().toISOString();
-              insert('reports', { id: uuid(), assessmentId, version: st.nextVersion, status: 'clinician_reviewed', generatedAt: now, generatedBy: user.id, approvedBy: clinician!.id, approvedAt: now, templateVersion: REPORT_TEMPLATE_VERSION }, user.id, 'report_approve');
+              insert('reports', { id: uuid(), assessmentId, version: st.nextVersion, status: 'clinician_reviewed', generatedAt: now, generatedBy: user.id, approvedBy: clinician!.id, approvedAt: now, templateVersion: buildReport(getDb(), assessmentId, 'clinician').templateVersion }, user.id, 'report_approve');
             }}
           >
             Approve as clinician-reviewed

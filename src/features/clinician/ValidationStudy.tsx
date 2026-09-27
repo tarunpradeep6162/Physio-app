@@ -2,14 +2,21 @@ import { useState } from 'react';
 import { summariseValidation, validationPairs } from '../../clinical/validationData';
 import { Notice } from '../../components/ui';
 import { updateSettings, useDb } from '../../data/store';
-import { PROTOCOLS } from '../../engine/protocols/knee';
+import { PROTOCOLS } from '../../engine/protocols/registry';
 
 /**
  * Validation study panel (clinician Settings). Release thresholds are the clinical lead's decision:
  * they start EMPTY, are entered here and locked before the final evaluation set is analysed.
  * Agreement figures are shown per split and are descriptive until the study protocol is complete.
  */
-const METRICS = Object.values(PROTOCOLS).flatMap((p) => (p.id === 'knee_squat' ? ['squat_fppa_left', 'squat_fppa_right', 'squat_depth'] : p.id === 'knee_sit_to_stand' ? ['sts_time_5', 'sts_rise_time'] : ['knee_flexion_peak', 'knee_extension_position']));
+const METRICS_BY_PROTOCOL: Record<string, string[]> = {
+  knee_supported_flexion: ['knee_flexion_peak', 'knee_extension_position'],
+  knee_sit_to_stand: ['sts_time_5', 'sts_rise_time'],
+  knee_squat: ['squat_fppa_left', 'squat_fppa_right', 'squat_depth'],
+  shoulder_flexion_active: ['shoulder_flexion_peak'],
+  shoulder_abduction_active: ['shoulder_abduction_peak'],
+};
+const METRICS = Object.values(PROTOCOLS).flatMap((p) => METRICS_BY_PROTOCOL[p.id] ?? []);
 
 const EMPTY_ROW = { loaWithin: '', maxFailureRate: '', minIcc: '', minN: '' };
 

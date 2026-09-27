@@ -1,3 +1,4 @@
+import { PATHWAYS, type PathwayRegion } from '../../clinical/pathways';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
@@ -86,7 +87,8 @@ export function PatientHome() {
             sub={last ? `${fmtDate(last.startedAt)} · ${t('session.peak_rom')}` : undefined}
           />
         </div>
-        <KneeCard patientId={patient.id} />
+        <PathwayCard patientId={patient.id} region="knee" />
+        <PathwayCard patientId={patient.id} region="shoulder" />
       </div>
       <Link to="/p/progress" className="btn secondary">
         {t('home.recent_progress')} <IconChevron width={18} />
@@ -95,10 +97,12 @@ export function PatientHome() {
   );
 }
 
-/** Knee assessment status: resume, matched reassessment and the approved report. */
-function KneeCard({ patientId }: { patientId: string }) {
+/** Assessment status per pathway: resume, matched reassessment and the approved report. */
+function PathwayCard({ patientId, region }: { patientId: string; region: PathwayRegion }) {
   const db = useDb((d) => d);
-  const knee = db.assessments.filter((a) => a.patientId === patientId && a.region === 'knee').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const label = PATHWAYS[region].label;
+  const to = region === 'knee' ? '/p/assess' : `/p/assess/${region}`;
+  const knee = db.assessments.filter((a) => a.patientId === patientId && a.region === region).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const open = knee.find((a) => !a.submittedAt);
   const lastDone = knee.find((a) => a.submittedAt);
   const reviewed = knee.find((a) => a.status === 'reviewed');
@@ -106,11 +110,11 @@ function KneeCard({ patientId }: { patientId: string }) {
   const approvedReport = knee.find((a) => reportStatus(db, a.id).state === 'clinician_reviewed');
   return (
     <div className="panel stack tight metric-card knee-card">
-      <span className="stat-label">Knee assessment</span>
+      <span className="stat-label">{label} assessment</span>
       {open ? (
         <>
           <strong>In progress</strong>
-          <Link to="/p/assess" className="btn primary sm">
+          <Link to={to} className="btn primary sm">
             <IconScan width={16} /> Resume
           </Link>
         </>
@@ -124,14 +128,14 @@ function KneeCard({ patientId }: { patientId: string }) {
             </Link>
           )}
           {reviewed && (
-            <Link to={`/p/assess?reassess=${reviewed.id}`} className="btn secondary sm">
+            <Link to={`${to}?reassess=${reviewed.id}`} className="btn secondary sm">
               Start matched reassessment
             </Link>
           )}
         </>
       ) : (
-        <Link to="/p/assess" className="btn primary sm">
-          <IconScan width={16} /> Start knee assessment
+        <Link to={to} className="btn primary sm">
+          <IconScan width={16} /> Start {label.toLowerCase()} assessment
         </Link>
       )}
     </div>

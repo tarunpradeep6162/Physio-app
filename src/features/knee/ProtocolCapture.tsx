@@ -11,7 +11,7 @@ import { CalibrationGate, evaluateCalibration, lightingFromPixels, type Calibrat
 import { pauseText } from '../../engine/feedback';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
-import { getProtocol } from '../../engine/protocols/knee';
+import { getProtocol } from '../../engine/protocols/registry';
 import { captureConfig, compareConfig, ProtocolRecorder } from '../../engine/protocols/recorder';
 import type { CaptureConfig, ConditionMatch, ProtocolResult } from '../../engine/protocols/types';
 import type { DeviceContext } from '../../engine/provenance';

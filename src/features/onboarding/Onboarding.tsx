@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { IconCamera, IconShield } from '../../components/icons';
-import { Notice, Steps } from '../../components/ui';
+import { Notice, Segmented, Steps } from '../../components/ui';
 import type { ConsentType } from '../../data/models';
 import { setPrefs } from '../../data/prefs';
 import { insert, update, uuid } from '../../data/store';
@@ -26,6 +26,7 @@ export function Onboarding() {
   const [consent, setConsent] = useState<Record<ConsentType, boolean>>({ camera_processing: false, data_storage: false, image_storage: false, research_export: false });
   const [concern, setConcern] = useState(patient?.concern ?? '');
   const [goal, setGoal] = useState(patient?.goal ?? '');
+  const [area, setArea] = useState<'knee' | 'shoulder'>('knee');
 
   if (!user || !patient) return null;
 
@@ -41,7 +42,7 @@ export function Onboarding() {
   };
   const finish = () => {
     update('patients', patient.id, { concern, goal }, user.id, 'concern');
-    nav('/p/assess');
+    nav(area === 'knee' ? '/p/assess' : `/p/assess/${area}`);
   };
 
   return (
@@ -154,6 +155,10 @@ export function Onboarding() {
             <span className="sr-only">{t('onb.concern.title')}</span>
             <textarea className="input" value={concern} onChange={(e) => setConcern(e.target.value)} placeholder={t('onb.concern.placeholder')} />
           </label>
+          <div className="stack tight">
+            <span>{t('onb.area')}</span>
+            <Segmented<'knee' | 'shoulder'> label={t('onb.area')} value={area} onChange={setArea} options={[{ id: 'knee', label: t('onb.area_knee') }, { id: 'shoulder', label: t('onb.area_shoulder') }]} />
+          </div>
           <label className="field">
             <span>{t('onb.concern.goal')}</span>
             <textarea className="input" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={t('onb.concern.goal_placeholder')} />

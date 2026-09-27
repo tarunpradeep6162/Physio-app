@@ -1,23 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
-import { currentAnswers, hasKnee, SCALE04, visibleQuestions, type AnswerValue, type Question } from '../../clinical/intake';
-import { routineAllowed, SAFETY_ACTION_TEXT, SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
+import { currentAnswers, SCALE04, visibleQuestions, type AnswerValue, type Question } from '../../clinical/intake';
+import { PATHWAYS, pathwayFor, type PathwayRegion } from '../../clinical/pathways';
+import { routineAllowed, SAFETY_ACTION_TEXT } from '../../clinical/safety';
 import { CategoryBadge, ChipGroup, NprsInput, Notice, Segmented, Steps } from '../../components/ui';
 import type { Assessment, PainRegion, RadiationPath, SymptomType } from '../../data/models';
 import { getDb, insert, update, useDb, uuid } from '../../data/store';
-import { getProtocol } from '../../engine/protocols/knee';
+import { getProtocol } from '../../engine/protocols/registry';
 import type { Side } from '../../engine/types';
 import { BodyMap, type MapPath } from '../bodymap/BodyMap';
 import { parseRegion, regionLabel, type BodyView } from '../bodymap/regions';
 import { saveScan } from '../assessment/persist';
 import { StaticScan } from '../scan/StaticScan';
 import { ProtocolCapture } from './ProtocolCapture';
-import { baselineCapture, createKneeAssessment, ensurePlan, currentPlan, itemKey, latestCapture, saveAnswers, saveCapture, saveRadiationPaths, saveRegions, saveSafety } from './persist';
+import { baselineCapture, createAssessment, ensurePlan, currentPlan, itemKey, latestCapture, saveAnswers, saveCapture, saveRadiationPaths, saveRegions, saveSafety } from './persist';
 import { BilateralTable, CaptureCard, ComparisonTable } from './Results';
 
 /**
- * Patient knee pathway: symptom map → adaptive history → safety screen → test plan & camera
+ * Patient assessment pathway (knee or shoulder, from the pathway registry): symptom map → adaptive history → safety screen → test plan & camera
  * tests → results → submit for clinician review. Every step persists, so an unfinished
  * assessment resumes where it stopped. A reassessment copies the baseline plan and shows the
  * baseline alignment guide during capture.
@@ -32,26 +33,22 @@ const SYMPTOMS: { id: SymptomType; label: string }[] = [
   { id: 'tingling', label: 'Tingling' },
 ];
 const SYMPTOM_COLOR: Record<SymptomType, string> = { pain: '#e65a5a', stiffness: '#0d9488', weakness: '#8a5a00', numbness: '#7c5cd6', tingling: '#2563eb' };
-const KNEE_SUB = [
-  { id: 'anterior', label: 'Front / kneecap' },
-  { id: 'medial', label: 'Inner side' },
-  { id: 'lateral', label: 'Outer side' },
-  { id: 'posterior', label: 'Back of knee' },
-  { id: 'whole', label: 'Whole knee' },
-];
-const REASSESS_QUESTIONS = new Set(['nprs_now', 'nprs_worst', 'nprs_best', 'pattern', 'night', 'aggravating', 'func_stairs', 'func_squat', 'func_walk', 'func_chair', 'swelling', 'locking', 'giving_way']);
 
 type Draft = Omit<PainRegion, 'id' | 'assessmentId'>;
 
-export function KneeAssessment() {
+export const KneeAssessment = () => <PathwayAssessment region="knee" />;
+export const ShoulderAssessment = () => <PathwayAssessment region="shoulder" />;
+
+export function PathwayAssessment({ region }: { region: PathwayRegion }) {
+  const pathway = PATHWAYS[region];
   const nav = useNavigate();
   const user = useCurrentUser();
   const patient = useCurrentPatient();
   const db = useDb((d) => d);
   const reassessOf = new URLSearchParams(location.search).get('reassess');
   const open = useMemo(
-    () => db.assessments.filter((a) => a.patientId === patient?.id && a.region === 'knee' && !a.submittedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
-    [db, patient?.id],
+    () => db.assessments.filter((a) => a.patientId === patient?.id && a.region === region && !a.submittedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
+    [db, patient?.id, region],
   );
   const [assessmentId, setAssessmentId] = useState<string | null>(open?.id ?? null);
   const a = db.assessments.find((x) => x.id === assessmentId);
@@ -64,10 +61,10 @@ export function KneeAssessment() {
     if (!patient || !user || assessmentId || creating.current) return;
     creating.current = true;
     const baseline = reassessOf ? getDb().assessments.find((x) => x.id === reassessOf) : undefined;
-    const created = createKneeAssessment(patient, user.id, baseline);
+    const created = createAssessment(patient, user.id, region, baseline);
     setAssessmentId(created.id);
     setStep(0);
-  }, [patient, user, assessmentId, reassessOf]);
+  }, [patient, user, assessmentId, reassessOf, region]);
 
   if (!patient || !user || !a) return null;
 
@@ -82,7 +79,7 @@ export function KneeAssessment() {
       <div className="stack tight">
         <div className="row between">
           <span className="eyebrow">
-            Knee {a.type === 'reassessment' ? 'reassessment' : 'assessment'} · {STEPS[step]}
+            {pathway.label} {a.type === 'reassessment' ? 'reassessment' : 'assessment'} · {STEPS[step]}
           </span>
           <span className="small muted">
             {step + 1}/{STEPS.length}
@@ -128,7 +125,7 @@ export function KneeAssessment() {
               className="btn primary lg grow"
               onClick={() => {
                 update('assessments', a.id, { status: routineAllowed(a.safetyLevel) ? 'submitted' : 'safety_hold', submittedAt: new Date().toISOString(), step: 5 }, user.id, 'submit');
-                insert('alerts', { id: uuid(), patientId: a.patientId, type: 'assessment_submitted', severity: 'info', detail: a.type === 'reassessment' ? 'Knee reassessment' : 'Knee assessment', createdAt: new Date().toISOString(), isDemo: a.isDemo }, user.id);
+                insert('alerts', { id: uuid(), patientId: a.patientId, type: 'assessment_submitted', severity: 'info', detail: `${pathway.label} ${a.type === 'reassessment' ? 'reassessment' : 'assessment'}`, createdAt: new Date().toISOString(), isDemo: a.isDemo }, user.id);
                 nav('/p/home');
               }}
             >
@@ -147,12 +144,13 @@ function MapStep({ a, actorId, onNext }: { a: Assessment; actorId: string; onNex
   const [regions, setRegions] = useState<Draft[]>(() => saved.map(({ id: _i, assessmentId: _a, ...r }) => r));
   const [paths, setPaths] = useState<Omit<RadiationPath, 'id' | 'assessmentId' | 'createdAt'>[]>(() => savedPaths.map(({ view, symptomType, points }) => ({ view, symptomType, points })));
   const [drawType, setDrawType] = useState<SymptomType | null>(null);
+  const pathway = pathwayFor(a);
 
   const toggle = (id: string) =>
     setRegions((rs) => {
       if (rs.some((r) => r.regionId === id)) return rs.filter((r) => r.regionId !== id);
       const { part, side } = parseRegion(id);
-      return [...rs, { regionId: id, anatomy: part, side, symptomTypes: ['pain'], subLocations: part.startsWith('knee') ? [] : undefined }];
+      return [...rs, { regionId: id, anatomy: part, side, symptomTypes: ['pain'], subLocations: pathway.isRegion(id) ? [] : undefined }];
     });
   const patch = (id: string, p: Partial<Draft>) => setRegions((rs) => rs.map((r) => (r.regionId === id ? { ...r, ...p } : r)));
   const mapPaths: MapPath[] = paths.map((p, i) => ({ id: String(i), view: p.view, points: p.points, color: SYMPTOM_COLOR[p.symptomType], label: `${p.symptomType} path` }));
@@ -198,15 +196,19 @@ function MapStep({ a, actorId, onNext }: { a: Assessment; actorId: string; onNex
             </button>
           </div>
           <ChipGroup multi label={`Symptoms at ${regionLabel(r.regionId)}`} options={SYMPTOMS} value={r.symptomTypes ?? []} onChange={(v) => patch(r.regionId, { symptomTypes: v as SymptomType[] })} />
-          {r.anatomy?.startsWith('knee') && (
+          {pathway.isRegion(r.regionId) && (
             <>
-              <span className="small muted">Which part of the knee?</span>
-              <ChipGroup multi label="Part of knee" options={KNEE_SUB} value={r.subLocations ?? []} onChange={(v) => patch(r.regionId, { subLocations: v })} />
+              <span className="small muted">Which part of the {pathway.label.toLowerCase()}?</span>
+              <ChipGroup multi label={`Part of ${pathway.label.toLowerCase()}`} options={pathway.subLocations} value={r.subLocations ?? []} onChange={(v) => patch(r.regionId, { subLocations: v })} />
             </>
           )}
         </div>
       ))}
-      {regions.length > 0 && !regions.some((r) => r.regionId.startsWith('knee')) && <Notice>This pathway is built for knee problems. Other areas are recorded for your physiotherapist; knee tests will still be offered.</Notice>}
+      {regions.length > 0 && !regions.some((r) => pathway.isRegion(r.regionId)) && (
+        <Notice>
+          This pathway is built for {pathway.label.toLowerCase()} problems. Other areas are recorded for your physiotherapist; {pathway.label.toLowerCase()} tests will still be offered.
+        </Notice>
+      )}
       <button
         className="btn primary lg block"
         disabled={regions.length === 0 || regions.some((r) => !r.symptomTypes?.length)}
@@ -261,7 +263,8 @@ function HistoryStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: s
   const regions = useDb((d) => d.painRegions.filter((r) => r.assessmentId === a.id), [a.id]);
   const saved = useDb((d) => currentAnswers(d.intakeAnswers.filter((r) => r.assessmentId === a.id)), [a.id]);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>(saved);
-  const qs = visibleQuestions({ answers, regions }).filter((q) => a.type !== 'reassessment' || REASSESS_QUESTIONS.has(q.id));
+  const pathway = pathwayFor(a);
+  const qs = visibleQuestions({ answers, regions }, pathway.history).filter((q) => a.type !== 'reassessment' || pathway.reassessQuestions.has(q.id));
   const missing = qs.filter((q) => q.required && (answers[q.id] === undefined || answers[q.id] === null || answers[q.id] === ''));
   let lastSection = '';
   return (
@@ -272,7 +275,10 @@ function HistoryStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: s
           <CategoryBadge kind="pro" />
           <span className="small muted">Your answers are saved exactly as you give them. Questions adapt to your answers.</span>
         </div>
-        {!hasKnee({ answers, regions }) && <p className="xs muted">Knee-specific questions appear when a knee area is selected.</p>}
+        {!regions.some((r) => pathway.isRegion(r.regionId)) && <p className="xs muted">{pathway.label}-specific questions appear when a {pathway.label.toLowerCase()} area is selected.</p>}
+        <p className="xs muted">
+          {pathway.history.id}@{pathway.history.version} · {pathway.history.status}
+        </p>
       </div>
       {qs.map((q) => {
         const header = q.section !== lastSection ? q.section : null;
@@ -309,6 +315,7 @@ function HistoryStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: s
 
 function SafetyStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: string; onBack: () => void; onNext: (clear: boolean) => void }) {
   const settings = useDb((d) => d.settings);
+  const SAFETY_QUESTIONNAIRE = pathwayFor(a).safety;
   const approved = settings.ruleApprovals[`${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version}`];
   const [ans, setAns] = useState<Record<string, boolean>>({});
   const [result, setResult] = useState<ReturnType<typeof saveSafety> | null>(null);
@@ -420,7 +427,7 @@ function TestsStep({ a, actorId, cameraConsent, onBack, onNext }: { a: Assessmen
       <div>
         <h1>Movement tests</h1>
         <p className="muted">
-          Your test plan ({plan.source === 'clinician' ? 'set by your physiotherapist' : plan.source === 'baseline_copy' ? 'same as your first assessment' : 'standard knee plan — your physiotherapist may change it'}). Each test explains its own camera setup.
+          Your test plan ({plan.source === 'clinician' ? 'set by your physiotherapist' : plan.source === 'baseline_copy' ? 'same as your first assessment' : `standard ${pathwayFor(a).label.toLowerCase()} plan — your physiotherapist may change it`}). Each test explains its own camera setup.
         </p>
       </div>
       {!cameraConsent && (

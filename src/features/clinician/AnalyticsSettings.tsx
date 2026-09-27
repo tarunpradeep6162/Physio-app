@@ -7,10 +7,10 @@ import { ValidationStudyPanel } from './ValidationStudy';
 import { useT } from '../../i18n';
 import { ensureDemoData } from '../../data/demo';
 import { OBSERVATION_RULES_VERSION } from '../../clinical/evidence';
-import { HISTORY_QUESTIONNAIRE } from '../../clinical/intake';
+import { HISTORY_QUESTIONNAIRE, SHOULDER_HISTORY_QUESTIONNAIRE } from '../../clinical/intake';
 import { RULE_SET } from '../../clinical/reasoning';
-import { SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
-import { PROTOCOLS } from '../../engine/protocols/knee';
+import { SAFETY_QUESTIONNAIRE, SHOULDER_SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
+import { PROTOCOLS } from '../../engine/protocols/registry';
 import type { ObservationThresholds } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
@@ -125,6 +125,8 @@ export function Analytics() {
 const RULESETS = [
   { key: `${HISTORY_QUESTIONNAIRE.id}@${HISTORY_QUESTIONNAIRE.version}`, label: 'Adaptive history questionnaire' },
   { key: `${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version}`, label: 'Safety (red-flag) questionnaire' },
+  { key: `${SHOULDER_HISTORY_QUESTIONNAIRE.id}@${SHOULDER_HISTORY_QUESTIONNAIRE.version}`, label: 'Shoulder history questionnaire' },
+  { key: `${SHOULDER_SAFETY_QUESTIONNAIRE.id}@${SHOULDER_SAFETY_QUESTIONNAIRE.version}`, label: 'Shoulder safety (red-flag) questionnaire' },
   { key: `${RULE_SET.id}@${RULE_SET.version}`, label: 'Reasoning considerations' },
   { key: OBSERVATION_RULES_VERSION, label: 'Algorithmic observation rules' },
   ...Object.values(PROTOCOLS).map((p) => ({ key: `${p.id}@${p.version}`, label: p.title })),

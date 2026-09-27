@@ -4,7 +4,8 @@ import type { ProcessedFrame } from '../pipeline';
 import type { Side } from '../types';
 import { jointAngle, toPixels } from '../vector';
 import type { Cycle } from './cycles';
-import type { MetricSpec, ProtocolDef, ProtocolMetric, Recording, SignalFn } from './types';
+import { extraNearPeak, mean, median, metric, percentile } from './common';
+import type { MetricSpec, ProtocolDef, Recording, SignalFn } from './types';
 
 /**
  * Knee pathway — three camera tests (v1.0.0). Protocol text, thresholds and quality gates are a
@@ -18,24 +19,6 @@ import type { MetricSpec, ProtocolDef, ProtocolMetric, Recording, SignalFn } fro
  * pv-knee-1.0.0 results are kept as recorded.
  */
 export const KNEE_ALGORITHM_VERSION = 'pv-knee-1.1.0';
-
-const median = (xs: number[]) => {
-  if (!xs.length) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
-const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
-const percentile = (xs: number[], p: number) => {
-  if (!xs.length) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * (s.length - 1))))];
-};
-const r1 = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
-
-function metric(spec: MetricSpec, value: number | null, perCycle: number[], reason?: string): ProtocolMetric {
-  return { ...spec, value: r1(value), perCycle: perCycle.map((v) => Math.round(v * 10) / 10), validity: value === null || reason ? 'invalid' : 'valid', reason };
-}
 
 const lateral = (side: Side | null) => (side === 'right' ? ['lateral_right' as const] : ['lateral_left' as const]);
 
@@ -263,10 +246,6 @@ function squatSignal(): SignalFn {
   };
 }
 
-function extraNearPeak(rec: Recording, c: Cycle, key: string): number | null {
-  const vs = rec.samples.filter((s) => Math.abs(s.t - c.peakT) <= 250).map((s) => s.extras?.[key]).filter((v): v is number => typeof v === 'number');
-  return median(vs);
-}
 
 /** v1.0.0 — kept for existing records. */
 export const KNEE_SQUAT_V1_0: ProtocolDef = {
@@ -398,23 +377,6 @@ export const KNEE_SQUAT: ProtocolDef = {
   },
   changes: V1_1_CHANGES,
 };
-
-export const PROTOCOLS: Record<string, ProtocolDef> = {
-  [KNEE_SUPPORTED_FLEXION.id]: KNEE_SUPPORTED_FLEXION,
-  [KNEE_SIT_TO_STAND.id]: KNEE_SIT_TO_STAND,
-  [KNEE_SQUAT.id]: KNEE_SQUAT,
-};
-
-const HISTORY: Record<string, ProtocolDef> = Object.fromEntries(
-  [KNEE_SUPPORTED_FLEXION_V1_0, KNEE_SIT_TO_STAND_V1_0, KNEE_SQUAT_V1_0, ...Object.values(PROTOCOLS)].map((p) => [`${p.id}@${p.version}`, p]),
-);
-
-/** Every version ever released, for provenance display. */
-export const PROTOCOL_VERSIONS = Object.keys(HISTORY);
-
-export function getProtocol(id: string, version?: string): ProtocolDef {
-  return (version && HISTORY[`${id}@${version}`]) || PROTOCOLS[id];
-}
 
 export const KNEE_DEFAULT_PLAN: { protocolId: string; side: Side | null }[] = [
   { protocolId: 'knee_supported_flexion', side: 'left' },

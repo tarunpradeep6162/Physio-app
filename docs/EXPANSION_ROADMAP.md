@@ -1,6 +1,6 @@
 # Dheepika Lab — movement pathway expansion
 
-**Status (2026-09-27):** knee is the only complete assessment pathway. This is an engineering backlog, not an approved clinical protocol or a claim that the camera identifies the cause of symptoms. The clinician makes the diagnosis and prescribes the plan.
+**Status (2026-09-27, updated):** knee and **shoulder** (Phase 1, draft content — see `docs/SHOULDER_PROTOCOL.md`) have assessment pathways; real-device and clinical-review gates remain for both. This is an engineering backlog, not an approved clinical protocol or a claim that the camera identifies the cause of symptoms. The clinician makes the diagnosis and prescribes the plan.
 
 ## Already working
 

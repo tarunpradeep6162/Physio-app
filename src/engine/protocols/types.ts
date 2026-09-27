@@ -10,7 +10,7 @@ import type { Cycle, CycleConfig, CycleDetector } from './cycles';
  * Results store the protocol + algorithm version so historical captures stay interpretable.
  */
 
-export type ProtocolId = 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat';
+export type ProtocolId = 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat' | 'shoulder_flexion_active' | 'shoulder_abduction_active';
 export type Region = 'knee' | 'shoulder' | 'low_back';
 
 export interface SignalSample {
@@ -140,6 +140,8 @@ export interface Recording {
 export interface ProtocolDef {
   id: ProtocolId;
   version: string;
+  /** Calculation version stamped on results (defaults to the knee algorithm for knee protocols). */
+  algorithmVersion?: string;
   region: Region;
   title: string;
   shortTitle: string;

@@ -11,7 +11,7 @@ export type AnswerValue = IntakeAnswer['answer'];
 
 export interface Question {
   id: string;
-  section: 'onset' | 'intensity' | 'behaviour' | 'knee' | 'function' | 'history' | 'context' | 'goals';
+  section: 'onset' | 'intensity' | 'behaviour' | 'knee' | 'shoulder' | 'function' | 'history' | 'context' | 'goals';
   text: string;
   help?: string;
   kind: 'single' | 'multi' | 'nprs' | 'scale04' | 'text' | 'date';
@@ -28,11 +28,19 @@ export interface IntakeContext {
 const opt = (pairs: [string, string][]) => pairs.map(([id, label]) => ({ id, label }));
 const has = (v: AnswerValue, id: string) => (Array.isArray(v) ? v.includes(id) : v === id);
 export const hasKnee = (ctx: IntakeContext) => ctx.regions.some((r) => r.regionId.startsWith('knee'));
+export const hasShoulder = (ctx: IntakeContext) => ctx.regions.some((r) => r.regionId.startsWith('shoulder') || r.regionId.startsWith('upper_arm'));
 const symptomSelected = (ctx: IntakeContext, s: SymptomType) => ctx.regions.some((r) => r.symptomTypes?.includes(s));
 
 export const SCALE04 = ['No difficulty', 'Mild', 'Moderate', 'Severe', 'Unable'];
 
-export const HISTORY_QUESTIONNAIRE = {
+export interface Questionnaire {
+  id: string;
+  version: string;
+  status: string;
+  questions: Question[];
+}
+
+export const HISTORY_QUESTIONNAIRE: Questionnaire = {
   id: 'knee-history',
   version: '1.0.0',
   status: 'DRAFT — pending clinical-lead approval',
@@ -88,22 +96,22 @@ export const HISTORY_QUESTIONNAIRE = {
   ] as Question[],
 };
 
-export function visibleQuestions(ctx: IntakeContext): Question[] {
-  return HISTORY_QUESTIONNAIRE.questions.filter((q) => !q.showIf || q.showIf(ctx));
+export function visibleQuestions(ctx: IntakeContext, qn: Questionnaire = HISTORY_QUESTIONNAIRE): Question[] {
+  return qn.questions.filter((q) => !q.showIf || q.showIf(ctx));
 }
 
-export function optionLabel(qid: string, v: string): string {
-  const q = HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === qid);
+export function optionLabel(qid: string, v: string, qn: Questionnaire = HISTORY_QUESTIONNAIRE): string {
+  const q = qn.questions.find((x) => x.id === qid);
   return q?.options?.find((o) => o.id === v)?.label ?? v;
 }
 
-export function formatAnswer(qid: string, v: AnswerValue): string {
-  const q = HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === qid);
+export function formatAnswer(qid: string, v: AnswerValue, qn: Questionnaire = HISTORY_QUESTIONNAIRE): string {
+  const q = qn.questions.find((x) => x.id === qid);
   if (v === null || v === undefined || v === '') return '—';
   if (q?.kind === 'scale04' && typeof v === 'number') return `${v}/4 (${SCALE04[v]})`;
   if (q?.kind === 'nprs' && typeof v === 'number') return `${v}/10`;
-  if (Array.isArray(v)) return v.map((x) => optionLabel(qid, x)).join(', ') || '—';
-  if (typeof v === 'string') return optionLabel(qid, v);
+  if (Array.isArray(v)) return v.map((x) => optionLabel(qid, x, qn)).join(', ') || '—';
+  if (typeof v === 'string') return optionLabel(qid, v, qn);
   return String(v);
 }
 
@@ -118,9 +126,9 @@ export interface SummaryLine {
  * Rule-based (not LLM) organisation of the patient's own answers into a readable history. Each
  * line lists the answers it came from; clinicians can amend a line without altering the answers.
  */
-export function organiseHistory(answers: Record<string, AnswerValue>, regions: PainRegion[]): SummaryLine[] {
+export function organiseHistory(answers: Record<string, AnswerValue>, regions: PainRegion[], qn: Questionnaire = HISTORY_QUESTIONNAIRE): SummaryLine[] {
   const L: SummaryLine[] = [];
-  const f = formatAnswer;
+  const f = (qid: string, v: AnswerValue) => formatAnswer(qid, v, qn);
   const where = regions.map((r) => r.regionId.replace(/_/g, ' ')).join(', ');
   if (where) L.push({ key: 'location', text: `Symptoms reported at: ${where}.`, sources: ['symptom_map'] });
   if (answers.onset) {
@@ -143,8 +151,14 @@ export function organiseHistory(answers: Record<string, AnswerValue>, regions: P
   if (answers.locking) knee.push(`catching/locking: ${f('locking', answers.locking).toLowerCase()}`);
   if (answers.giving_way) knee.push(`giving way: ${f('giving_way', answers.giving_way).toLowerCase()}`);
   if (knee.length) L.push({ key: 'knee', text: `Knee: ${knee.join('; ')}.`, sources: ['swelling', 'locking', 'giving_way'].filter((k) => answers[k] !== undefined) });
-  const func = ['func_stairs', 'func_squat', 'func_walk', 'func_chair'].filter((k) => typeof answers[k] === 'number');
-  if (func.length) L.push({ key: 'function', text: `Function (0 none – 4 unable): ${func.map((k) => `${HISTORY_QUESTIONNAIRE.questions.find((q) => q.id === k)!.text.replace('Difficulty ', '')} ${answers[k]}`).join(', ')}.`, sources: func });
+  const sh: string[] = [];
+  if (answers.dominant_arm) sh.push(`dominant arm: ${f('dominant_arm', answers.dominant_arm).toLowerCase()}`);
+  if (answers.instability) sh.push(`feels unstable: ${f('instability', answers.instability).toLowerCase()}`);
+  if (answers.arm_symptoms) sh.push(`arm symptoms: ${f('arm_symptoms', answers.arm_symptoms).toLowerCase()}`);
+  if (answers.neck_link) sh.push(`neck movement brings it on: ${f('neck_link', answers.neck_link).toLowerCase()}`);
+  if (sh.length) L.push({ key: 'shoulder', text: `Shoulder: ${sh.join('; ')}.`, sources: ['dominant_arm', 'instability', 'arm_symptoms', 'neck_link'].filter((k) => answers[k] !== undefined) });
+  const func = qn.questions.filter((q) => q.section === 'function' && typeof answers[q.id] === 'number');
+  if (func.length) L.push({ key: 'function', text: `Function (0 none – 4 unable): ${func.map((q) => `${q.text.replace('Difficulty ', '')} ${answers[q.id]}`).join(', ')}.`, sources: func.map((q) => q.id) });
   const hist: string[] = [];
   if (answers.prev_injury) hist.push(`previous injury/surgery: ${f('prev_injury', answers.prev_injury).toLowerCase()}${answers.prev_injury_detail ? ` (${answers.prev_injury_detail})` : ''}`);
   if (answers.conditions) hist.push(`conditions: ${f('conditions', answers.conditions).toLowerCase()}`);
@@ -154,6 +168,62 @@ export function organiseHistory(answers: Record<string, AnswerValue>, regions: P
   if (answers.goal) L.push({ key: 'goal', text: `Goal: “${answers.goal}”.`, sources: ['goal'] });
   return L;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Shoulder history — DRAFT for clinical-lead review (approval on hold). Shared questions keep
+// the same ids and wording as the knee questionnaire so answers stay comparable.
+// ---------------------------------------------------------------------------------------------
+const shared = (id: string) => HISTORY_QUESTIONNAIRE.questions.find((q) => q.id === id)!;
+
+export const SHOULDER_HISTORY_QUESTIONNAIRE: Questionnaire = {
+  id: 'shoulder-history',
+  version: '1.0.0',
+  status: 'DRAFT — pending clinical-lead approval',
+  questions: [
+    shared('onset'),
+    {
+      id: 'mechanism',
+      section: 'onset',
+      kind: 'multi',
+      text: 'What happened at the time?',
+      options: opt([['fall_hand', 'Fell onto an outstretched hand or elbow'], ['fall_shoulder', 'Fell onto the shoulder'], ['lifting', 'Lifting, pulling or catching something heavy'], ['overhead', 'Reaching overhead or throwing'], ['out_of_joint', 'The shoulder came out of joint'], ['other', 'Something else']]),
+      showIf: (c) => c.answers.onset === 'sudden',
+    },
+    { id: 'surgery_type', section: 'onset', kind: 'single', text: 'What surgery did you have?', options: opt([['cuff_repair', 'Tendon (rotator cuff) repair'], ['stabilisation', 'Stabilisation after dislocation'], ['decompression', 'Decompression'], ['replacement', 'Shoulder replacement'], ['fracture_fixation', 'Fracture fixation'], ['other', 'Other / not sure']]), showIf: (c) => c.answers.onset === 'after_surgery' },
+    shared('surgery_date'),
+    shared('duration'),
+    { id: 'dominant_arm', section: 'shoulder', kind: 'single', required: true, text: 'Which is your dominant (writing) arm?', options: opt([['right', 'Right'], ['left', 'Left'], ['both', 'Both equally']]) },
+    shared('nprs_now'),
+    shared('nprs_worst'),
+    shared('nprs_best'),
+    shared('pattern'),
+    shared('time_of_day'),
+    shared('morning_stiffness'),
+    { id: 'night', section: 'behaviour', kind: 'single', text: 'How is it at night?', options: opt([['none', 'No trouble at night'], ['position', 'Only when I lie on that shoulder'], ['wakes_often', 'Wakes me most nights']]) },
+    {
+      id: 'aggravating',
+      section: 'behaviour',
+      kind: 'multi',
+      text: 'What makes it worse?',
+      options: opt([['reach_overhead', 'Reaching up or overhead'], ['reach_behind', 'Reaching behind my back'], ['lifting', 'Lifting or carrying'], ['lying_on_side', 'Lying on that side'], ['dressing', 'Dressing'], ['pushing_pulling', 'Pushing or pulling'], ['throwing', 'Throwing or sport'], ['desk', 'Desk or computer work']]),
+    },
+    shared('easing'),
+    { id: 'instability', section: 'shoulder', kind: 'single', text: 'Does the shoulder ever feel like it slips or moves out of place?', options: opt([['no', 'No'], ['sometimes', 'Sometimes'], ['often', 'Often']]), showIf: hasShoulder },
+    { id: 'arm_symptoms', section: 'shoulder', kind: 'multi', text: 'Do you have any of these down the arm?', options: opt([['below_elbow', 'Pain spreading below the elbow'], ['pins_needles', 'Pins and needles'], ['numbness', 'Numbness'], ['none', 'None of these']]), showIf: hasShoulder },
+    { id: 'neck_link', section: 'shoulder', kind: 'single', text: 'Does moving your neck bring on the shoulder or arm symptoms?', options: opt([['no', 'No'], ['yes', 'Yes'], ['unsure', 'Not sure']]), showIf: hasShoulder },
+    { id: 'func_overhead', section: 'function', kind: 'scale04', text: 'Difficulty reaching a high shelf' },
+    { id: 'func_behind_back', section: 'function', kind: 'scale04', text: 'Difficulty reaching behind your back (e.g. tucking in a shirt)' },
+    { id: 'func_carry', section: 'function', kind: 'scale04', text: 'Difficulty carrying a full shopping bag on that side' },
+    { id: 'func_dressing', section: 'function', kind: 'scale04', text: 'Difficulty getting dressed' },
+    shared('prev_injury'),
+    shared('prev_injury_detail'),
+    shared('conditions'),
+    shared('prior_care'),
+    shared('occupation'),
+    shared('activity'),
+    shared('goal'),
+  ],
+};
 
 /** Latest, non-superseded answer per question. */
 export function currentAnswers(rows: IntakeAnswer[]): Record<string, AnswerValue> {

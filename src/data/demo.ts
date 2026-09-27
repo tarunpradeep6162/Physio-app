@@ -1,14 +1,15 @@
-import { HISTORY_QUESTIONNAIRE, type AnswerValue } from '../clinical/intake';
+import { HISTORY_QUESTIONNAIRE, SHOULDER_HISTORY_QUESTIONNAIRE, type AnswerValue, type Questionnaire } from '../clinical/intake';
 import { evaluate, RULE_SET } from '../clinical/reasoning';
 import { buildEvidence } from '../clinical/evidence';
 import { REPORT_TEMPLATE_VERSION } from '../clinical/report';
-import { evaluateSafety, SAFETY_QUESTIONNAIRE } from '../clinical/safety';
+import { evaluateSafety, SAFETY_QUESTIONNAIRE, SHOULDER_SAFETY_QUESTIONNAIRE, type SafetyQuestionnaire } from '../clinical/safety';
 import { defaultPrescription, getDefinition } from '../engine/exercises/definitions';
 import { simulateExercise } from '../engine/exercises/simulateSession';
 import type { ExercisePrescription } from '../engine/exercises/types';
 import { MotionPipeline } from '../engine/pipeline';
 import { synthesize } from '../engine/pose/synthetic';
-import { getProtocol } from '../engine/protocols/knee';
+import { getProtocol } from '../engine/protocols/registry';
+import { SHOULDER_DEFAULT_PLAN } from '../engine/protocols/shoulder';
 import { captureConfig, compareConfig } from '../engine/protocols/recorder';
 import { sceneAt, SIM_PROVIDER, simulateCapture, type SimParams } from '../engine/protocols/simulate';
 import { cameraProvenance, type DeviceContext } from '../engine/provenance';
@@ -18,7 +19,7 @@ import type { Assessment, CaptureSession, DB, Measurement, Patient, TrainingSess
 import { emptyDb, getDb, replaceDb, uuid } from './store';
 
 /**
- * DEMONSTRATION DATA — knee pathway.
+ * DEMONSTRATION DATA — knee and shoulder pathways.
  *
  * - Patients are pseudonymous (DP-01 …); no real or realistic identifying details.
  * - Every camera number is produced by running the REAL pipeline, protocol recorder and exercise
@@ -27,6 +28,7 @@ import { emptyDb, getDb, replaceDb, uuid } from './store';
  */
 
 const DAY = 86_400_000;
+const SAFETY_Q_KNEE = SAFETY_QUESTIONNAIRE;
 const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
 const SIM_DEVICE: DeviceContext = { userAgent: 'simulator', platform: 'simulator', videoWidth: 720, videoHeight: 1280, facingMode: 'user', cameraRollDeg: 0, meanFps: 30, meanInferenceMs: 4 };
 
@@ -65,15 +67,15 @@ export function buildDemoDb(): DB {
     db.assessments.push(a);
     return a;
   };
-  const answer = (a: Assessment, ago: number, answers: Record<string, AnswerValue>) => {
+  const answer = (a: Assessment, ago: number, answers: Record<string, AnswerValue>, qn: Questionnaire = HISTORY_QUESTIONNAIRE) => {
     for (const [qid, v] of Object.entries(answers))
-      db.intakeAnswers.push({ id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: HISTORY_QUESTIONNAIRE.id, questionnaireVersion: HISTORY_QUESTIONNAIRE.version, questionId: qid, questionText: HISTORY_QUESTIONNAIRE.questions.find((q) => q.id === qid)?.text ?? qid, answer: v, answeredAt: iso(ago), isDemo: true });
+      db.intakeAnswers.push({ id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: qn.id, questionnaireVersion: qn.version, questionId: qid, questionText: qn.questions.find((q) => q.id === qid)?.text ?? qid, answer: v, answeredAt: iso(ago), isDemo: true });
   };
-  const safety = (a: Assessment, ago: number, yes: string[] = []) => {
+  const safety = (a: Assessment, ago: number, yes: string[] = [], SAFETY_QUESTIONNAIRE: SafetyQuestionnaire = SAFETY_Q_KNEE) => {
     const ans = Object.fromEntries(SAFETY_QUESTIONNAIRE.items.map((i) => [i.id, yes.includes(i.id)]));
     for (const it of SAFETY_QUESTIONNAIRE.items)
       db.safetyResponses.push({ id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: SAFETY_QUESTIONNAIRE.id, questionnaireVersion: SAFETY_QUESTIONNAIRE.version, questionId: it.id, questionText: it.text, answer: ans[it.id], triggered: ans[it.id], action: ans[it.id] ? it.action : null, at: iso(ago), isDemo: true });
-    return evaluateSafety(ans).level;
+    return evaluateSafety(ans, SAFETY_QUESTIONNAIRE).level;
   };
   const plan = (a: Assessment, ago: number) => {
     const items = [
@@ -182,6 +184,26 @@ export function buildDemoDb(): DB {
   const lvl = safety(a3, 0.3 * DAY, ['calf']);
   a3.safetyLevel = lvl;
   db.alerts.push({ id: uuid(), patientId: p3.id, type: 'red_flag_urgent', severity: 'critical', detail: `${lvl}: calf (${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version})`, createdAt: iso(0.3 * DAY), isDemo: true });
+
+  // ---- DP-04: shoulder pathway — initial assessment awaiting review ----------------------------
+  // Right shoulder symptoms; one capture is deliberately invalid (elbow hidden) to show refusal.
+  const p4 = mkPatient('DP-04', 'female', 51, false);
+  const a4 = mkAssessment(p4, 0.6 * DAY, { region: 'shoulder' });
+  db.painRegions.push({ id: uuid(), assessmentId: a4.id, regionId: 'shoulder_right', anatomy: 'shoulder', side: 'right', symptomTypes: ['pain', 'stiffness'], subLocations: ['front', 'outer_arm'] });
+  answer(
+    a4,
+    0.6 * DAY,
+    { onset: 'gradual', duration: '6_12w', dominant_arm: 'right', nprs_now: 3, nprs_worst: 6, nprs_best: 1, pattern: 'intermittent', time_of_day: ['during_activity', 'evening'], night: 'position', aggravating: ['reach_overhead', 'reach_behind', 'lying_on_side', 'dressing'], easing: ['rest', 'heat'], instability: 'no', arm_symptoms: ['none'], neck_link: 'no', func_overhead: 3, func_behind_back: 2, func_carry: 1, func_dressing: 2, prev_injury: 'no', conditions: ['none'], prior_care: ['none'], occupation: 'desk', activity: 'recreational', goal: 'Reach the top shelf and swim again (demo)' },
+    SHOULDER_HISTORY_QUESTIONNAIRE,
+  );
+  safety(a4, 0.6 * DAY, [], SHOULDER_SAFETY_QUESTIONNAIRE);
+  db.testPlans.push({ id: uuid(), assessmentId: a4.id, items: SHOULDER_DEFAULT_PLAN.map((i) => ({ ...i, protocolVersion: getProtocol(i.protocolId).version })), source: 'protocol_default', createdBy: clin.id, createdAt: iso(0.6 * DAY) });
+  capture(a4, 0.6 * DAY, 'shoulder_flexion_active', 'left', { peak: 165 });
+  capture(a4, 0.6 * DAY - 60_000, 'shoulder_flexion_active', 'right', { peak: 128, trunkLean: 10 });
+  capture(a4, 0.6 * DAY - 120_000, 'shoulder_abduction_active', 'left', { peak: 160 });
+  // Invalid: the right elbow is hidden from 2 s on — kept for audit, produces no reported number.
+  capture(a4, 0.6 * DAY - 180_000, 'shoulder_abduction_active', 'right', { peak: 110, perturb: (l, t) => (t > 2 ? l.map((x, i) => (i === 14 ? { ...x, visibility: 0.15 } : x)) : l) });
+  db.alerts.push({ id: uuid(), patientId: p4.id, type: 'assessment_submitted', severity: 'info', detail: 'Shoulder assessment', createdAt: iso(0.6 * DAY), isDemo: true });
 
   return db;
 }

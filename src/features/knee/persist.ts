@@ -1,15 +1,16 @@
-import { HISTORY_QUESTIONNAIRE, type AnswerValue } from '../../clinical/intake';
-import { evaluateSafety, SAFETY_QUESTIONNAIRE } from '../../clinical/safety';
+import type { AnswerValue } from '../../clinical/intake';
+import { pathwayFor, type PathwayRegion } from '../../clinical/pathways';
+import { evaluateSafety } from '../../clinical/safety';
 import type { Assessment, CaptureSession, DB, ID, Measurement, PainRegion, Patient, RadiationPath, TestPlan, TestPlanItem } from '../../data/models';
 import { getDb, insert, insertMany, remove, update, uuid } from '../../data/store';
-import { getProtocol, KNEE_DEFAULT_PLAN } from '../../engine/protocols/knee';
+import { getProtocol } from '../../engine/protocols/registry';
 import { cameraProvenance } from '../../engine/provenance';
 import type { Side } from '../../engine/types';
 import type { CaptureOutcome } from './ProtocolCapture';
 
-/** Persistence for the knee pathway. Every write goes through the audited store. */
+/** Persistence for the assessment pathways (knee, shoulder). Every write goes through the audited store. */
 
-export function createKneeAssessment(patient: Patient, actorId: ID, baseline?: Assessment): Assessment {
+export function createAssessment(patient: Patient, actorId: ID, region: PathwayRegion, baseline?: Assessment): Assessment {
   const a: Assessment = {
     id: uuid(),
     patientId: patient.id,
@@ -17,7 +18,7 @@ export function createKneeAssessment(patient: Patient, actorId: ID, baseline?: A
     status: 'in_progress',
     createdAt: new Date().toISOString(),
     step: 0,
-    region: 'knee',
+    region,
     type: baseline ? 'reassessment' : 'initial',
     baselineAssessmentId: baseline?.id,
     isDemo: patient.isDemo,
@@ -32,6 +33,8 @@ export function createKneeAssessment(patient: Patient, actorId: ID, baseline?: A
   }
   return a;
 }
+
+export const createKneeAssessment = (patient: Patient, actorId: ID, baseline?: Assessment) => createAssessment(patient, actorId, 'knee', baseline);
 
 export function saveRegions(assessmentId: ID, actorId: ID, rows: Omit<PainRegion, 'id' | 'assessmentId'>[]) {
   getDb().painRegions.filter((r) => r.assessmentId === assessmentId).forEach((r) => remove('painRegions', r.id, actorId, 'replaced'));
@@ -51,12 +54,13 @@ export function saveRadiationPaths(assessmentId: ID, actorId: ID, paths: Omit<Ra
 export function saveAnswers(a: Assessment, actorId: ID, answers: Record<string, AnswerValue>) {
   const db = getDb();
   const now = new Date().toISOString();
+  const qn = pathwayFor(a).history;
   for (const [qid, value] of Object.entries(answers)) {
     if (value === undefined || value === '' || (Array.isArray(value) && value.length === 0)) continue;
     const prev = db.intakeAnswers.find((r) => r.assessmentId === a.id && r.questionId === qid && !r.supersededBy);
     if (prev && JSON.stringify(prev.answer) === JSON.stringify(value)) continue;
-    const q = HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === qid);
-    const row = { id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: HISTORY_QUESTIONNAIRE.id, questionnaireVersion: HISTORY_QUESTIONNAIRE.version, questionId: qid, questionText: q?.text ?? qid, answer: value, answeredAt: now, isDemo: a.isDemo };
+    const q = qn.questions.find((x) => x.id === qid);
+    const row = { id: uuid(), assessmentId: a.id, patientId: a.patientId, questionnaireId: qn.id, questionnaireVersion: qn.version, questionId: qid, questionText: q?.text ?? qid, answer: value, answeredAt: now, isDemo: a.isDemo };
     insert('intakeAnswers', row, actorId);
     if (prev) update('intakeAnswers', prev.id, { supersededBy: row.id }, actorId, 'superseded');
   }
@@ -64,7 +68,8 @@ export function saveAnswers(a: Assessment, actorId: ID, answers: Record<string, 
 
 export function saveSafety(a: Assessment, actorId: ID, answers: Record<string, boolean>, emergencyNumber: string) {
   const now = new Date().toISOString();
-  const { level, triggered } = evaluateSafety(answers);
+  const SAFETY_QUESTIONNAIRE = pathwayFor(a).safety;
+  const { level, triggered } = evaluateSafety(answers, SAFETY_QUESTIONNAIRE);
   insertMany(
     'safetyResponses',
     SAFETY_QUESTIONNAIRE.items.map((it) => ({
@@ -112,11 +117,11 @@ export function ensurePlan(a: Assessment, actorId: ID): TestPlan {
   const plan: TestPlan = {
     id: uuid(),
     assessmentId: a.id,
-    items: KNEE_DEFAULT_PLAN.map((i) => ({ protocolId: i.protocolId, protocolVersion: getProtocol(i.protocolId).version, side: i.side })),
+    items: pathwayFor(a).defaultPlan.map((i) => ({ protocolId: i.protocolId, protocolVersion: getProtocol(i.protocolId).version, side: i.side })),
     source: 'protocol_default',
     createdBy: actorId,
     createdAt: new Date().toISOString(),
-    note: 'Default knee plan (protocol rules v1). Clinician may edit.',
+    note: `Default ${pathwayFor(a).label.toLowerCase()} plan (protocol rules v1). Clinician may edit.`,
   };
   insert('testPlans', plan, actorId);
   return plan;

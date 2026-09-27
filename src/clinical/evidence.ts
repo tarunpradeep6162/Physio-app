@@ -1,9 +1,10 @@
 import type { CaptureSession, DB, ID, ReviewStatus } from '../data/models';
 import { age } from '../data/queries';
-import { getProtocol } from '../engine/protocols/knee';
+import { getProtocol } from '../engine/protocols/registry';
 import { parseRegion, regionLabel } from '../features/bodymap/regions';
-import { currentAnswers, formatAnswer, HISTORY_QUESTIONNAIRE } from './intake';
-import { levelFromResponses, SAFETY_QUESTIONNAIRE } from './safety';
+import { currentAnswers, formatAnswer } from './intake';
+import { pathwayFor } from './pathways';
+import { levelFromResponses } from './safety';
 
 /**
  * Evidence graph: every finding the reasoning layer may use, with a link to where it came from,
@@ -65,12 +66,13 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
   if (!a) return [];
   const patient = db.patients.find((p) => p.id === a.patientId);
   const out: EvidenceItem[] = [];
+  const pathway = pathwayFor(a);
 
   // --- Patient-reported: symptom map --------------------------------------------------------
   const regions = db.painRegions.filter((r) => r.assessmentId === assessmentId);
   for (const r of regions) {
     const { part, side } = parseRegion(r.regionId);
-    const facts = [`region:${r.regionId}`, `region_part:${part}`, ...(r.symptomTypes ?? []).map((s) => `symptom:${s}`), ...(r.subLocations ?? []).map((s) => `knee_sub:${s}`)];
+    const facts = [`region:${r.regionId}`, `region_part:${part}`, ...(r.symptomTypes ?? []).map((s) => `symptom:${s}`), ...(r.subLocations ?? []).map((s) => `${pathway.region}_sub:${s}`)];
     out.push({
       id: `map:${r.id}`,
       category: 'patient_reported',
@@ -101,7 +103,7 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
   const baseRows = a.baselineAssessmentId ? db.intakeAnswers.filter((r) => r.assessmentId === a.baselineAssessmentId && !r.supersededBy) : [];
   const ownAnswers = currentAnswers(own);
   const answers = { ...currentAnswers(baseRows), ...ownAnswers };
-  for (const q of HISTORY_QUESTIONNAIRE.questions) {
+  for (const q of pathway.history.questions) {
     const v = answers[q.id];
     if (v === undefined || v === null || v === '') continue;
     const fromBaseline = ownAnswers[q.id] === undefined;
@@ -112,7 +114,7 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
       id: `ans:${q.id}`,
       category: 'patient_reported',
       label: fromBaseline ? `${q.text} (from baseline)` : q.text,
-      value: formatAnswer(q.id, v),
+      value: formatAnswer(q.id, v, pathway.history),
       facts,
       source: { kind: 'intake_answer', answerId: row.id, questionId: q.id, questionText: row.questionText, answeredAt: row.answeredAt, questionnaire: `${row.questionnaireId}@${row.questionnaireVersion}` },
       validity: 'n/a',
@@ -131,7 +133,7 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
     out.push({
       id: 'safety',
       category: 'patient_reported',
-      label: `Safety screen (${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version})`,
+      label: `Safety screen (${pathway.safety.id}@${pathway.safety.version})`,
       value: level === 'clear' ? 'No red-flag answers' : `${level.replace('_', ' ')} — ${yes.map((r) => r.questionId).join(', ')}`,
       facts: [`safety:${level}`],
       source: { kind: 'safety', responseIds: safety.map((r) => r.id) },

@@ -133,7 +133,7 @@ describe('reassessment condition matching', () => {
 describe('engine change during capture', () => {
   it('invalidates every metric when the tracking engine changed mid-capture', async () => {
     const { ProtocolRecorder } = await import('./recorder');
-    const { getProtocol } = await import('./knee');
+    const { getProtocol } = await import('./registry');
     const { MotionPipeline } = await import('../pipeline');
     const { sceneAt, SIM_PROVIDER } = await import('./simulate');
     const { synthesize } = await import('../pose/synthetic');
@@ -157,7 +157,7 @@ describe('per-test framing (v1.1.0)', () => {
     const { evaluateCalibration } = await import('../calibration');
     const { MotionPipeline } = await import('../pipeline');
     const { synthesize } = await import('../pose/synthetic');
-    const { getProtocol } = await import('./knee');
+    const { getProtocol } = await import('./registry');
     const { SIM_PROVIDER } = await import('./simulate');
     const def = getProtocol('knee_supported_flexion');
     expect(def.version).toBe('1.1.0');
@@ -176,7 +176,7 @@ describe('per-test framing (v1.1.0)', () => {
   });
 
   it('keeps v1.0.0 definitions for existing records', async () => {
-    const { getProtocol, PROTOCOL_VERSIONS } = await import('./knee');
+    const { getProtocol, PROTOCOL_VERSIONS } = await import('./registry');
     expect(getProtocol('knee_squat', '1.0.0').version).toBe('1.0.0');
     expect(getProtocol('knee_squat', '1.0.0').framing).toBeUndefined();
     expect(PROTOCOL_VERSIONS).toEqual(expect.arrayContaining(['knee_squat@1.0.0', 'knee_squat@1.1.0']));

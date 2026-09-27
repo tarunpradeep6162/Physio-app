@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { currentAnswers, formatAnswer, HISTORY_QUESTIONNAIRE } from '../../clinical/intake';
+import { currentAnswers, formatAnswer } from '../../clinical/intake';
+import { pathwayFor } from '../../clinical/pathways';
 import { CategoryBadge, DemoBadge, Notice } from '../../components/ui';
 import type { Assessment, CaptureSession, DB } from '../../data/models';
 import { fmtDate, fmtDateTime } from '../../data/queries';
-import { getProtocol } from '../../engine/protocols/knee';
+import { getProtocol } from '../../engine/protocols/registry';
 import type { ProtocolMetric } from '../../engine/protocols/types';
 import { capturesFor } from '../../clinical/evidence';
 import { Replay } from './Replay';
 
-/** Display of knee-pathway captures, bilateral comparison and baseline/current comparison. */
+/** Display of pathway captures (knee, shoulder), bilateral comparison and baseline/current comparison. */
 
 export function unitText(u: ProtocolMetric['unit']): string {
   return u === 'deg' ? '°' : u === 's' ? ' s' : u === 'pct_leg' ? '% leg' : '';
@@ -87,20 +88,20 @@ const validNum = (c: CaptureSession | undefined, id: string) => {
 export function BilateralTable({ db, assessmentId }: { db: DB; assessmentId: string }) {
   const caps = capturesFor(db, assessmentId);
   const rows: { label: string; left: string; right: string; diff: string }[] = [];
-  const fl = find(caps, 'knee_supported_flexion', 'left');
-  const fr = find(caps, 'knee_supported_flexion', 'right');
-  for (const [id, label] of [
-    ['knee_flexion_peak', 'Knee flexion (peak)'],
-    ['knee_extension_position', 'Most-extended position (0° = straight)'],
-  ] as const) {
-    const l = validNum(fl, id);
-    const r = validNum(fr, id);
-    rows.push({ label, left: metricValue(mOf(fl, id), fl), right: metricValue(mOf(fr, id), fr), diff: l !== null && r !== null ? `${Math.round(Math.abs(l - r) * 10) / 10}°` : '—' });
+  const pathway = pathwayFor(db.assessments.find((x) => x.id === assessmentId));
+  for (const row of pathway.sidedRows) {
+    const fl = find(caps, row.protocolId, 'left');
+    const fr = find(caps, row.protocolId, 'right');
+    const l = validNum(fl, row.metricId);
+    const r = validNum(fr, row.metricId);
+    rows.push({ label: row.metricId.includes('trunk') ? row.label : `${pathway.label} ${row.label.charAt(0).toLowerCase()}${row.label.slice(1)}`, left: metricValue(mOf(fl, row.metricId), fl), right: metricValue(mOf(fr, row.metricId), fr), diff: l !== null && r !== null ? `${Math.round(Math.abs(l - r) * 10) / 10}°` : '—' });
   }
-  const sq = find(caps, 'knee_squat', null);
-  const sl = validNum(sq, 'squat_fppa_left');
-  const sr = validNum(sq, 'squat_fppa_right');
-  rows.push({ label: 'Squat FPPA (+ toward midline)', left: metricValue(mOf(sq, 'squat_fppa_left'), sq), right: metricValue(mOf(sq, 'squat_fppa_right'), sq), diff: sl !== null && sr !== null ? `${Math.round(Math.abs(sl - sr) * 10) / 10}°` : '—' });
+  if (pathway.region === 'knee') {
+    const sq = find(caps, 'knee_squat', null);
+    const sl = validNum(sq, 'squat_fppa_left');
+    const sr = validNum(sq, 'squat_fppa_right');
+    rows.push({ label: 'Squat FPPA (+ toward midline)', left: metricValue(mOf(sq, 'squat_fppa_left'), sq), right: metricValue(mOf(sq, 'squat_fppa_right'), sq), diff: sl !== null && sr !== null ? `${Math.round(Math.abs(sl - sr) * 10) / 10}°` : '—' });
+  }
   return (
     <section className="panel stack tight">
       <div className="row between wrap">
@@ -163,7 +164,8 @@ export function ComparisonTable({ db, current }: { db: DB; current: Assessment }
   }
   const ba = currentAnswers(db.intakeAnswers.filter((r) => r.assessmentId === baseline.id));
   const ca = currentAnswers(db.intakeAnswers.filter((r) => r.assessmentId === current.id));
-  const pro = ['nprs_now', 'nprs_worst', 'func_stairs', 'func_squat', 'func_walk', 'func_chair'].filter((q) => ba[q] !== undefined || ca[q] !== undefined);
+  const qn = pathwayFor(current).history;
+  const pro = ['nprs_now', 'nprs_worst', ...qn.questions.filter((q) => q.section === 'function').map((q) => q.id)].filter((q) => ba[q] !== undefined || ca[q] !== undefined);
   return (
     <section className="panel stack">
       <div className="row between wrap">
@@ -216,9 +218,9 @@ export function ComparisonTable({ db, current }: { db: DB; current: Assessment }
               <tbody>
                 {pro.map((q) => (
                   <tr key={q}>
-                    <td className="small">{HISTORY_QUESTIONNAIRE.questions.find((x) => x.id === q)?.text}</td>
-                    <td className="small">{formatAnswer(q, ba[q] ?? null)}</td>
-                    <td className="small">{formatAnswer(q, ca[q] ?? null)}</td>
+                    <td className="small">{qn.questions.find((x) => x.id === q)?.text}</td>
+                    <td className="small">{formatAnswer(q, ba[q] ?? null, qn)}</td>
+                    <td className="small">{formatAnswer(q, ca[q] ?? null, qn)}</td>
                   </tr>
                 ))}
               </tbody>

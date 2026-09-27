@@ -1,7 +1,7 @@
 import type { ExerciseId } from '../exercises/types';
 import type { PoseFrame, PoseProviderInfo, Side } from '../types';
 import type { PoseProvider, PoseSource } from './provider';
-import { sceneAt, type SimParams } from '../protocols/simulate';
+import { sceneAt, SIMULATED_PROTOCOLS, type SimParams } from '../protocols/simulate';
 import { synthesize, type SynthScene } from './synthetic';
 
 /**
@@ -11,7 +11,7 @@ import { synthesize, type SynthScene } from './synthetic';
  */
 
 export interface SimulationScenario {
-  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat';
+  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | 'knee_supported_flexion' | 'knee_sit_to_stand' | 'knee_squat' | 'shoulder_flexion_active' | 'shoulder_abduction_active';
   side: Side;
   /** Peak angle the simulated patient reaches (can be set below target to show incomplete reps). */
   peak: number;
@@ -59,7 +59,7 @@ export class SimulatedPoseProvider implements PoseProvider {
     const a = this.angleAt(elapsed);
     const s = this.scenario;
     let scene: SynthScene;
-    if (s.exercise.startsWith('knee_') && s.exercise !== 'knee_flexion') {
+    if (SIMULATED_PROTOCOLS.has(s.exercise)) {
       const t = this.protocolStart === null ? 0 : (timestamp - this.protocolStart) / 1000;
       const side = s.exercise === 'knee_squat' ? null : s.side;
       const sc = sceneAt(s.exercise, side, t, this.protocolParams);
