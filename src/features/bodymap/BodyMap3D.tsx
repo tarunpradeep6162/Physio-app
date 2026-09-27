@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { regionLabel, type BodyView } from './regions';
 
-interface Props { selected: string[]; onToggle: (id: string) => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
+interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: () => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 const ROOT = 'https://raw.githubusercontent.com/JohanBellander/BodyExplorer/7d04bf3c4de2bd9cb234dd51d7e6857c099afafd/public/';
 
@@ -50,20 +50,21 @@ function load(loader: GLTFLoader, url: string, progress?: (f: number) => void) {
 }
 
 /** A licensed anatomical atlas, not a rendering or diagnosis of the patient. */
-export default function BodyMap3D({ selected, onToggle, readOnly, initialView, compact }: Props) {
+export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected), toggleRef = useRef(onToggle);
+  const unavailableRef = useRef(onUnavailable);
   const rotateRef = useRef<((a: number) => void) | null>(null), drawRef = useRef<(() => void) | null>(null);
   const [status, setStatus] = useState('Loading anatomical model…');
   const [hover, setHover] = useState<string | null>(null);
-  selectedRef.current = selected; toggleRef.current = onToggle;
+  selectedRef.current = selected; toggleRef.current = onToggle; unavailableRef.current = onUnavailable;
   useEffect(() => { drawRef.current?.(); }, [selected]);
 
   useEffect(() => {
     const el = host.current; if (!el) return;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); }
-    catch { setStatus('3D is unavailable on this device. Use the 2D map.'); return; }
+    catch { unavailableRef.current(); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -111,7 +112,7 @@ export default function BodyMap3D({ selected, onToggle, readOnly, initialView, c
       });
       add(anatomy, muscle, muscles); add(skeleton, bone, bones);
       setStatus(''); render();
-    }).catch(() => { if (!disposed) setStatus('The anatomical model could not load. Use the 2D map.'); });
+    }).catch(() => { if (!disposed) unavailableRef.current(); });
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), canvas = renderer.domElement;
     const hit = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(pointer, camera); const part = ray.intersectObjects(muscles)[0]?.object as Part | undefined; return part ? idFor(part) : null; };
     const down = (e: PointerEvent) => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false }; };

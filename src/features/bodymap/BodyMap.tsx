@@ -144,7 +144,7 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
         <button type="button" aria-pressed={mode === '2d'} onClick={() => setMode('2d')}>2D map</button>
       </div>}
       {mode === '3d' && !drawing ? <Suspense fallback={<div className="bodymap-3d-loading" role="status">Loading 3D anatomy…</div>}>
-        <BodyMap3D selected={selected} onToggle={onToggle} readOnly={readOnly} compact={compact} initialView={initialView} />
+        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={() => setMode('2d')} readOnly={readOnly} compact={compact} initialView={initialView} />
       </Suspense> : <>
       <Segmented label={t('body.rotate')} options={VIEW_ORDER.map((v) => ({ id: v, label: viewLabels[v] }))} value={view} onChange={setView} />
       <div
