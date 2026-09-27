@@ -3,17 +3,23 @@
 ## Motion Intelligence Engine (`src/engine`)
 
 ```
-CAMERA FRAME            camera/useMotionRuntime.ts  (requestVideoFrameCallback loop, outside React)
+CAMERA FRAME            camera/useMotionRuntime.ts  (requestVideoFrameCallback loop, outside React; capture timestamps)
   ↓
-PERSON / POSE DETECTION engine/pose/*               (PoseProvider interface; MediaPipe or simulator)
+PERSON / POSE DETECTION engine/pose/*               (PoseProvider interface; MediaPipe in pose.worker.ts,
+                                                     one frame in flight, newest first; main-thread fallback)
+  ↓
+IDENTITY                identity.ts                 (jump / scale / limb-swap → re-acquire for ≥ 500 ms)
   ↓
 LANDMARK EXTRACTION     33-point BlazePose topology (other models map onto it in their adapter)
   ↓
 CONFIDENCE FILTERING    pipeline.ts                 (low-visibility points bypass the smoother)
   ↓
-TEMPORAL SMOOTHING      filters.ts                  (One Euro default; EMA / Kalman selectable)
+TEMPORAL SMOOTHING      filters.ts                  (coordinates: none by default; live angle: One Euro;
+                        zeroPhase.ts                 stored signal: zero-phase median ±100 ms + mean ±150 ms)
   ↓
-ORIENTATION             pipeline.detectOrientation  (majority vote over 9 frames)
+PLAUSIBILITY            signalGuard.ts              (on measured angles: rejects impossible jumps; 250 ms recovery)
+  ↓
+ORIENTATION             pipeline.detectOrientation  (anatomical cross product, 400 ms vote, sticky lateral lock)
   ↓
 BIOMECHANICAL CALC      measurements.ts / posture.ts (pixel-space angles; null when invalid)
   ↓

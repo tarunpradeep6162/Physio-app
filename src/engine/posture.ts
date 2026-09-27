@@ -1,3 +1,4 @@
+import { checkRequired } from './measurements';
 import { LM } from './landmarks';
 import type { Landmark, ViewOrientation } from './types';
 import { confidenceLevel, type ConfidenceLevel } from './types';
@@ -161,15 +162,53 @@ export const POSTURE_METRICS: MetricDef[] = [
   plumbOffset('plumb_knee_offset', (v) => nearIdx(v, LM.leftKnee, LM.rightKnee)),
 ];
 
-export function computePostureMetrics(lms: Landmark[], width: number, height: number, view: ViewOrientation, minConfidence = 0.6): PostureMetricSample[] {
+/** Frontal metrics that depend on the torso outline (shoulders and/or hips). */
+const TORSO_METRICS = new Set<PostureMetricId>(['shoulder_level', 'pelvic_level', 'trunk_lateral_lean']);
+
+/**
+ * Hands in front of the body: a wrist inside the torso outline (shoulders→hips, slightly expanded).
+ * An object held there (a phone, a bag) can cover the torso and hips while the pose model still
+ * reports them as visible — measured in the tracking lab: neither landmark visibility nor person
+ * segmentation flags it. Torso-dependent frontal measures are withheld while this is true.
+ */
+export function handsInFront(lms: Landmark[], width: number, height: number): boolean {
+  const p = (i: number) => toPixels(lms[i], width, height);
+  const quad = [p(LM.leftShoulder), p(LM.rightShoulder), p(LM.rightHip), p(LM.leftHip)];
+  const c = { x: quad.reduce((a, q) => a + q.x, 0) / 4, y: quad.reduce((a, q) => a + q.y, 0) / 4 };
+  const grown = quad.map((q) => ({ x: c.x + (q.x - c.x) * 1.15, y: c.y + (q.y - c.y) * 1.15 }));
+  // Ignore hand points level with / below the hips: relaxed hands hang beside the pelvis.
+  const shY = (quad[0].y + quad[1].y) / 2;
+  const hipY = (quad[2].y + quad[3].y) / 2;
+  const lowest = shY + (hipY - shY) * 0.9;
+  const inside = (pt: { x: number; y: number }) => {
+    let s0 = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = grown[i];
+      const b = grown[(i + 1) % 4];
+      const cr = (b.x - a.x) * (pt.y - a.y) - (b.y - a.y) * (pt.x - a.x);
+      if (cr !== 0) {
+        if (s0 === 0) s0 = Math.sign(cr);
+        else if (Math.sign(cr) !== s0) return false;
+      }
+    }
+    return true;
+  };
+  // Wrists AND hand points: a phone is gripped at its sides, so the fingers reach inward.
+  const HAND = [LM.leftWrist, LM.rightWrist, LM.leftIndex, LM.rightIndex, LM.leftPinky, LM.rightPinky, LM.leftThumb, LM.rightThumb];
+  return HAND.some((i) => lms[i].visibility >= 0.5 && p(i).y < lowest && inside(p(i)));
+}
+
+export function computePostureMetrics(lms: Landmark[], width: number, height: number, view: ViewOrientation, minConfidence = 0.6, support?: number[] | null): PostureMetricSample[] {
   const p = (i: number) => toPixels(lms[i], width, height);
   const out: PostureMetricSample[] = [];
+  const handsBlock = (view === 'anterior' || view === 'posterior') && handsInFront(lms, width, height);
   for (const def of POSTURE_METRICS) {
     if (!def.views.includes(view)) continue;
-    const required = def.landmarks(view).map((i) => lms[i]);
-    if (required.some((lm) => !lm || !Number.isFinite(lm.x) || !Number.isFinite(lm.y))) continue;
-    const conf = Math.min(...required.map((lm) => lm.visibility));
-    if (conf < minConfidence) continue; // never compute from occluded landmarks
+    if (handsBlock && TORSO_METRICS.has(def.id)) continue; // something may be held in front of the torso
+    // Every required landmark must be inside the frame, on the body (segmentation) and visible.
+    const chk = checkRequired(lms, def.landmarks(view), minConfidence, support);
+    if (chk.issue) continue; // never compute from occluded, off-frame or covered landmarks
+    const conf = chk.confidence;
     const r = def.compute(p, view, lms);
     if (!r || !Number.isFinite(r.value)) continue;
     out.push({ id: def.id, value: r.value, unit: def.unit, direction: r.direction, confidence: conf });

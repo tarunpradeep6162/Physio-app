@@ -19,6 +19,8 @@ export interface SignalSample {
   reason?: string;
   /** Secondary per-frame values, e.g. FPPA left/right or trunk lean. */
   extras?: Record<string, number | null>;
+  /** Required landmarks that failed validation (indices). */
+  missing?: number[];
 }
 
 export type SignalFn = (frame: ProcessedFrame) => SignalSample;
@@ -103,10 +105,33 @@ export interface ProtocolResult {
   events: MovementEvent[];
   keyframes: Keyframe[];
   frames: EncodedFrames;
+  /** Exact signal processing used (provenance; absent on pv-knee-1.0.0 results). */
+  processing?: SignalProcessing;
+}
+
+export interface SignalProcessing {
+  coordinateFilter: string;
+  liveAngleFilter: string;
+  guard: { maxRatePerSec: number; recoverMs: number; gapMs: number };
+  stored: string;
 }
 
 export interface Recording {
-  samples: { t: number; raw: number | null; value: number | null; confidence: number; reason?: string; extras?: Record<string, number | null> }[];
+  samples: {
+    t: number;
+    /** Signal as computed from landmarks. */
+    raw: number | null;
+    /** After the plausibility guard (null for rejected / recovering samples). */
+    guarded?: number | null;
+    /** Live causal-filtered value (what the patient saw). */
+    live?: number | null;
+    /** Analysed value: live during capture; replaced by the zero-phase series at finish. */
+    value: number | null;
+    confidence: number;
+    reason?: string;
+    extras?: Record<string, number | null>;
+    missing?: number[];
+  }[];
   detector: CycleDetector;
   events: MovementEvent[];
   fps: number | null;
@@ -140,4 +165,37 @@ export interface ProtocolDef {
   quality: { minCoverage: number; minMeanConfidence: number; minValidCycles: number };
   limitations: string[];
   references: string[];
+  /**
+   * Camera framing rules (from v1.1.0). Distance is judged on the body region THIS test needs —
+   * e.g. the leg for a heel slide — never on standing full-body rules.
+   */
+  framing?: ProtocolFraming;
+  /** Setup guidance shown before capture, with an illustrated unobstructed example. */
+  guide?: ProtocolGuide;
+  /** What changed in this version (clinician-readable). */
+  changes?: string[];
+}
+
+export interface ProtocolFraming {
+  /** Axis along which the region's extent is judged. */
+  axis: 'vertical' | 'horizontal';
+  /** Landmarks whose extent is the distance proxy. */
+  extentLandmarks: (side: Side | null) => number[];
+  /** Acceptable extent as a fraction of the frame along `axis`. */
+  range: [number, number];
+  /** Recommended phone orientation. */
+  orientation: 'portrait' | 'landscape';
+  maxRollDeg: number;
+  minConfidence: number;
+}
+
+export interface ProtocolGuide {
+  camera: string;
+  distance: string;
+  view: string;
+  region: string;
+  lighting: string;
+  clothing: string;
+  /** Start pose shown in the illustration (synthetic skeleton, rendered as a figure). */
+  example: (side: Side | null) => import('../pose/synthetic').SynthScene;
 }

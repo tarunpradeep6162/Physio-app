@@ -1,3 +1,4 @@
+import { jointList } from './landmarks';
 import type { ExerciseDefinition } from './exercises/types';
 import type { RunnerEvent, RunnerSnapshot } from './exerciseRunner';
 
@@ -141,10 +142,27 @@ export function pauseKey(reason: string | undefined): string {
       return 'cue.pause.out_of_frame';
     case 'occluded':
       return 'cue.pause.occluded';
+    case 'not_on_body':
+      return 'cue.pause.not_on_body';
+    case 'reacquiring':
+      return 'cue.pause.reacquiring';
+    case 'implausible_jump':
+      return 'cue.pause.implausible_jump';
     case 'wrong_orientation':
     case 'orientation_uncertain':
       return 'cue.pause.orientation';
     default:
       return 'cue.paused_reposition';
   }
+}
+
+/**
+ * Patient-facing pause text that names the joint when it is known, e.g. "Measurement paused —
+ * something is covering your left knee".
+ */
+export function pauseText(t: (k: string, p?: Record<string, string>) => string, reason: string | undefined, missing?: number[]): string {
+  if (missing?.length && (reason === 'occluded' || reason === 'not_on_body' || reason === 'out_of_frame')) {
+    return t(`cue.pause.${reason}_named`, { joints: jointList(missing) });
+  }
+  return t(pauseKey(reason));
 }

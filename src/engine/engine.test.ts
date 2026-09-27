@@ -65,7 +65,10 @@ describe('measurements', () => {
     }
   });
   it('estimates shoulder flexion and straight-leg raise', () => {
-    const sh = synthesize({ kind: 'standing_lateral', side: 'right', shoulderFlexion: 150 });
+    // Arm overhead: leave headroom — an elbow in the outer 4% edge band is treated as out of frame.
+    const sh0 = synthesize({ kind: 'standing_lateral', side: 'right', shoulderFlexion: 150 });
+    expect(estimate('shoulder_flexion', sh0, W, H, 'right', { view: 'lateral_right' }).reason).toBe('out_of_frame');
+    const sh = sh0.map((l) => ({ ...l, y: l.y + 0.04 }));
     expect(estimate('shoulder_flexion', sh, W, H, 'right', { view: 'lateral_right' }).value!).toBeCloseTo(150, 0);
     const slr = synthesize({ kind: 'supine_lateral', side: 'left', legRaise: 40 });
     expect(estimate('hip_flexion_slr', slr, W, H, 'left', { view: 'lateral_left' }).value!).toBeCloseTo(40, 0);
@@ -117,7 +120,8 @@ describe('calibration', () => {
   const run = (scene: SynthScene | null, roll: number | null = 0, luma = 140) => {
     const p = new MotionPipeline('none');
     let f!: ProcessedFrame;
-    for (let i = 0; i < 10; i++) f = p.process(frameOf(scene, i * 33));
+    // Past the re-acquisition window (identity stable) so only the scene checks decide.
+    for (let i = 0; i < 20; i++) f = p.process(frameOf(scene, i * 33));
     return evaluateCalibration({ frame: f, req, lighting: { meanLuma: luma, clippedFraction: 0 }, cameraRollDeg: roll, facing: 'user' });
   };
   it('passes a well-framed, level, well-lit subject', () => {
@@ -148,7 +152,7 @@ describe('calibration', () => {
   it('judges distance horizontally for a patient lying down', () => {
     const p = new MotionPipeline('none');
     let f!: ProcessedFrame;
-    for (let i = 0; i < 10; i++) f = p.process(frameOf({ kind: 'supine_heel_slide', side: 'left', kneeFlexion: 5 }, i * 33));
+    for (let i = 0; i < 20; i++) f = p.process(frameOf({ kind: 'supine_heel_slide', side: 'left', kneeFlexion: 5 }, i * 33));
     const lying = { landmarks: [LM.leftHip, LM.leftKnee, LM.leftAnkle], views: ['lateral_left' as const], heightRange: [0.45, 0.98] as [number, number], minConfidence: 0.65, maxRollDeg: 4 };
     const vertical = evaluateCalibration({ frame: f, req: lying, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
     expect(vertical.instruction).toBe('move_closer');

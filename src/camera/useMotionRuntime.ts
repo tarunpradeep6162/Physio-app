@@ -3,6 +3,7 @@ import type { FilterKind } from '../engine/filters';
 import { MotionPipeline, type ProcessedFrame } from '../engine/pipeline';
 import { createPoseProvider, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
 import { WorkerPoseProvider } from '../engine/pose/workerProvider';
+import { cachedDecision, decisionKey, DelegateProbe, initialDelegate, saveDecision, webglRenderer, type Delegate } from '../engine/pose/delegateChoice';
 import type { PoseFrame } from '../engine/types';
 import { CameraError, closeCamera, openCamera, type CameraConstraints, type CameraErrorCode } from './camera';
 
@@ -28,6 +29,10 @@ export interface RuntimeStats {
   /** Where inference runs, and why the worker is not used (if it is not). */
   thread: 'worker' | 'main' | null;
   fallbackReason: string | null;
+  /** Delegate in use; true while the runtime is still timing delegates on this device. */
+  delegate: Delegate | null;
+  probing: boolean;
+  delegateMeasuredMs: Partial<Record<Delegate, number>>;
 }
 
 export interface FrameTiming {
@@ -53,11 +58,15 @@ export interface FrameContext {
 export interface RuntimeOptions {
   providerId: PoseProviderId;
   facing: 'user' | 'environment';
+  /** Coordinate smoothing (default none — see MotionPipeline). Angle filters belong to the consumer. */
+  coordFilter?: FilterKind;
+  /** @deprecated kept for callers; no longer applied to coordinates. */
   filter?: FilterKind;
   enabled?: boolean;
   /** 'auto' (default): worker when supported, main thread otherwise. */
   thread?: 'auto' | 'worker' | 'main';
-  delegate?: 'GPU' | 'CPU';
+  /** Omit (or 'auto') to choose by measurement on this device. */
+  delegate?: Delegate | 'auto';
   constraints?: CameraConstraints;
   onFrame: (frame: ProcessedFrame, ctx: FrameContext) => void;
   /** Called when the page is hidden / the app is backgrounded (interrupted session). */
@@ -69,7 +78,7 @@ const SLOW_FPS = 12;
 export function useMotionRuntime(opts: RuntimeOptions) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const providerRef = useRef<RuntimeProvider | null>(null);
-  const pipelineRef = useRef<MotionPipeline>(new MotionPipeline(opts.filter ?? 'one_euro'));
+  const pipelineRef = useRef<MotionPipeline>(new MotionPipeline(opts.coordFilter ?? 'none'));
   const onFrameRef = useRef(opts.onFrame);
   const onInterruptedRef = useRef(opts.onInterrupted);
   onFrameRef.current = opts.onFrame;
@@ -77,7 +86,7 @@ export function useMotionRuntime(opts: RuntimeOptions) {
 
   const [status, setStatus] = useState<RuntimeStatus>('idle');
   const [error, setError] = useState<CameraErrorCode | 'model' | null>(null);
-  const initialStats: RuntimeStats = { fps: 0, inferenceMs: 0, slow: false, thread: null, fallbackReason: null };
+  const initialStats: RuntimeStats = { fps: 0, inferenceMs: 0, slow: false, thread: null, fallbackReason: null, delegate: null, probing: false, delegateMeasuredMs: {} };
   const [stats, setStats] = useState<RuntimeStats>(initialStats);
   const [attempt, setAttempt] = useState(0);
   const statsRef = useRef<RuntimeStats>({ ...initialStats });
@@ -85,8 +94,8 @@ export function useMotionRuntime(opts: RuntimeOptions) {
   const epochRef = useRef(0);
 
   useEffect(() => {
-    if (opts.filter) pipelineRef.current.setFilter(opts.filter);
-  }, [opts.filter]);
+    pipelineRef.current.setFilter(opts.coordFilter ?? 'none');
+  }, [opts.coordFilter]);
 
   useEffect(() => {
     if (opts.enabled === false) return;
@@ -103,9 +112,28 @@ export function useMotionRuntime(opts: RuntimeOptions) {
     const simulated = opts.providerId === 'simulated';
     const variant = opts.providerId === 'mediapipe-full' ? 'full' : 'lite';
     statsRef.current = { ...initialStats };
+    // Delegate: explicit, cached per device, or measured now (see delegateChoice.ts).
+    let probe: DelegateProbe | null = null;
+    let delegate: Delegate = 'GPU';
+    let dKey = '';
+    let switching = false;
+    if (!simulated) {
+      const renderer = webglRenderer();
+      dKey = decisionKey(variant, renderer);
+      const cached = cachedDecision(dKey);
+      if (opts.delegate && opts.delegate !== 'auto') delegate = opts.delegate;
+      else if (cached) {
+        delegate = cached.delegate;
+        statsRef.current.delegateMeasuredMs = cached.measuredMs;
+      } else {
+        delegate = initialDelegate(renderer);
+        probe = new DelegateProbe(delegate);
+        statsRef.current.probing = true;
+      }
+    }
 
     async function startMain(reason: string | null) {
-      const provider = await createPoseProvider(opts.providerId, { delegate: opts.delegate });
+      const provider = await createPoseProvider(opts.providerId, { delegate });
       await provider.init();
       if (cancelled) {
         provider.close();
@@ -114,10 +142,13 @@ export function useMotionRuntime(opts: RuntimeOptions) {
       providerRef.current = provider;
       statsRef.current.thread = simulated ? null : 'main';
       statsRef.current.fallbackReason = reason;
+      statsRef.current.delegate = simulated ? null : (provider.info.config?.delegate ?? delegate);
+      // If the requested delegate could not be created, time what actually runs.
+      if (probe && statsRef.current.delegate && probe.current !== statsRef.current.delegate) probe.current = statsRef.current.delegate;
     }
 
     async function startWorker() {
-      const wp = new WorkerPoseProvider(variant, { delegate: opts.delegate });
+      const wp = new WorkerPoseProvider(variant, { delegate });
       await wp.init();
       if (cancelled) {
         wp.close();
@@ -138,6 +169,30 @@ export function useMotionRuntime(opts: RuntimeOptions) {
       providerRef.current = wp;
       statsRef.current.thread = 'worker';
       statsRef.current.fallbackReason = null;
+      statsRef.current.delegate = wp.info.config?.delegate ?? delegate;
+      if (probe && statsRef.current.delegate && probe.current !== statsRef.current.delegate) probe.current = statsRef.current.delegate;
+    }
+
+    /** Replace the engine with the other delegate on the same thread (probing only, before capture). */
+    async function switchDelegate(to: Delegate) {
+      switching = true;
+      delegate = to;
+      const thread = statsRef.current.thread;
+      providerRef.current?.close();
+      providerRef.current = null;
+      inflight = false;
+      epochRef.current++;
+      pipelineRef.current.reset();
+      try {
+        if (thread === 'worker') await startWorker();
+        else await startMain(statsRef.current.fallbackReason);
+      } catch {
+        if (!cancelled) {
+          setError('model');
+          setStatus('error');
+        }
+      }
+      switching = false;
     }
 
     async function start() {
@@ -183,6 +238,21 @@ export function useMotionRuntime(opts: RuntimeOptions) {
     function deliver(frame: PoseFrame, timing: FrameTiming) {
       const provider = providerRef.current;
       if (!provider || !video) return;
+      if (probe && !switching) {
+        const r = probe.add(frame.inferenceMs);
+        if (r.action === 'switch') {
+          statsRef.current.delegateMeasuredMs = { ...probe.measured };
+          void switchDelegate(r.to);
+          return;
+        }
+        if (r.action === 'done') {
+          statsRef.current.probing = false;
+          statsRef.current.delegateMeasuredMs = { ...probe.measured };
+          saveDecision({ key: dKey, delegate: r.delegate, measuredMs: { ...probe.measured }, at: new Date().toISOString() });
+          probe = null;
+          setStats({ ...statsRef.current });
+        }
+      }
       const processed = pipelineRef.current.process(frame);
       const now = timing.finishedAt;
       // FPS / latency (exponential averages).

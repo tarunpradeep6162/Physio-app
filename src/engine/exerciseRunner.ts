@@ -1,5 +1,6 @@
 import { getDefinition } from './exercises/definitions';
 import type { ExerciseDefinition, ExercisePrescription, FormRule } from './exercises/types';
+import { SignalGuard } from './signalGuard';
 import { createAngleFilter, type FilterKind, type ScalarFilter } from './filters';
 import { estimate, MEASUREMENT_ALGORITHM_VERSION } from './measurements';
 import type { ProcessedFrame } from './pipeline';
@@ -92,10 +93,13 @@ export class ExerciseRunner {
   private lastRaw: number | null = null;
   private lastPauseReason: string | null = null;
   private endT = 0;
+  /** Physically impossible jumps are rejected; values resume only after a short stable window. */
+  private readonly guard: SignalGuard;
 
   constructor(readonly rx: ExercisePrescription, filterKind: FilterKind = 'one_euro') {
     this.def = getDefinition(rx.definitionId, rx.definitionVersion);
     this.filter = createAngleFilter(filterKind);
+    this.guard = new SignalGuard(900);
     // The prescription is executed exactly as the clinician configured it; the engine never
     // adjusts targets on its own.
     this.sm = new RepStateMachine({
@@ -166,8 +170,11 @@ export class ExerciseRunner {
       est =
         frame.orientation === 'unknown'
           ? { value: null, confidence: 0, level: 'insufficient', reason: 'orientation_uncertain' }
-          : estimate(this.def.primary, frame.smoothed, frame.width, frame.height, side, { view: frame.orientation });
+          : estimate(this.def.primary, frame.smoothed, frame.width, frame.height, side, { view: frame.orientation, support: frame.support });
     }
+    // Plausibility guard: a leg-label flip or landmark jump must never count toward a rep or a hold.
+    const g = this.guard.update(t, est.value);
+    if (est.value !== null && g.value === null) est = { value: null, confidence: est.confidence, level: est.level, reason: g.reason };
     this.lastEstimate = est;
     this.totalFrames++;
     let filtered: number | null = null;
@@ -229,7 +236,7 @@ export class ExerciseRunner {
       return;
     }
     const side: Side = rule.on === 'same' ? this.rx.side : this.rx.side === 'left' ? 'right' : 'left';
-    const e = estimate(rule.measurement, frame.smoothed, frame.width, frame.height, side, { ignoreView: true });
+    const e = estimate(rule.measurement, frame.smoothed, frame.width, frame.height, side, { ignoreView: true, support: frame.support });
     if (e.value === null) return;
     const violated = rule.op === 'lt' ? e.value < rule.threshold : e.value > rule.threshold;
     if (!violated) {

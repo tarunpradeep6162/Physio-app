@@ -47,8 +47,13 @@ export interface RepRecord {
   maxVelocity: number;
   tooFast: boolean;
   counted: boolean;
-  reason?: 'target_not_reached' | 'hold_incomplete' | 'too_short';
+  reason?: 'target_not_reached' | 'hold_incomplete' | 'too_short' | 'tracking_interrupted' | 'tracking_lost';
+  /** Longest measurement gap inside the attempt (ms). */
+  maxGapMs?: number;
 }
+
+/** A measurement gap longer than this inside an attempt means it cannot be verified: not counted. */
+export const MAX_GAP_IN_REP_MS = 250;
 
 export interface StateMachineConfig {
   target: Range;
@@ -95,6 +100,7 @@ export class RepStateMachine {
   private counted = 0;
   private attempts = 0;
   readonly reps: RepRecord[] = [];
+  private maxGap = 0;
 
   constructor(private cfg: StateMachineConfig) {}
 
@@ -135,6 +141,29 @@ export class RepStateMachine {
     this.tooFastFlag = false;
     this.maxVel = 0;
     this.lastCountdown = null;
+    this.maxGap = 0;
+  }
+
+  /** Stores an attempt that ended without completing (e.g. tracking lost), never counted. */
+  private recordFailed(t: number, reason: 'tracking_lost', gapMs: number) {
+    this.attempts = Math.max(this.attempts, this.reps.length + 1);
+    this.reps.push({
+      index: this.reps.length + 1,
+      startT: this.repStart,
+      endT: t,
+      peak: this.peak,
+      reachedTarget: this.reachedTarget,
+      heldSeconds: this.cfg.holdSeconds > 0 ? Math.min(this.maxHeld, this.cfg.holdSeconds) : 0,
+      holdRequired: this.cfg.holdSeconds,
+      holdAchieved: this.holdAchieved,
+      concentricMs: this.targetAt !== null ? this.targetAt - this.repStart : null,
+      eccentricMs: null,
+      maxVelocity: this.maxVel,
+      tooFast: this.tooFastFlag,
+      counted: false,
+      reason,
+      maxGapMs: Math.round(gapMs),
+    });
   }
 
   private inAttempt(s: MotionState = this.state): boolean {
@@ -157,7 +186,9 @@ export class RepStateMachine {
         this.pausedAt = t;
         ev.push({ type: 'tracking_lost' });
       } else if (this.pausedAt !== null && this.inAttempt(this.resumeState) && t - this.pausedAt > th.pauseResetMs) {
-        // Too long without reliable tracking: the in-progress attempt cannot be trusted.
+        // Too long without reliable tracking: the in-progress attempt cannot be trusted. It is still
+        // recorded (not counted) so the saved result shows every attempt and why it failed.
+        this.recordFailed(t, 'tracking_lost', t - this.pausedAt);
         this.clearAttempt();
         this.resumeState = 'not_ready';
         ev.push({ type: 'rep_discarded' });
@@ -167,6 +198,7 @@ export class RepStateMachine {
     }
 
     if (this.state === 'paused') {
+      if (this.pausedAt !== null && this.inAttempt(this.resumeState)) this.maxGap = Math.max(this.maxGap, t - this.pausedAt);
       this.state = this.resumeState === 'ready' ? 'not_ready' : this.resumeState;
       this.pausedAt = null;
       this.restSince = null;
@@ -293,7 +325,8 @@ export class RepStateMachine {
   private finishAttempt(t: number, ev: MotionEvent[]) {
     const duration = t - this.repStart;
     let reason: RepRecord['reason'];
-    if (!this.reachedTarget) reason = 'target_not_reached';
+    if (this.maxGap > MAX_GAP_IN_REP_MS) reason = 'tracking_interrupted';
+    else if (!this.reachedTarget) reason = 'target_not_reached';
     else if (!this.holdAchieved) reason = 'hold_incomplete';
     else if (duration < this.cfg.minRepMs * 0.5) reason = 'too_short';
     const counted = reason === undefined;
@@ -312,6 +345,7 @@ export class RepStateMachine {
       tooFast: this.tooFastFlag || duration < this.cfg.minRepMs,
       counted,
       reason,
+      maxGapMs: this.maxGap || undefined,
     };
     this.reps.push(rep);
     if (counted) this.counted++;

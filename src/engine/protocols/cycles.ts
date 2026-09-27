@@ -4,7 +4,8 @@
  *   waiting ─(at rest ≥ readyMs)→ rest ─(leaves rest band)→ moving ─(reaches engaged)→ engaged
  *   engaged ─(moves back off peak)→ returning ─(back at rest)→ COMPLETE
  *   moving ─(back at rest without reaching engaged)→ incomplete (insufficient excursion)
- *   any ─(null sample)→ paused; a gap > pauseResetMs inside a cycle discards that cycle.
+ *   any ─(null sample)→ paused; a gap > pauseResetMs inside a cycle discards that cycle, and any
+ *   gap > maxGapInCycleMs inside a cycle means that repetition can never count (interrupted).
  *
  * Works for movements that increase the signal ('up', e.g. knee flexion during a heel slide) or
  * decrease it ('down', e.g. knee flexion while rising from a chair). The rest→start boundary has
@@ -20,6 +21,10 @@ export interface CycleConfig {
   minCycleMs: number;
   pauseResetMs: number;
   readyMs: number;
+  /** A tracking gap longer than this inside a repetition invalidates it (from protocol v1.1.0). */
+  maxGapInCycleMs?: number;
+  /** Minimum valid samples inside a repetition for its peak to be trusted (from v1.1.0). */
+  minSamples?: number;
 }
 
 export type CyclePhase = 'waiting' | 'rest' | 'moving' | 'engaged' | 'returning' | 'paused';
@@ -33,7 +38,11 @@ export interface Cycle {
   peak: number;
   endT: number | null;
   valid: boolean;
-  reason?: 'insufficient_excursion' | 'too_short' | 'tracking_gap' | 'unfinished';
+  reason?: 'insufficient_excursion' | 'too_short' | 'tracking_gap' | 'unfinished' | 'too_few_frames';
+  /** Longest tracking gap inside this repetition (ms). */
+  maxGapMs?: number;
+  /** Valid samples inside this repetition. */
+  samples?: number;
 }
 
 export type CycleEvent =
@@ -93,6 +102,7 @@ export class CycleDetector {
       return ev;
     }
     if (this.phase === 'paused') {
+      if (this.cur && this.pausedAt !== null) this.cur.maxGapMs = Math.max(this.cur.maxGapMs ?? 0, t - this.pausedAt);
       this.phase = this.resume === 'rest' ? 'waiting' : this.resume;
       this.restSince = null;
       this.pausedAt = null;
@@ -133,6 +143,7 @@ export class CycleDetector {
 
   private track(t: number, s: number, value: number, ev: CycleEvent[]) {
     const c = this.cur!;
+    c.samples = (c.samples ?? 0) + 1;
     if (s > this.peakS) {
       this.peakS = s;
       c.peak = value;
@@ -151,6 +162,18 @@ export class CycleDetector {
       if (c.engagedT === null) {
         c.valid = false;
         c.reason = 'insufficient_excursion';
+        this.cycles.push(c);
+        ev.push({ type: 'incomplete', t, cycle: c });
+      } else if ((c.maxGapMs ?? 0) > (this.cfg.maxGapInCycleMs ?? Infinity)) {
+        // Tracking was interrupted during this repetition: it cannot be verified, so it does not count.
+        c.valid = false;
+        c.reason = 'tracking_gap';
+        this.cycles.push(c);
+        ev.push({ type: 'incomplete', t, cycle: c });
+      } else if ((c.samples ?? 0) < (this.cfg.minSamples ?? 0)) {
+        // Too few frames to know where the peak was (e.g. very low frame rate).
+        c.valid = false;
+        c.reason = 'too_few_frames';
         this.cycles.push(c);
         ev.push({ type: 'incomplete', t, cycle: c });
       } else if (t - c.startT < this.cfg.minCycleMs) {

@@ -25,6 +25,11 @@ export interface DeviceContext {
   cameraRollDeg: number | null;
   meanFps: number | null;
   meanInferenceMs: number | null;
+  /** Whether the on-screen preview was mirrored (front camera). Inference always sees un-mirrored frames. */
+  displayMirrored?: boolean;
+  /** Where inference ran, and the camera's delivered frame rate / resolution settings. */
+  inferenceThread?: 'worker' | 'main' | null;
+  cameraFrameRate?: number | null;
 }
 
 export interface Provenance {

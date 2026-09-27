@@ -120,3 +120,15 @@ export const FULL_BODY_LANDMARKS: number[] = [
   LM.leftAnkle,
   LM.rightAnkle,
 ];
+
+/** Patient-facing joint name, e.g. 23 → "left hip" (anatomical side of the patient). */
+export function jointLabel(i: number): string {
+  return LANDMARK_NAMES[i].replace(/([A-Z])/g, ' $1').toLowerCase().replace('foot index', 'toes');
+}
+
+/** "left hip", "left hip and left knee", "left hip, left knee and left ankle". */
+export function jointList(indices: number[]): string {
+  const names = [...new Set(indices.map(jointLabel))];
+  if (names.length <= 1) return names[0] ?? '';
+  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}

@@ -6,7 +6,7 @@
  */
 import type { PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { ProviderOptions } from './provider';
-import { createLandmarker, toPoseFrame } from './mediapipe';
+import { createLandmarker, detectWithSupport } from './mediapipe';
 import type { PoseProviderInfo } from '../types';
 
 export type WorkerRequest =
@@ -43,10 +43,8 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       if (!landmarker || !info) throw new Error('not initialised');
       const ts = m.ts <= lastTs ? lastTs + 1 : m.ts;
       lastTs = ts;
-      const t0 = performance.now();
-      const res = landmarker.detectForVideo(bitmap, ts);
-      const inferenceMs = performance.now() - t0;
-      ctx.postMessage({ type: 'result', id: m.id, frame: toPoseFrame(res, ts, bitmap.width, bitmap.height, inferenceMs, info) } satisfies WorkerResponse);
+      const frame = detectWithSupport(landmarker, bitmap, ts, bitmap.width, bitmap.height, info);
+      ctx.postMessage({ type: 'result', id: m.id, frame } satisfies WorkerResponse);
     } catch (err) {
       ctx.postMessage({ type: 'error', id: m.id, message: String(err) } satisfies WorkerResponse);
     } finally {

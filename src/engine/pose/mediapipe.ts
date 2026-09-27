@@ -59,7 +59,7 @@ export async function createLandmarker(variant: 'lite' | 'full', o: ProviderOpti
       runningMode: 'VIDEO',
       numPoses,
       ...thresholds,
-      outputSegmentationMasks: false,
+      outputSegmentationMasks: !!o.segmentation,
     });
   let delegate: 'GPU' | 'CPU' = o.delegate ?? 'GPU';
   let landmarker: PoseLandmarker;
@@ -73,7 +73,7 @@ export async function createLandmarker(variant: 'lite' | 'full', o: ProviderOpti
   return {
     landmarker,
     loadMs: performance.now() - t0,
-    config: { delegate, numPoses, minDetection: thresholds.minPoseDetectionConfidence, minPresence: thresholds.minPosePresenceConfidence, minTracking: thresholds.minTrackingConfidence },
+    config: { delegate, numPoses, minDetection: thresholds.minPoseDetectionConfidence, minPresence: thresholds.minPosePresenceConfidence, minTracking: thresholds.minTrackingConfidence, segmentation: !!o.segmentation },
   };
 }
 
@@ -107,16 +107,45 @@ export class MediaPipePoseProvider implements PoseProvider {
     const ts = timestamp <= this.lastTs ? this.lastTs + 1 : timestamp;
     this.lastTs = ts;
     const { width, height } = sourceSize(source);
-    const t0 = performance.now();
-    const res = this.landmarker.detectForVideo(source, ts);
-    const inferenceMs = performance.now() - t0;
-    return toPoseFrame(res, ts, width, height, inferenceMs, this.info);
+    return detectWithSupport(this.landmarker, source, ts, width, height, this.info);
   }
 
   close(): void {
     this.landmarker?.close();
     this.landmarker = null;
   }
+}
+
+/**
+ * Runs the model and, when segmentation is enabled, samples the person mask around each landmark
+ * of the primary pose INSIDE the result callback (mask memory is only valid there).
+ */
+export function detectWithSupport(lm: PoseLandmarker, source: PoseSource | ImageBitmap, ts: number, width: number, height: number, info: PoseProviderInfo): PoseFrame {
+  let frame: PoseFrame | null = null;
+  const t0 = performance.now();
+  lm.detectForVideo(source, ts, (res) => {
+    const inferenceMs = performance.now() - t0;
+    frame = toPoseFrame(res, ts, width, height, inferenceMs, info);
+    const mask = res.segmentationMasks?.[0];
+    const pose = frame.poses[0];
+    if (mask && pose) frame.support = maskSupport(mask.getAsFloat32Array(), mask.width, mask.height, pose);
+  });
+  return frame ?? { timestamp: ts, width, height, poses: [], inferenceMs: performance.now() - t0, provider: info };
+}
+
+/** Max mask probability in a small window around each landmark (joint centres can sit near a limb edge). */
+export function maskSupport(mask: Float32Array, mw: number, mh: number, pose: { x: number; y: number }[], radiusFrac = 0.006): number[] {
+  const r = Math.max(1, Math.round(Math.max(mw, mh) * radiusFrac));
+  return pose.map((l) => {
+    const cx = Math.round(l.x * mw);
+    const cy = Math.round(l.y * mh);
+    if (cx < 0 || cy < 0 || cx >= mw || cy >= mh) return 0;
+    let best = 0;
+    for (let y = Math.max(0, cy - r); y <= Math.min(mh - 1, cy + r); y++) {
+      for (let x = Math.max(0, cx - r); x <= Math.min(mw - 1, cx + r); x++) best = Math.max(best, mask[y * mw + x]);
+    }
+    return Math.round(best * 100) / 100;
+  });
 }
 
 export function toPoseFrame(res: PoseLandmarkerResult, ts: number, width: number, height: number, inferenceMs: number, info: PoseProviderInfo): PoseFrame {

@@ -4,7 +4,8 @@ import { MotionPipeline, type ProcessedFrame } from '../engine/pipeline';
 import { computePostureMetrics, POSTURE_METRICS } from '../engine/posture';
 import type { PoseProvider } from '../engine/pose/provider';
 import type { Landmark } from '../engine/types';
-import { applyExposure, renderFrame } from './mannequin';
+import { applyExposure, renderFrame } from '../camera/mannequin';
+import { SignalGuard } from '../engine/signalGuard';
 import { hiddenLandmarks, type LabMeasure, type Scenario } from './scenarios';
 
 /**
@@ -34,12 +35,16 @@ export interface FrameRecord {
   reason?: string;
   /** Model visibility of each required landmark (raw output), in measure-definition order. */
   vis: number[];
+  /** Segmentation body support of each required landmark (when enabled). */
+  sup?: number[];
   inferMs: number;
   /** Compact raw model landmarks (x, y, visibility ×33) for offline filter studies. */
   lms?: number[] | null;
 }
 
 export interface RunOptions {
+  /** Reproduce the pre-Phase-6 measurement path (no plausibility guard). */
+  legacy?: boolean;
   coordFilter?: FilterKind;
   angleFilter?: FilterKind;
   keepLandmarks?: boolean;
@@ -53,14 +58,14 @@ export function requiredLandmarks(m: LabMeasure): number[] {
   return def.landmarks('anterior');
 }
 
-export function measureOn(m: LabMeasure, lms: Landmark[] | null, w: number, h: number, view: ProcessedFrame['orientation'] | null): { value: number | null; reason?: string } {
+export function measureOn(m: LabMeasure, lms: Landmark[] | null, w: number, h: number, view: ProcessedFrame['orientation'] | null, support?: number[] | null): { value: number | null; reason?: string } {
   if (!lms) return { value: null, reason: 'no_person' };
   if (m.kind === 'angle') {
-    const e = estimate(m.type, lms, w, h, m.side, view ? { view } : { ignoreView: true, minConfidence: 0 });
+    const e = estimate(m.type, lms, w, h, m.side, view ? { view, support } : { ignoreView: true, minConfidence: 0 });
     return { value: e.value, reason: e.reason };
   }
   const v = view ?? 'anterior';
-  const found = computePostureMetrics(lms, w, h, v, view ? 0.6 : 0).find((s) => s.id === m.id);
+  const found = computePostureMetrics(lms, w, h, v, view ? 0.6 : 0, view ? support : null).find((s) => s.id === m.id);
   return found ? { value: found.value } : { value: null, reason: view && v !== 'anterior' ? 'wrong_orientation' : 'withheld' };
 }
 
@@ -72,8 +77,11 @@ export async function runScenario(sc: Scenario, provider: PoseProvider, canvas: 
   const subCtx = sub.getContext('2d', { willReadFrequently: true })!;
   const W = canvas.width;
   const H = canvas.height;
-  const pipeline = new MotionPipeline(o.coordFilter ?? 'one_euro');
+  // Mirrors the app: pipeline (identity guard, re-acquisition, coordinate filter), per-landmark
+  // validation with body support, plausibility guard, then the live angle filter.
+  const pipeline = new MotionPipeline(o.coordFilter ?? 'none');
   const angleFilter = createAngleFilter(o.angleFilter ?? 'one_euro');
+  const guard = o.legacy ? null : new SignalGuard(sc.measure.kind === 'angle' ? 900 : 400);
   const req = requiredLandmarks(sc.measure);
   const out: FrameRecord[] = [];
   const n = Math.round(sc.durationSec * sc.cameraFps);
@@ -111,13 +119,17 @@ export async function runScenario(sc: Scenario, provider: PoseProvider, canvas: 
     const smooth = measureOn(sc.measure, p.smoothed, W, H, null).value;
     let final: number | null = null;
     let reason: string | undefined;
+    let candidate: number | null = null;
     if (p.status !== 'tracking') reason = p.status;
     else if (p.orientation === 'unknown' && sc.measure.kind === 'angle') reason = 'orientation_uncertain';
     else {
-      const r = measureOn(sc.measure, p.smoothed, W, H, p.orientation);
+      const r = measureOn(sc.measure, p.smoothed, W, H, p.orientation, p.support);
       reason = r.reason;
-      if (r.value !== null) final = sc.measure.kind === 'angle' ? angleFilter.filter(r.value, tMs) : r.value;
+      candidate = r.value;
     }
+    const g = guard ? guard.update(tMs, candidate) : { value: candidate };
+    if (g.value !== null) final = sc.measure.kind === 'angle' ? angleFilter.filter(g.value, tMs) : g.value;
+    else if (candidate !== null && 'reason' in g) reason = g.reason;
     if (final === null) angleFilter.reset();
     out.push({
       t: tMs,
@@ -132,6 +144,7 @@ export async function runScenario(sc: Scenario, provider: PoseProvider, canvas: 
       final,
       reason: final === null ? reason : undefined,
       vis: p.raw ? req.map((r) => Math.round(p.raw![r].visibility * 100) / 100) : [],
+      sup: p.support ? req.map((r) => p.support![r] ?? 0) : undefined,
       inferMs: frame.inferenceMs,
       lms: o.keepLandmarks ? (frame.poses[0] ? frame.poses[0].flatMap((l) => [r4(l.x), r4(l.y), r4(l.visibility)]) : null) : undefined,
     });

@@ -271,7 +271,7 @@ export function ValidationMode() {
             <Segmented<PoseProviderId> label="Provider" value={providerId} onChange={setProviderId} options={[{ id: 'mediapipe-lite', label: 'Lite' }, { id: 'mediapipe-full', label: 'Full' }, { id: 'simulated', label: 'Sim' }]} />
             <Segmented<ExerciseId> label="Exercise" value={exercise} onChange={setExercise} options={EXERCISE_LIST.map((d) => ({ id: d.id, label: d.id.replace(/_/g, ' ') }))} />
             <Segmented<Side> label="Side" value={side} onChange={setSide} options={[{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }]} />
-            <Segmented<FilterKind> label="Filter" value={filter} onChange={setFilter} options={[{ id: 'one_euro', label: '1€' }, { id: 'ema', label: 'EMA' }, { id: 'kalman', label: 'Kalman' }, { id: 'none', label: 'Raw' }]} />
+            <Segmented<FilterKind> label="Angle filter (live)" value={filter} onChange={setFilter} options={[{ id: 'one_euro', label: '1€' }, { id: 'ema', label: 'EMA' }, { id: 'kalman', label: 'Kalman' }, { id: 'none', label: 'Raw' }]} />
             <Segmented<'auto' | 'main'> label="Inference thread" value={prefs.inferenceThread} onChange={(v) => setPrefs({ inferenceThread: v })} options={[{ id: 'auto', label: 'Worker (auto)' }, { id: 'main', label: 'Main (fallback)' }]} />
           </div>
           <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
@@ -279,7 +279,8 @@ export function ValidationMode() {
           <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
           <table style={{ width: '100%' }}>
             <tbody>
-              <KV k="Inference thread · delegate" v={`${runtime.stats.thread ?? '–'} · ${runtime.providerRef.current?.info.config?.delegate ?? '–'}${runtime.stats.fallbackReason ? ` (${runtime.stats.fallbackReason})` : ''}`} />
+              <KV k="Inference thread · delegate" v={`${runtime.stats.thread ?? '–'} · ${runtime.stats.delegate ?? '–'}${runtime.stats.probing ? ' (timing delegates…)' : ''}${runtime.stats.fallbackReason ? ` (${runtime.stats.fallbackReason})` : ''}`} />
+              <KV k="Delegate timing (median ms)" v={Object.entries(runtime.stats.delegateMeasuredMs).map(([k, v]) => `${k} ${v}`).join(' · ') || '–'} />
               <KV k="Camera fps / inference fps" v={`${fmt(snap5?.cameraFps)} / ${fmt(snap5?.inferenceFps)}`} />
               <KV k="Camera frames skipped" v={snap5?.skippedFraction === null || snap5?.skippedFraction === undefined ? '–' : `${Math.round(snap5.skippedFraction * 100)}%`} />
               <KV k="Frame age capture→result p50 / p95" v={snap5?.frameAge ? `${fmt(snap5.frameAge.p50, 0)} / ${fmt(snap5.frameAge.p95, 0)} ms` : '–'} />

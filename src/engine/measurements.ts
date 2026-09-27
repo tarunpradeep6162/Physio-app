@@ -116,15 +116,47 @@ export const MEASUREMENTS: Record<MeasurementType, MeasurementDef> = {
 export interface EstimateOptions {
   /** Minimum per-landmark visibility for a value to be produced at all. */
   minConfidence?: number;
+  /** Per-landmark body support from segmentation; each required landmark must reach `minSupport`. */
+  support?: number[] | null;
+  minSupport?: number;
   /** Skip the camera-view check (Validation Mode only). */
   ignoreView?: boolean;
   view?: ViewOrientation;
 }
 
 export const DEFAULT_MIN_CONFIDENCE = 0.6;
+/** A required landmark whose segmentation support is below this lies on something that is not the body. */
+export const MIN_SUPPORT = 0.5;
 
-function inFrame(lm: Landmark): boolean {
-  return lm.x >= -0.02 && lm.x <= 1.02 && lm.y >= -0.02 && lm.y <= 1.02;
+/**
+ * Required landmarks must lie at least this far inside the frame. Pose models extrapolate a limb
+ * that leaves the frame and place its end point JUST INSIDE the edge with high visibility
+ * (measured: off-frame ankles reported at y 0.96–1.02), so an edge band is treated as out of frame.
+ */
+export const FRAME_MARGIN = 0.04;
+
+export function inFrame(lm: Landmark, margin = FRAME_MARGIN): boolean {
+  return lm.x >= margin && lm.x <= 1 - margin && lm.y >= margin && lm.y <= 1 - margin;
+}
+
+export type LandmarkIssue = 'out_of_frame' | 'not_on_body' | 'occluded';
+
+/**
+ * Validates EACH required landmark on its own — a strong average must never hide one obstructed
+ * joint. Issues in priority order: outside the frame, on something that is not the body
+ * (segmentation), low model visibility.
+ */
+export function checkRequired(lms: Landmark[], indices: number[], minConfidence: number, support?: number[] | null, minSupport = MIN_SUPPORT): { issue: LandmarkIssue | null; missing: number[]; confidence: number } {
+  const byIssue: Record<LandmarkIssue, number[]> = { out_of_frame: [], not_on_body: [], occluded: [] };
+  for (const i of indices) {
+    const l = lms[i];
+    if (!l || !Number.isFinite(l.x) || !Number.isFinite(l.y) || !inFrame(l)) byIssue.out_of_frame.push(i);
+    else if (support && support[i] !== undefined && support[i] < minSupport) byIssue.not_on_body.push(i);
+    else if (l.visibility < minConfidence) byIssue.occluded.push(i);
+  }
+  const confidence = Math.min(...indices.map((i) => lms[i]?.visibility ?? 0));
+  for (const k of ['out_of_frame', 'not_on_body', 'occluded'] as const) if (byIssue[k].length) return { issue: k, missing: byIssue[k], confidence };
+  return { issue: null, missing: [], confidence };
 }
 
 /**
@@ -142,13 +174,10 @@ export function estimate(
   if (!lms) return { value: null, confidence: 0, level: 'insufficient', reason: 'no_person' };
   const def = MEASUREMENTS[type];
   const minC = opts.minConfidence ?? DEFAULT_MIN_CONFIDENCE;
-  const req = def.landmarks(side).map((i) => lms[i]);
-  if (req.some((l) => !inFrame(l))) {
-    return { value: null, confidence: 0, level: 'insufficient', reason: 'out_of_frame' };
-  }
-  const confidence = Math.min(...req.map((l) => l.visibility));
-  if (confidence < minC) {
-    return { value: null, confidence, level: confidenceLevel(confidence), reason: 'occluded' };
+  const chk = checkRequired(lms, def.landmarks(side), minC, opts.support, opts.minSupport);
+  const confidence = chk.confidence;
+  if (chk.issue) {
+    return { value: null, confidence: chk.issue === 'out_of_frame' ? 0 : confidence, level: chk.issue === 'out_of_frame' ? 'insufficient' : confidenceLevel(confidence), reason: chk.issue, missing: chk.missing };
   }
   if (!opts.ignoreView && opts.view && !def.validViews(side).includes(opts.view)) {
     return { value: null, confidence, level: confidenceLevel(confidence), reason: 'wrong_orientation' };
@@ -164,4 +193,18 @@ export function estimate3d(type: MeasurementType, world: Landmark[] | null, side
   const def = MEASUREMENTS[type];
   if (!world || !def.compute3d) return null;
   return def.compute3d(world, side);
+}
+
+export type JointState = 'ok' | 'out_of_frame' | 'not_on_body' | 'occluded' | 'no_person';
+
+/** Per-joint status for the live "required joints" indicator — same rules as `checkRequired`. */
+export function jointStates(lms: Landmark[] | null, indices: number[], minConfidence = DEFAULT_MIN_CONFIDENCE, support?: number[] | null, minSupport = MIN_SUPPORT): { index: number; state: JointState }[] {
+  return indices.map((i) => {
+    const l = lms?.[i];
+    if (!l) return { index: i, state: 'no_person' as const };
+    if (!Number.isFinite(l.x) || !Number.isFinite(l.y) || !inFrame(l)) return { index: i, state: 'out_of_frame' as const };
+    if (support && support[i] !== undefined && support[i] < minSupport) return { index: i, state: 'not_on_body' as const };
+    if (l.visibility < minConfidence) return { index: i, state: 'occluded' as const };
+    return { index: i, state: 'ok' as const };
+  });
 }

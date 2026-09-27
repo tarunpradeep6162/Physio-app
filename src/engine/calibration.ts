@@ -1,5 +1,7 @@
 import type { ProcessedFrame } from './pipeline';
-import { LANDMARK_NAMES, LM } from './landmarks';
+import { jointList, LANDMARK_NAMES, LM } from './landmarks';
+import { MIN_SUPPORT } from './measurements';
+import { handsInFront } from './posture';
 import type { Landmark, ViewOrientation } from './types';
 
 /**
@@ -17,7 +19,9 @@ export type CalibrationCheckId =
   | 'orientation'
   | 'camera_level'
   | 'lighting'
-  | 'confidence';
+  | 'confidence'
+  | 'stable'
+  | 'hands_clear';
 
 export type CheckStatus = 'pass' | 'fail' | 'unknown';
 
@@ -38,6 +42,9 @@ export type InstructionCode =
   | 'increase_lighting'
   | 'reduce_backlight'
   | 'low_confidence'
+  | 'joint_hidden'
+  | 'joint_covered'
+  | 'lower_hands'
   | 'hold_still'
   | 'ready';
 
@@ -47,6 +54,8 @@ export interface CalibrationCheck {
   instruction?: InstructionCode;
   /** Measured value behind the decision, surfaced in Validation Mode. */
   detail?: string;
+  /** Parameters for the instruction text (e.g. the joints that are hidden). */
+  params?: Record<string, string>;
 }
 
 export interface LightingSample {
@@ -65,8 +74,16 @@ export interface CalibrationRequirements {
   heightRange: [number, number];
   /** Axis along which body extent is judged: vertical for standing, horizontal for lying tests. */
   extentAxis?: 'vertical' | 'horizontal';
+  /**
+   * Landmarks whose extent is the distance proxy (e.g. hip→foot for a heel slide). When set, only
+   * this region — not the whole body — decides "move closer / move back", and only REQUIRED
+   * landmarks leaving the frame count as a framing failure.
+   */
+  extentLandmarks?: number[];
   minConfidence: number;
   maxRollDeg: number;
+  /** Require the hands away from the front of the torso (static posture scan, front/back views). */
+  handsFree?: boolean;
 }
 
 export interface CalibrationInput {
@@ -85,9 +102,11 @@ export interface CalibrationResult {
   frameReady: boolean;
   /** Highest-priority instruction to show/speak. */
   instruction: InstructionCode;
+  instructionParams?: Record<string, string>;
 }
 
-const EDGE_MARGIN = 0.03;
+/** Same edge band as measurement (FRAME_MARGIN): setup must not pass a framing that measurement refuses. */
+const EDGE_MARGIN = 0.04;
 export const MIN_LUMA = 60;
 const MAX_CLIPPED = 0.25;
 
@@ -121,6 +140,9 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
     return finish(checks);
   }
   add({ id: 'single_person', status: 'pass' });
+  // Identity / limb labels must have been stable for the re-acquisition window.
+  if (frame.status === 'reacquiring') add({ id: 'stable', status: 'fail', instruction: 'hold_still', detail: `${frame.integrity.event ?? 'acquiring'} · stable ${Math.round(frame.integrity.stableForMs)} ms` });
+  else add({ id: 'stable', status: 'pass' });
 
   const lms = frame.smoothed!;
   const required = req.landmarks.map((i) => lms[i]);
@@ -129,11 +151,20 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
   // Body extent along the relevant axis: a distance proxy (fraction of frame, not metres).
   const horiz = req.extentAxis === 'horizontal';
   const coord = (l: Landmark) => (horiz ? l.x : l.y);
-  const ys = [lms[LM.nose], lms[LM.leftAnkle], lms[LM.rightAnkle], lms[LM.leftShoulder], lms[LM.rightShoulder], lms[LM.leftHip], lms[LM.rightHip]]
-    .filter((l) => l.visibility > 0.4)
-    .map(coord);
-  const top = Math.min(...required.map(coord), ...ys);
-  const bottom = Math.max(...required.map(coord), ...ys);
+  let top: number;
+  let bottom: number;
+  if (req.extentLandmarks?.length) {
+    const region = req.extentLandmarks.map((i) => lms[i]).filter((l) => l.visibility > 0.4);
+    const pts = (region.length >= 2 ? region : required).map(coord);
+    top = Math.min(...pts);
+    bottom = Math.max(...pts);
+  } else {
+    const ys = [lms[LM.nose], lms[LM.leftAnkle], lms[LM.rightAnkle], lms[LM.leftShoulder], lms[LM.rightShoulder], lms[LM.leftHip], lms[LM.rightHip]]
+      .filter((l) => l.visibility > 0.4)
+      .map(coord);
+    top = Math.min(...required.map(coord), ...ys);
+    bottom = Math.max(...required.map(coord), ...ys);
+  }
   const extent = bottom - top;
   const tooClose = extent > req.heightRange[1] || top < 0 || bottom > 1;
 
@@ -171,9 +202,18 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
 
   // EVERY landmark the selected test needs must be confidently visible: a strong mean must not
   // hide one occluded joint.
+  if (req.handsFree && (frame.orientation === 'anterior' || frame.orientation === 'posterior')) {
+    if (handsInFront(lms, frame.width, frame.height)) add({ id: 'hands_clear', status: 'fail', instruction: 'lower_hands', detail: 'wrist inside the torso outline' });
+    else add({ id: 'hands_clear', status: 'pass' });
+  }
+
+  // Body support (segmentation) catches an object held in front of a joint that the model still
+  // reports as visible.
   const occluded = req.landmarks.filter((i) => lms[i].visibility < req.minConfidence);
-  if (occluded.length > 0) {
-    add({ id: 'confidence', status: 'fail', instruction: 'low_confidence', detail: `occluded: ${occluded.map((i) => LANDMARK_NAMES[i]).join(', ')}` });
+  const covered = frame.support ? req.landmarks.filter((i) => (frame.support![i] ?? 1) < MIN_SUPPORT && lms[i].visibility >= req.minConfidence) : [];
+  if (occluded.length > 0 || covered.length > 0) {
+    const parts = [occluded.length ? `occluded: ${occluded.map((i) => LANDMARK_NAMES[i]).join(', ')}` : '', covered.length ? `covered: ${covered.map((i) => LANDMARK_NAMES[i]).join(', ')}` : ''].filter(Boolean);
+    add({ id: 'confidence', status: 'fail', instruction: covered.length ? 'joint_covered' : 'joint_hidden', detail: parts.join(' · '), params: { joints: jointList(covered.length ? covered : occluded) } });
   } else {
     add({ id: 'confidence', status: 'pass', detail: `min ${Math.min(...required.map((l) => l.visibility)).toFixed(2)}` });
   }
@@ -182,7 +222,7 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
 }
 
 /** Order in which failing instructions are shown: fix the most fundamental problem first. */
-const PRIORITY: CalibrationCheckId[] = ['person', 'single_person', 'lighting', 'camera_level', 'distance', 'framing', 'centering', 'orientation', 'confidence'];
+const PRIORITY: CalibrationCheckId[] = ['person', 'single_person', 'lighting', 'camera_level', 'distance', 'framing', 'centering', 'orientation', 'hands_clear', 'confidence', 'stable'];
 
 function finish(checks: CalibrationCheck[]): CalibrationResult {
   const failing = checks.filter((c) => c.status === 'fail').sort((a, b) => PRIORITY.indexOf(a.id) - PRIORITY.indexOf(b.id));
@@ -190,6 +230,7 @@ function finish(checks: CalibrationCheck[]): CalibrationResult {
     checks,
     frameReady: failing.length === 0 && checks.some((c) => c.id === 'confidence' && c.status === 'pass'),
     instruction: failing[0]?.instruction ?? 'ready',
+    instructionParams: failing[0]?.params,
   };
 }
 

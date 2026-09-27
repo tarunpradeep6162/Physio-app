@@ -2,7 +2,7 @@ import { createPoseProvider, type PoseProviderId } from '../engine/pose/provider
 import type { FilterKind } from '../engine/filters';
 import { runLiveBench, type LiveBenchResult } from './liveBench';
 import { summarize, type RunSummary } from './metrics';
-import { renderFrame } from './mannequin';
+import { renderFrame } from '../camera/mannequin';
 import { groundTruthAt, runScenario, type FrameRecord } from './runner';
 import { SCENARIOS } from './scenarios';
 
@@ -39,7 +39,7 @@ export interface LabReport {
   source: 'synthetic_rendered';
   createdAt: string;
   env: LabEnv;
-  config: { model: PoseProviderId; delegate: string | undefined; coordFilter: FilterKind; angleFilter: FilterKind; loadMs: number };
+  config: { model: PoseProviderId; delegate: string | undefined; coordFilter: FilterKind; angleFilter: FilterKind; loadMs: number; thresholds?: Record<string, number | boolean | undefined>; resolution?: string };
   scenarios: ScenarioResult[];
   live?: LiveBenchResult[];
 }
@@ -76,8 +76,23 @@ function env(): LabEnv {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const params = new URLSearchParams(location.search);
 
+/** Optional overrides from the URL: model thresholds (det/pres/trk) and frame resolution (res=WxH). */
+function labOverrides() {
+  const num = (k: string) => (params.get(k) === null ? undefined : Number(params.get(k)));
+  const res = params.get('res')?.split('x').map(Number);
+  return {
+    thresholds: { minPoseDetectionConfidence: num('det'), minPosePresenceConfidence: num('pres'), minTrackingConfidence: num('trk'), segmentation: params.get('seg') === '1' },
+    res: res && res.length === 2 ? { w: res[0], h: res[1] } : null,
+  };
+}
+
 async function runScenarios(model: PoseProviderId, delegate: 'GPU' | 'CPU' | undefined, coordFilter: FilterKind, angleFilter: FilterKind, only: string[] | null, keep: boolean): Promise<LabReport> {
   const canvas = $<HTMLCanvasElement>('stage');
+  const ov = labOverrides();
+  if (ov.res) {
+    canvas.width = ov.res.w;
+    canvas.height = ov.res.h;
+  }
   const results: ScenarioResult[] = [];
   let loadMs = 0;
   let usedDelegate: string | undefined;
@@ -86,7 +101,7 @@ async function runScenarios(model: PoseProviderId, delegate: 'GPU' | 'CPU' | und
     $('status').textContent = `Running ${sc.id}…`;
     // Fresh model per scenario: no tracking state carries over between sequences.
     const t0 = performance.now();
-    const provider = await createPoseProvider(model, { delegate });
+    const provider = await createPoseProvider(model, { delegate, ...ov.thresholds });
     await provider.init();
     loadMs = Math.max(loadMs, performance.now() - t0);
     usedDelegate = provider.info.config?.delegate;
@@ -102,7 +117,7 @@ async function runScenarios(model: PoseProviderId, delegate: 'GPU' | 'CPU' | und
     source: 'synthetic_rendered',
     createdAt: new Date().toISOString(),
     env: env(),
-    config: { model, delegate: usedDelegate, coordFilter, angleFilter, loadMs: Math.round(loadMs) },
+    config: { model, delegate: usedDelegate, coordFilter, angleFilter, loadMs: Math.round(loadMs), thresholds: ov.thresholds, resolution: `${canvas.width}x${canvas.height}` },
     scenarios: results,
   };
 }

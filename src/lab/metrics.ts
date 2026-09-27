@@ -29,6 +29,8 @@ export interface RunSummary {
   unsafeValues: number;
   /** Frames where a required landmark was hidden but the model still reported visibility ≥ 0.6 for all required landmarks. */
   hiddenButConfident: number;
+  /** Hidden frames where segmentation support also stayed ≥ 0.5 for every required landmark (occlusion missed by both signals). */
+  hiddenButSupported: number | null;
   hiddenFrames: number;
   reasons: Record<string, number>;
   orientations: Record<string, number>;
@@ -82,6 +84,7 @@ export function summarize(recs: FrameRecord[], gtAt: (tMs: number) => number | n
     invalidRate: possible.length ? r(possible.filter((x) => x.final === null).length / possible.length, 3) : null,
     unsafeValues: recs.filter((x) => x.final !== null && (x.gtHidden || x.gtMulti)).length,
     hiddenButConfident: hidden.filter((x) => x.vis.length > 0 && x.vis.every((v) => v >= 0.6)).length,
+    hiddenButSupported: recs.some((x) => x.sup) ? hidden.filter((x) => x.sup && x.sup.length > 0 && x.sup.every((v) => v >= 0.5)).length : null,
     hiddenFrames: hidden.length,
     reasons,
     orientations,

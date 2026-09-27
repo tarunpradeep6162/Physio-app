@@ -35,6 +35,8 @@ export interface ProviderOptions {
   minPoseDetectionConfidence?: number;
   minPosePresenceConfidence?: number;
   minTrackingConfidence?: number;
+  /** Output the person mask and derive per-landmark body support (occlusion check). */
+  segmentation?: boolean;
 }
 
 /** Lazily constructs a provider so the pose runtime is only downloaded when the camera opens. */

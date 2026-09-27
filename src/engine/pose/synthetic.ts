@@ -20,7 +20,7 @@ export interface SynthOptions {
 export type SynthScene =
   | { kind: 'standing_lateral'; side: Side; kneeFlexion?: number; shoulderFlexion?: number; trunkLean?: number }
   | { kind: 'supine_lateral'; side: Side; legRaise?: number; kneeBend?: number }
-  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; offsetX?: number; scale?: number }
+  | { kind: 'standing_anterior'; shoulderTiltDeg?: number; pelvicTiltDeg?: number; offsetX?: number; scale?: number; handsInFront?: boolean }
   /** Supine heel slide seen from the side: knee flexes with the heel on the floor. */
   | { kind: 'supine_heel_slide'; side: Side; kneeFlexion: number }
   /** Sit-to-stand seen from the side: kneeFlexion ~90 seated → ~0 standing; trunk leans forward to rise. */
@@ -56,8 +56,33 @@ interface P {
  */
 export function synthesize(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
   const lms = synthesizeRaw(scene, opts);
+  deriveMinorLandmarks(lms);
   if (needsMirror(scene)) for (const l of lms) l.x = 1 - l.x;
   return lms;
+}
+
+/**
+ * The scenes place the major joints; the minor points (hand, mouth, inner/outer eye) are derived
+ * from them so no landmark is left at a meaningless default (the image centre) — a rule reading
+ * the hands must see hands where the wrists are.
+ */
+function deriveMinorLandmarks(l: Landmark[]) {
+  const along = (from: Landmark, to: Landmark, k: number, dx = 0, dy = 0): Landmark => ({ x: to.x + (to.x - from.x) * k + dx, y: to.y + (to.y - from.y) * k + dy, z: to.z, visibility: to.visibility * 0.95 });
+  for (const [el, wr, pinky, index, thumb] of [
+    [LM.leftElbow, LM.leftWrist, LM.leftPinky, LM.leftIndex, LM.leftThumb],
+    [LM.rightElbow, LM.rightWrist, LM.rightPinky, LM.rightIndex, LM.rightThumb],
+  ]) {
+    l[pinky] = along(l[el], l[wr], 0.25, 0.004, 0);
+    l[index] = along(l[el], l[wr], 0.28, -0.004, 0);
+    l[thumb] = along(l[el], l[wr], 0.15, 0, -0.004);
+  }
+  const n = l[LM.nose];
+  l[LM.mouthLeft] = { ...n, x: n.x + 0.01, y: n.y + 0.012 };
+  l[LM.mouthRight] = { ...n, x: n.x - 0.01, y: n.y + 0.012 };
+  for (const [eye, inner, outer, s] of [[LM.leftEye, LM.leftEyeInner, LM.leftEyeOuter, 1], [LM.rightEye, LM.rightEyeInner, LM.rightEyeOuter, -1]] as const) {
+    l[inner] = { ...l[eye], x: l[eye].x - s * 0.006 };
+    l[outer] = { ...l[eye], x: l[eye].x + s * 0.006 };
+  }
 }
 
 function needsMirror(scene: SynthScene): boolean {
@@ -112,8 +137,14 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
       set(L ? LM.leftHeel : LM.rightHeel, { x: hipX, y: hipY + 0.42 * H * s }, 0, 0.9);
       set(L ? LM.leftFootIndex : LM.rightFootIndex, { x: hipX + sign * 10, y: hipY + 0.43 * H * s }, -0.1, 0.9);
       const shX = cx + sign * halfSh;
-      set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 12, y: hipY - 0.12 * H * s }, 0, 0.95);
-      set(L ? LM.leftWrist : LM.rightWrist, { x: shX + sign * 16, y: hipY + 0.02 * H * s }, 0, 0.93);
+      if (scene.handsInFront) {
+        // Holding something (e.g. a phone) in front of the belly with both hands.
+        set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 6, y: hipY - 0.1 * H * s }, 0, 0.95);
+        set(L ? LM.leftWrist : LM.rightWrist, { x: cx + sign * 0.05 * H * s, y: hipY - 0.08 * H * s }, -0.2, 0.93);
+      } else {
+        set(L ? LM.leftElbow : LM.rightElbow, { x: shX + sign * 12, y: hipY - 0.12 * H * s }, 0, 0.95);
+        set(L ? LM.leftWrist : LM.rightWrist, { x: shX + sign * 16, y: hipY + 0.02 * H * s }, 0, 0.93);
+      }
     }
     return lm;
   }
@@ -183,9 +214,10 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
     pair(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + 12, y: ankle.y - 30 }, { x: farAnkle.x + 12, y: farAnkle.y - 30 });
     pair(LM.leftElbow, LM.rightElbow, { x: sh.x + 90, y: baseY + 4 });
     pair(LM.leftWrist, LM.rightWrist, { x: sh.x + 170, y: baseY + 6 });
-    pair(LM.leftEar, LM.rightEar, { x: sh.x - 60, y: baseY - 10 });
-    pair(LM.leftEye, LM.rightEye, { x: sh.x - 80, y: baseY - 25 });
-    set(LM.nose, { x: sh.x - 85, y: baseY - 35 }, -0.1, 0.95);
+    // Lying on the back: the face points at the ceiling (nose straight "up" from the ears).
+    pair(LM.leftEar, LM.rightEar, { x: sh.x - 70, y: baseY - 10 });
+    pair(LM.leftEye, LM.rightEye, { x: sh.x - 74, y: baseY - 30 });
+    set(LM.nose, { x: sh.x - 76, y: baseY - 40 }, -0.1, 0.95);
     return lm;
   }
 
@@ -278,8 +310,8 @@ function synthesizeRaw(scene: SynthScene, opts: SynthOptions = {}): Landmark[] {
   pair(LM.leftFootIndex, LM.rightFootIndex, { x: ankle.x + 10, y: ankle.y - 30 }, { x: farAnkle.x + 10, y: farAnkle.y - 30 });
   pair(LM.leftElbow, LM.rightElbow, { x: sh.x + 90, y: baseY + 4 });
   pair(LM.leftWrist, LM.rightWrist, { x: sh.x + 170, y: baseY + 6 });
-  pair(LM.leftEar, LM.rightEar, { x: sh.x - 60, y: baseY - 10 });
-  pair(LM.leftEye, LM.rightEye, { x: sh.x - 80, y: baseY - 25 });
-  set(LM.nose, { x: sh.x - 85, y: baseY - 35 }, -0.1, 0.95);
+  pair(LM.leftEar, LM.rightEar, { x: sh.x - 70, y: baseY - 10 });
+  pair(LM.leftEye, LM.rightEye, { x: sh.x - 74, y: baseY - 30 });
+  set(LM.nose, { x: sh.x - 76, y: baseY - 40 }, -0.1, 0.95);
   return lm;
 }

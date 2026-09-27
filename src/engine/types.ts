@@ -25,6 +25,13 @@ export interface PoseFrame {
   poses: Landmark[][];
   /** Optional metric 3D landmarks (hip-centred, metres) for the primary person. */
   worldLandmarks?: Landmark[];
+  /**
+   * Body support per landmark of the primary person (0–1): the model's person-segmentation
+   * probability around the landmark. Low support means the point lies on something that is not
+   * the body (e.g. a phone held in front of the hips) even when the model reports high visibility.
+   * Undefined when segmentation is not enabled.
+   */
+  support?: number[];
   /** Wall time spent inside the pose model for this frame. */
   inferenceMs: number;
   /** Identifies the provider that produced the frame (for provenance). */
@@ -38,7 +45,7 @@ export interface PoseProviderInfo {
   /** True when frames are synthetic (demo / test). Must be surfaced in the UI. */
   simulated: boolean;
   /** Runtime configuration actually in effect (delegate after any fallback, thresholds). */
-  config?: { delegate?: 'GPU' | 'CPU'; numPoses?: number; minDetection?: number; minPresence?: number; minTracking?: number; thread?: 'main' | 'worker' };
+  config?: { delegate?: 'GPU' | 'CPU'; numPoses?: number; minDetection?: number; minPresence?: number; minTracking?: number; thread?: 'main' | 'worker'; segmentation?: boolean };
 }
 
 export type Side = 'left' | 'right';
@@ -58,6 +65,8 @@ export interface Estimate {
   level: ConfidenceLevel;
   /** Human-readable reason when value is null or confidence is reduced. */
   reason?: string;
+  /** Required landmarks that failed validation (index), so the UI can say which joint is missing. */
+  missing?: number[];
 }
 
 export function confidenceLevel(c: number): ConfidenceLevel {

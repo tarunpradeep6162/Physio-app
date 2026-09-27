@@ -4,7 +4,7 @@ import type { PostureMetricId } from '../engine/posture';
 import { sceneAt } from '../engine/protocols/simulate';
 import { synthesize, type SynthScene } from '../engine/pose/synthetic';
 import type { Landmark, Side } from '../engine/types';
-import type { Figure, Rect, RenderOptions } from './mannequin';
+import type { Figure, Rect, RenderOptions } from '../camera/mannequin';
 
 /**
  * Tracking-lab scenarios: reproducible, rendered test sequences for the failure modes named in
@@ -46,8 +46,18 @@ export function translate(lms: Landmark[], dx: number, dy: number): Landmark[] {
 
 const synth = (s: SynthScene) => synthesize(s, { width: W, height: H });
 const heel = (t: number, tempo = 1, peak = 110) => synth(sceneAt('knee_supported_flexion', 'left', t, { peak, tempo, cycles: 3 })!);
-const PHONE: Rect = { x: 0.33, y: 0.3, w: 0.34, h: 0.34 };
+/** A phone held in both hands in front of the belly and hips (the reference-screenshot situation). */
+const HELD_PHONE: Rect = { x: 0.42, y: 0.36, w: 0.16, h: 0.26 };
+/** A free-standing object covering the torso and hips, with the arms down (no hands involved). */
+const OBJECT: Rect = { x: 0.33, y: 0.3, w: 0.34, h: 0.34 };
 const KNEE_L: LabMeasure = { kind: 'angle', type: 'knee_flexion', side: 'left' };
+
+const sts = (t: number) => synth(sceneAt('knee_sit_to_stand', 'left', t, { peak: 92, tempo: 1 })!);
+const STS_CHAIR = (() => {
+  const hip = synth({ kind: 'sit_to_stand_lateral', side: 'left', kneeFlexion: 92, trunkLean: 8 })[LM.leftHip];
+  return { x: hip.x, y: hip.y + 0.025 };
+})();
+const squat = (t: number) => synth(sceneAt('knee_squat', null, t, { valgusLeft: 8, valgusRight: 2 })!);
 
 export const SCENARIOS: Scenario[] = [
   {
@@ -132,12 +142,21 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     id: 'phone_occlusion',
-    title: 'Front view with a phone held over the torso and hips',
+    title: 'Front view, phone held in both hands in front of the belly and hips',
     failure: 'phone obstruction',
     durationSec: 4,
     cameraFps: 30,
     measure: { kind: 'posture', id: 'pelvic_level' },
-    frame: () => ({ figures: [{ lms: synth({ kind: 'standing_anterior', pelvicTiltDeg: 2 }) }], render: { noise: 4, occluders: [PHONE] } }),
+    frame: () => ({ figures: [{ lms: synth({ kind: 'standing_anterior', pelvicTiltDeg: 2, handsInFront: true }) }], render: { noise: 4, occluders: [HELD_PHONE] } }),
+  },
+  {
+    id: 'object_occlusion',
+    title: 'Front view, a free-standing object covers torso and hips (arms down)',
+    failure: 'object obstruction without hands (known limit)',
+    durationSec: 4,
+    cameraFps: 30,
+    measure: { kind: 'posture', id: 'pelvic_level' },
+    frame: () => ({ figures: [{ lms: synth({ kind: 'standing_anterior', pelvicTiltDeg: 2 }) }], render: { noise: 4, occluders: [OBJECT] } }),
   },
   {
     id: 'knee_occlusion',
@@ -173,6 +192,24 @@ export const SCENARIOS: Scenario[] = [
       const dx = t < 2 ? 0 : t < 3.2 ? ((t - 2) / 1.2) * 0.85 : t < 4.5 ? 0.85 : t < 5.7 ? 0.85 - ((t - 4.5) / 1.2) * 0.85 : 0;
       return { figures: [{ lms: translate(synth({ kind: 'standing_lateral', side: 'left', kneeFlexion: 30 }), dx, 0) }], render: { noise: 4 } };
     },
+  },
+  {
+    id: 'sit_to_stand',
+    title: 'Five-times sit-to-stand, side view (protocol scenario)',
+    failure: 'protocol: timed functional test',
+    durationSec: 16,
+    cameraFps: 30,
+    measure: KNEE_L,
+    frame: (t) => ({ figures: [{ lms: sts(t) }], render: { noise: 4, chair: STS_CHAIR } }),
+  },
+  {
+    id: 'squat_front',
+    title: 'Double-leg squat, front view (protocol scenario)',
+    failure: 'protocol: frontal-plane alignment',
+    durationSec: 14,
+    cameraFps: 30,
+    measure: { kind: 'posture', id: 'knee_frontal_left' },
+    frame: (t) => ({ figures: [{ lms: squat(t) }], render: { noise: 4 } }),
   },
   {
     id: 'second_person',
