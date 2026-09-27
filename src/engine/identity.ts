@@ -32,10 +32,23 @@ const px = (l: Landmark, w: number, h: number): P => ({ x: l.x * w, y: l.y * h }
 const dist = (a: P, b: P) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a: P, b: P): P => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
-const PAIRS: [number, number][] = [
-  [LM.leftKnee, LM.rightKnee],
-  [LM.leftAnkle, LM.rightAnkle],
-  [LM.leftHeel, LM.rightHeel],
+/** Left/right pairs checked for a label swap, per limb group (a swap in one group is not diluted by the other). */
+const GROUPS: { name: string; pairs: [number, number][] }[] = [
+  {
+    name: 'leg',
+    pairs: [
+      [LM.leftKnee, LM.rightKnee],
+      [LM.leftAnkle, LM.rightAnkle],
+      [LM.leftHeel, LM.rightHeel],
+    ],
+  },
+  {
+    name: 'arm',
+    pairs: [
+      [LM.leftElbow, LM.rightElbow],
+      [LM.leftWrist, LM.rightWrist],
+    ],
+  },
 ];
 
 export class IdentityGuard {
@@ -68,18 +81,20 @@ export class IdentityGuard {
     if (t - prev.t <= SCALE_WINDOW_MS && scale > MAX_SCALE_CHANGE) return { event: 'identity_change', detail: `body size changed ${Math.round(scale * 100)}% in ${Math.round(t - prev.t)} ms` };
 
     // Left/right label swap: the crossed assignment explains the motion far better than the direct one.
-    let direct = 0;
-    let crossed = 0;
-    for (const [a, b] of PAIRS) {
-      const pa = px(prev.lms[a], w, h);
-      const pb = px(prev.lms[b], w, h);
-      const ca = px(lms[a], w, h);
-      const cb = px(lms[b], w, h);
-      direct += dist(pa, ca) + dist(pb, cb);
-      crossed += dist(pa, cb) + dist(pb, ca);
-    }
-    if (direct > 0.3 * prev.torso * PAIRS.length && crossed < 0.5 * direct) {
-      return { event: 'limb_swap', detail: `left/right leg labels exchanged (${Math.round(direct)} px direct vs ${Math.round(crossed)} px crossed)` };
+    for (const g of GROUPS) {
+      let direct = 0;
+      let crossed = 0;
+      for (const [a, b] of g.pairs) {
+        const pa = px(prev.lms[a], w, h);
+        const pb = px(prev.lms[b], w, h);
+        const ca = px(lms[a], w, h);
+        const cb = px(lms[b], w, h);
+        direct += dist(pa, ca) + dist(pb, cb);
+        crossed += dist(pa, cb) + dist(pb, ca);
+      }
+      if (direct > 0.3 * prev.torso * g.pairs.length && crossed < 0.5 * direct) {
+        return { event: 'limb_swap', detail: `left/right ${g.name} labels exchanged (${Math.round(direct)} px direct vs ${Math.round(crossed)} px crossed)` };
+      }
     }
     return { event: null };
   }

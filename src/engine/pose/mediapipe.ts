@@ -1,3 +1,4 @@
+import { grayThumb, PatchMotion } from '../appearance';
 import { FilesetResolver, PoseLandmarker, type PoseLandmarkerResult } from '@mediapipe/tasks-vision';
 import type { PoseFrame, PoseProviderInfo } from '../types';
 import { sourceSize, type PoseProvider, type PoseSource, type ProviderOptions } from './provider';
@@ -85,6 +86,7 @@ function abs(u: string): string {
 export class MediaPipePoseProvider implements PoseProvider {
   info: PoseProviderInfo;
   private landmarker: PoseLandmarker | null = null;
+  private motion = new PatchMotion();
   private lastTs = -1;
   /** Wall time spent loading runtime + model (ms), for benchmarking. */
   loadMs = 0;
@@ -107,7 +109,7 @@ export class MediaPipePoseProvider implements PoseProvider {
     const ts = timestamp <= this.lastTs ? this.lastTs + 1 : timestamp;
     this.lastTs = ts;
     const { width, height } = sourceSize(source);
-    return detectWithSupport(this.landmarker, source, ts, width, height, this.info);
+    return detectWithSupport(this.landmarker, source, ts, width, height, this.info, this.motion);
   }
 
   close(): void {
@@ -120,7 +122,7 @@ export class MediaPipePoseProvider implements PoseProvider {
  * Runs the model and, when segmentation is enabled, samples the person mask around each landmark
  * of the primary pose INSIDE the result callback (mask memory is only valid there).
  */
-export function detectWithSupport(lm: PoseLandmarker, source: PoseSource | ImageBitmap, ts: number, width: number, height: number, info: PoseProviderInfo): PoseFrame {
+export function detectWithSupport(lm: PoseLandmarker, source: PoseSource | ImageBitmap, ts: number, width: number, height: number, info: PoseProviderInfo, motion?: PatchMotion): PoseFrame {
   let frame: PoseFrame | null = null;
   const t0 = performance.now();
   lm.detectForVideo(source, ts, (res) => {
@@ -130,6 +132,10 @@ export function detectWithSupport(lm: PoseLandmarker, source: PoseSource | Image
     const pose = frame.poses[0];
     if (mask && pose) frame.support = maskSupport(mask.getAsFloat32Array(), mask.width, mask.height, pose);
   });
+  if (frame && motion) {
+    const f = frame as PoseFrame;
+    f.patchMotion = motion.sample(grayThumb(source as CanvasImageSource, width, height), f.poses[0], ts);
+  }
   return frame ?? { timestamp: ts, width, height, poses: [], inferenceMs: performance.now() - t0, provider: info };
 }
 

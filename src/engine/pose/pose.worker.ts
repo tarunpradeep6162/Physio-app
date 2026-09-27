@@ -6,6 +6,7 @@
  */
 import type { PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { ProviderOptions } from './provider';
+import { PatchMotion } from '../appearance';
 import { createLandmarker, detectWithSupport } from './mediapipe';
 import type { PoseProviderInfo } from '../types';
 
@@ -23,6 +24,7 @@ const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let landmarker: PoseLandmarker | null = null;
 let info: PoseProviderInfo | null = null;
 let lastTs = -1;
+const motion = new PatchMotion();
 
 ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   const m = e.data;
@@ -43,7 +45,7 @@ ctx.onmessage = async (e: MessageEvent<WorkerRequest>) => {
       if (!landmarker || !info) throw new Error('not initialised');
       const ts = m.ts <= lastTs ? lastTs + 1 : m.ts;
       lastTs = ts;
-      const frame = detectWithSupport(landmarker, bitmap, ts, bitmap.width, bitmap.height, info);
+      const frame = detectWithSupport(landmarker, bitmap, ts, bitmap.width, bitmap.height, info, motion);
       ctx.postMessage({ type: 'result', id: m.id, frame } satisfies WorkerResponse);
     } catch (err) {
       ctx.postMessage({ type: 'error', id: m.id, message: String(err) } satisfies WorkerResponse);

@@ -1,3 +1,4 @@
+import { CoverageDetector } from './appearance';
 import { createCoordinateFilter, type FilterKind, type ScalarFilter } from './filters';
 import { IdentityGuard, type IdentityEvent } from './identity';
 import { LANDMARK_COUNT, LM } from './landmarks';
@@ -36,8 +37,10 @@ export interface ProcessedFrame {
   /** Primary person after confidence gating + smoothing. */
   smoothed: Landmark[] | null;
   world: Landmark[] | null;
-  /** Per-landmark body support from person segmentation (null when not available). */
+  /** Per-landmark body support from person segmentation (null when not available); covered joints are 0. */
   support: number[] | null;
+  /** Landmarks judged hidden behind a static object (motion–appearance check). */
+  covered?: number[];
   /** Identity / label continuity: last event and how long the pose has been stable since. */
   integrity: { event: IdentityEvent | null; detail?: string; stableForMs: number };
   orientation: ViewOrientation;
@@ -184,11 +187,20 @@ export function anatomicalNearSide(lms: Landmark[], width: number, height: numbe
   return { side: lz > 0 ? 'left' : 'right', confidence: Math.min(1, Math.abs(lz)) };
 }
 
+/** Folds covered joints into per-landmark support (0 = not on the visible body) so every check refuses them. */
+function mergeCovered(support: number[] | undefined, covered: number[], n: number): number[] | null {
+  if (!covered.length) return support ?? null;
+  const out = support ? [...support] : Array.from({ length: n }, () => 1);
+  for (const i of covered) out[i] = 0;
+  return out;
+}
+
 export class MotionPipeline {
   private smoother: LandmarkSmoother;
   private lastOrientation: ViewOrientation = 'unknown';
   private orientationVotes: { t: number; v: ViewOrientation }[] = [];
   private identity = new IdentityGuard();
+  private coverage = new CoverageDetector();
   private stableSince: number | null = null;
   private stableFrames = 0;
   private lastEvent: { event: IdentityEvent | null; detail?: string } = { event: null };
@@ -240,6 +252,7 @@ export class MotionPipeline {
       this.stableSince = null;
       this.stableFrames = 0;
       this.identity.update(null, frame.timestamp, frame.width, frame.height);
+      this.coverage.reset();
       return { ...base, ...none, status: frame.poses.length === 0 ? 'no_person' : 'multiple_people', integrity: { event: null, stableForMs: 0 } };
     }
     const raw = frame.poses[0];
@@ -249,10 +262,12 @@ export class MotionPipeline {
       this.smoother.reset();
       this.orientationVotes = [];
       this.lateralLock = null;
+      this.coverage.reset();
       this.stableSince = frame.timestamp;
       this.stableFrames = 0;
       this.lastEvent = id;
     }
+    const covered = this.coverage.update(raw, frame.timestamp, frame.width, frame.height, frame.patchMotion);
     this.stableSince ??= frame.timestamp;
     this.stableFrames++;
     const stableForMs = frame.timestamp - this.stableSince;
@@ -286,7 +301,8 @@ export class MotionPipeline {
       raw,
       smoothed,
       world: frame.worldLandmarks ?? null,
-      support: frame.support ?? null,
+      support: mergeCovered(frame.support, covered, raw.length),
+      covered,
       integrity: { event: this.lastEvent.event, detail: this.lastEvent.detail, stableForMs },
       orientation: best,
       orientationConfidence: o.confidence,

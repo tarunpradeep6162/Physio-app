@@ -57,7 +57,7 @@ export function RuntimeOverlay({ status, error, onRetry, onUseDemo }: { status: 
   );
 }
 
-const ORDER: CalibrationCheck['id'][] = ['person', 'single_person', 'stable', 'framing', 'distance', 'centering', 'orientation', 'hands_clear', 'camera_level', 'lighting', 'confidence'];
+const ORDER: CalibrationCheck['id'][] = ['person', 'single_person', 'stable', 'framing', 'distance', 'centering', 'orientation', 'hands_clear', 'arm_room', 'camera_level', 'lighting', 'confidence'];
 
 export function CalibrationChecklist({ checks, compact }: { checks: CalibrationCheck[]; compact?: boolean }) {
   const { t } = useT();

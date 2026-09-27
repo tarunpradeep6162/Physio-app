@@ -127,7 +127,7 @@ export const SHOULDER_FLEXION_ACTIVE: ProtocolDef = {
     ...LIMITS_COMMON,
   ],
   references: [],
-  framing: { axis: 'vertical', extentLandmarks: (s) => [idx('shoulder', s ?? 'left'), idx('hip', s ?? 'left')], range: [0.16, 0.36], orientation: 'portrait', maxRollDeg: 4, minConfidence: 0.65 },
+  framing: { axis: 'vertical', extentLandmarks: (s) => [idx('shoulder', s ?? 'left'), idx('hip', s ?? 'left')], range: [0.16, 0.36], orientation: 'portrait', maxRollDeg: 4, minConfidence: 0.65, armReach: 'overhead' },
   guide: {
     camera: 'Phone upright (portrait) at chest height, level, about 2.5–3 m to your side.',
     distance: 'Your shoulders to hips fill about a quarter of the screen height, leaving room above your head for the raised arm.',
@@ -204,6 +204,7 @@ export const SHOULDER_ABDUCTION_ACTIVE: ProtocolDef = {
     orientation: 'portrait',
     maxRollDeg: 3,
     minConfidence: 0.65,
+    armReach: 'overhead_and_side',
   },
   guide: {
     camera: 'Phone upright (portrait) at chest height, level, about 2.5–3 m in front of you.',

@@ -32,6 +32,11 @@ export interface PoseFrame {
    * Undefined when segmentation is not enabled.
    */
   support?: number[];
+  /**
+   * Per-landmark image change at the landmark between consecutive frames (grey levels above the
+   * frame-wide change); used to detect joints hidden behind a static object. Undefined when not sampled.
+   */
+  patchMotion?: import('./appearance').PatchMotionSample;
   /** Wall time spent inside the pose model for this frame. */
   inferenceMs: number;
   /** Identifies the provider that produced the frame (for provenance). */

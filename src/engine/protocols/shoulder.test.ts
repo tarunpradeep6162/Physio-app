@@ -111,3 +111,55 @@ describe('Phase 1 — shoulder protocols on synthetic captures', () => {
     expect(cropped.quality.verdict).toBe('invalid');
   });
 });
+
+describe('Phase 3 — adversarial shoulder sequences never become silent valid measurements', () => {
+  const swapArms = (lms: Landmark[]) => {
+    const s = [...lms];
+    [s[LM.leftElbow], s[LM.rightElbow]] = [lms[LM.rightElbow], lms[LM.leftElbow]];
+    [s[LM.leftWrist], s[LM.rightWrist]] = [lms[LM.rightWrist], lms[LM.leftWrist]];
+    return s;
+  };
+
+  it('an arm label swap is detected and withheld; the swapped arm is never measured as the tested one', () => {
+    // Labels swap from 3 s to the end: the "left elbow" becomes the resting right arm.
+    const r = simulateCapture('shoulder_abduction_active', 'left', { peak: 140, perturb: (l, t) => (t >= 3 ? swapArms(l) : l) });
+    // Only what was captured before the swap can count; the swapped segment reads a resting arm.
+    const peaks = r.cycles.filter((c) => c.valid).map((c) => c.peak);
+    expect(peaks.every((p) => p > 100)).toBe(true);
+    expect(r.quality.verdict).toBe('invalid');
+  });
+
+  it('flip-flopping arm labels produce identity events, not a smooth fake signal', async () => {
+    const { IdentityGuard } = await import('../identity');
+    const g = new IdentityGuard();
+    let swaps = 0;
+    for (let k = 0; k < 20; k++) {
+      const lms = synthesize({ kind: 'standing_anterior', armSide: 'left', shoulderAbduction: 90 }, { seed: k });
+      const e = g.update(k % 2 ? swapArms(lms) : lms, k * 33, 720, 1280);
+      if (e.event === 'limb_swap') swaps++;
+    }
+    expect(swaps).toBeGreaterThan(15);
+  });
+
+  it('a second person entering stops measurement for the whole time both are in view', () => {
+    const def = getProtocol('shoulder_flexion_active');
+    const rec = new ProtocolRecorder(def, 'left');
+    const pipe = new MotionPipeline();
+    let t = 0;
+    const during: (number | null)[] = [];
+    for (; t < 12_000; t += 33) {
+      const sc = sceneAt('shoulder_flexion_active', 'left', t / 1000, {})!;
+      const me = synthesize(sc, { seed: t });
+      const poses = t > 4000 && t < 7000 ? [me, synthesize({ kind: 'standing_anterior', offsetX: 0.3 }, { seed: t + 1 })] : [me];
+      const f = pipe.process({ timestamp: t, width: 720, height: 1280, poses, inferenceMs: 4, provider: SIM_PROVIDER });
+      const s = def.createSignal('left')(f);
+      if (t > 4200 && t < 6900) during.push(s.value);
+      rec.update(f, t, 30);
+    }
+    expect(during.length).toBeGreaterThan(50);
+    expect(during.every((v) => v === null)).toBe(true);
+    // A repetition overlapping the bystander interval is not counted as valid.
+    const r = rec.finish(t);
+    for (const c of r.cycles.filter((x) => x.valid)) expect((c.endT ?? Infinity) < 4000 || c.startT > 7000).toBe(true);
+  });
+});

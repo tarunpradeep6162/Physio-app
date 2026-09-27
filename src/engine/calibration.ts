@@ -1,5 +1,5 @@
 import type { ProcessedFrame } from './pipeline';
-import { jointList, LANDMARK_NAMES, LM } from './landmarks';
+import { idx, jointList, LANDMARK_NAMES, LM } from './landmarks';
 import { MIN_SUPPORT } from './measurements';
 import { handsInFront } from './posture';
 import type { Landmark, ViewOrientation } from './types';
@@ -21,7 +21,8 @@ export type CalibrationCheckId =
   | 'lighting'
   | 'confidence'
   | 'stable'
-  | 'hands_clear';
+  | 'hands_clear'
+  | 'arm_room';
 
 export type CheckStatus = 'pass' | 'fail' | 'unknown';
 
@@ -45,6 +46,7 @@ export type InstructionCode =
   | 'joint_hidden'
   | 'joint_covered'
   | 'lower_hands'
+  | 'room_for_arm'
   | 'hold_still'
   | 'ready';
 
@@ -84,6 +86,11 @@ export interface CalibrationRequirements {
   maxRollDeg: number;
   /** Require the hands away from the front of the torso (static posture scan, front/back views). */
   handsFree?: boolean;
+  /**
+   * The tested arm will be raised: there must be room in the frame for the elbow at full elevation
+   * (above the shoulder, and for abduction also beside it), or the capture would lose the joint.
+   */
+  armReach?: { side: 'left' | 'right'; mode: 'overhead' | 'overhead_and_side' };
 }
 
 export interface CalibrationInput {
@@ -177,6 +184,22 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
   else if (extent < req.heightRange[0]) add({ id: 'distance', status: 'fail', instruction: 'move_closer', detail: `extent ${(extent * 100).toFixed(0)}%` });
   else add({ id: 'distance', status: 'pass', detail: `extent ${(extent * 100).toFixed(0)}%` });
 
+  // Room for a raised arm: the elbow (the measured point) must stay inside the frame at full elevation.
+  if (req.armReach) {
+    const sh = lms[idx('shoulder', req.armReach.side)];
+    const el = lms[idx('elbow', req.armReach.side)];
+    if (sh.visibility > 0.4 && el.visibility > 0.4) {
+      const upperArmPx = Math.hypot((el.x - sh.x) * frame.width, (el.y - sh.y) * frame.height) * 1.05;
+      const above = (sh.y - EDGE_MARGIN) * frame.height;
+      // Facing the camera (un-mirrored image), the patient's left arm moves toward image-right.
+      const beside = (req.armReach.side === 'left' ? 1 - EDGE_MARGIN - sh.x : sh.x - EDGE_MARGIN) * frame.width;
+      const needSide = req.armReach.mode === 'overhead_and_side';
+      if (above < upperArmPx || (needSide && beside < upperArmPx))
+        add({ id: 'arm_room', status: 'fail', instruction: 'room_for_arm', detail: `room above ${Math.round(above)} px${needSide ? `, beside ${Math.round(beside)} px` : ''}; upper arm ${Math.round(upperArmPx)} px` });
+      else add({ id: 'arm_room', status: 'pass', detail: `room above ${Math.round(above)} px vs upper arm ${Math.round(upperArmPx)} px` });
+    } else add({ id: 'arm_room', status: 'unknown', detail: 'shoulder or elbow not visible' });
+  }
+
   // Horizontal centring on the hip midpoint.
   const cx = (lms[LM.leftHip].x + lms[LM.rightHip].x) / 2;
   const off = cx - 0.5;
@@ -222,7 +245,7 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
 }
 
 /** Order in which failing instructions are shown: fix the most fundamental problem first. */
-const PRIORITY: CalibrationCheckId[] = ['person', 'single_person', 'lighting', 'camera_level', 'distance', 'framing', 'centering', 'orientation', 'hands_clear', 'confidence', 'stable'];
+const PRIORITY: CalibrationCheckId[] = ['person', 'single_person', 'lighting', 'camera_level', 'distance', 'framing', 'arm_room', 'centering', 'orientation', 'hands_clear', 'confidence', 'stable'];
 
 function finish(checks: CalibrationCheck[]): CalibrationResult {
   const failing = checks.filter((c) => c.status === 'fail').sort((a, b) => PRIORITY.indexOf(a.id) - PRIORITY.indexOf(b.id));

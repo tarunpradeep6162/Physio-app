@@ -151,3 +151,30 @@ describe('Phase 8 — object held in front of the body (phone screenshot case)',
     expect(handsInFront(synthesize({ kind: 'standing_anterior' }), W, H)).toBe(false);
   });
 });
+
+describe('Phase 4 — room for a raised arm (shoulder framing)', () => {
+  it('asks the person to step back when the elbow would leave the frame overhead, and passes when framed as guided', async () => {
+    const { evaluateCalibration } = await import('./calibration');
+    const { MotionPipeline } = await import('./pipeline');
+    const { synthesize } = await import('./pose/synthetic');
+    const { SIM_PROVIDER } = await import('./protocols/simulate');
+    const { LM } = await import('./landmarks');
+    const run = (scale: number) => {
+      const pipe = new MotionPipeline('none');
+      let f = null as unknown as ReturnType<MotionPipeline['process']>;
+      for (let k = 0; k < 25; k++) f = pipe.process({ timestamp: k * 33, width: 720, height: 1280, poses: [synthesize({ kind: 'standing_lateral', side: 'left', shoulderFlexion: 0, scale }, { seed: k })], inferenceMs: 4, provider: SIM_PROVIDER });
+      return evaluateCalibration({
+        frame: f,
+        req: { landmarks: [LM.leftHip, LM.leftShoulder, LM.leftElbow], views: ['lateral_left'], heightRange: [0.16, 0.36], extentLandmarks: [LM.leftShoulder, LM.leftHip], minConfidence: 0.65, maxRollDeg: 4, armReach: { side: 'left', mode: 'overhead' } },
+        lighting: null,
+        cameraRollDeg: 0,
+        facing: 'environment',
+      });
+    };
+    const tight = run(1);
+    expect(tight.checks.find((c) => c.id === 'arm_room')?.status).toBe('fail');
+    expect(tight.frameReady).toBe(false);
+    const guided = run(0.75);
+    expect(guided.checks.find((c) => c.id === 'arm_room')?.status).toBe('pass');
+  });
+});

@@ -189,6 +189,8 @@ export interface ProtocolFraming {
   orientation: 'portrait' | 'landscape';
   maxRollDeg: number;
   minConfidence: number;
+  /** The tested arm is raised during the test: calibration checks there is room for it. */
+  armReach?: 'overhead' | 'overhead_and_side';
 }
 
 export interface ProtocolGuide {
