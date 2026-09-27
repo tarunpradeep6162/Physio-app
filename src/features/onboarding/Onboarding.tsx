@@ -23,7 +23,7 @@ export function Onboarding() {
   const [phone, setPhone] = useState(patient?.phone ?? '');
   const [height, setHeight] = useState(patient?.heightCm?.toString() ?? '');
   const [lang, setLang] = useState<Locale>(locale);
-  const [consent, setConsent] = useState<Record<ConsentType, boolean>>({ camera_processing: false, data_storage: false, image_storage: false, research_export: false });
+  const [consent, setConsent] = useState<Record<Exclude<ConsentType, 'activity_steps' | 'activity_walking'>, boolean>>({ camera_processing: false, data_storage: false, image_storage: false, research_export: false });
   const [concern, setConcern] = useState(patient?.concern ?? '');
   const [goal, setGoal] = useState(patient?.goal ?? '');
   const [area, setArea] = useState<'knee' | 'shoulder'>('knee');
@@ -37,7 +37,7 @@ export function Onboarding() {
   };
   const saveConsent = () => {
     const at = new Date().toISOString();
-    (Object.keys(consent) as ConsentType[]).forEach((type) => insert('consents', { id: uuid(), patientId: patient.id, type, granted: consent[type], textVersion: CONSENT_TEXT_VERSION, at }, user.id, 'consent'));
+    (Object.keys(consent) as (keyof typeof consent)[]).forEach((type) => insert('consents', { id: uuid(), patientId: patient.id, type, granted: consent[type], textVersion: CONSENT_TEXT_VERSION, at }, user.id, 'consent'));
     setStep(2);
   };
   const finish = () => {
@@ -129,7 +129,7 @@ export function Onboarding() {
             <p className="small muted">{t('onb.consent.accuracy_body')}</p>
           </div>
           <div className="panel list">
-            {(['camera_processing', 'data_storage', 'image_storage', 'research_export'] as ConsentType[]).map((c) => (
+            {(['camera_processing', 'data_storage', 'image_storage', 'research_export'] as const).map((c) => (
               <label key={c} className="check">
                 <input type="checkbox" checked={consent[c]} onChange={(e) => setConsent((x) => ({ ...x, [c]: e.target.checked }))} />
                 <span>{t(`onb.consent.c_${c === 'camera_processing' ? 'camera' : c === 'data_storage' ? 'storage' : c === 'image_storage' ? 'images' : 'research'}`)}</span>

@@ -84,3 +84,37 @@ Evidence format per the brief: changed files and commit, before → after, migra
     - the clinician sees the note alert and check-ins and books an appointment;
     - no page errors.
 - **Gates:** server sync (Phase 6); patient-copy review in English and Tamil; usability with real patients.
+
+## Phase 11 — wearable and phone activity
+- **Files:**
+  - `src/integrations/activity.ts` (+ `activity.test.ts`: 6 tests)
+  - `src/integrations/activityStore.ts`
+  - `src/features/activity/ActivityPanel.tsx` (patient panel on Profile, clinician panel on the patient overview)
+  - `data/models.ts` (consents `activity_steps` / `activity_walking`, `activitySamples`, `activityImports`), `data/store.ts` (schema v6), `data/migration.ts`
+  - `features/onboarding/Onboarding.tsx` (onboarding does not ask for activity consent)
+  - `i18n/en.ts`
+  - `db/activity.sql` (migration 004), `db/activity_test.sql`, `scripts/db-check.sh`
+  - `docs/ACTIVITY_INTEGRATION.md`
+- **Before:** there was no activity data.
+- **After:**
+  - The patient shares steps and/or walking time separately, then imports an Apple Health export or a CSV.
+  - The import report states what was added, what was a duplicate, and which record types were skipped (heart rate, sleep and so on).
+  - A 14-day table shows de-duplicated daily totals, "no data" days and "sources differ" flags, with the source and method stated.
+  - The clinician sees the same table read-only, the consent state and the last import.
+  - Withdrawal hides the data, and deletes it by default.
+- **Migration:** local v5 → v6, with empty tables. Server migration 004 adds two consent enum values, both tables, a consent trigger and RLS (the patient writes; a clinician in care reads only while consent is granted).
+- **Risks:**
+  - Apple exports can be very large; the reader is capped at 300 MB in the browser.
+  - The hourly max-per-source rule is a de-duplication method, not a clinical rule. A sample is bucketed by its start hour.
+  - There is no Health Connect path until a native app exists.
+- **Tests:**
+  - Unit tests: zoned times, parser scope, phone+watch not double-counted, CSV validation, native revoked permission, consent/duplicate/withdrawal.
+  - `db-check.sh`: all activity RLS tests pass; restore drill over 41 tables, migrations 001–004.
+  - Playwright:
+    - no import offered before consent;
+    - import of a fixture export: 10 added, heart rate skipped;
+    - the same file again: 0 added, 10 duplicates;
+    - "no data" and "sources differ" shown;
+    - the clinician sees it;
+    - no non-step samples stored.
+- **Gates:** native apps; real-device step validation; clinical use review.

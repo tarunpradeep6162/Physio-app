@@ -13,7 +13,7 @@ import { mergeReplicas, type SyncConflict } from './sync';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -84,6 +84,8 @@ export function emptyDb(): DB {
     planPauses: [],
     planResumes: [],
     appointments: [],
+    activitySamples: [],
+    activityImports: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -131,6 +133,7 @@ export function migrate(parsed: DB): DB {
     out.programs = out.programs.map((p) => numbered.get(p.id) ?? p);
   }
   // v4 → v5: appointments start empty; programs without scheduleDays stay flexible.
+  // v5 → v6: activitySamples / activityImports start empty (Phase 11).
   return out;
 }
 

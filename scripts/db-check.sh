@@ -27,6 +27,8 @@ psql_ -d dl -f tenancy.sql >/dev/null
 psql_ -d dl -f tenancy_test.sql
 psql_ -d dl -f plans.sql >/dev/null
 psql_ -d dl -f plans_test.sql
+psql_ -d dl -f activity.sql >/dev/null
+psql_ -d dl -f activity_test.sql
 
 echo '--- backup / restore drill'
 psql_ -d dl <<'SQL'

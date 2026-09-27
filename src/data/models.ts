@@ -1,5 +1,7 @@
 import type { ExerciseResult } from '../engine/exerciseRunner';
 import type { ExercisePrescription } from '../engine/exercises/types';
+import type { ActivitySample } from '../integrations/activity';
+export type { ActivitySample };
 import type { Provenance } from '../engine/provenance';
 import type { CaptureConfig, ConditionMatch, ProtocolResult } from '../engine/protocols/types';
 import type { Landmark, Side } from '../engine/types';
@@ -64,7 +66,7 @@ export interface CareRelationship {
   createdAt: ISODate;
 }
 
-export type ConsentType = 'camera_processing' | 'data_storage' | 'image_storage' | 'research_export';
+export type ConsentType = 'camera_processing' | 'data_storage' | 'image_storage' | 'research_export' | 'activity_steps' | 'activity_walking';
 
 export interface Consent {
   id: ID;
@@ -401,6 +403,22 @@ export interface Program {
 }
 
 /** Next contact with the clinician, set by the clinician (Phase 10). */
+/** One import of phone/wearable activity (Phase 11): what was read, from where, and what was left out. */
+export interface ActivityImport {
+  id: ID;
+  patientId: ID;
+  platform: 'apple_health' | 'health_connect' | 'csv';
+  fileName?: string;
+  at: ISODate;
+  status: 'ok' | 'permission_revoked' | 'consent_missing' | 'error';
+  added: number;
+  duplicates: number;
+  /** Record types present in the source and deliberately not imported (counts only). */
+  ignored: Record<string, number>;
+  errors: string[];
+  isDemo?: boolean;
+}
+
 export interface Appointment {
   id: ID;
   patientId: ID;
@@ -576,6 +594,8 @@ export interface DB {
   planPauses: PlanPause[];
   planResumes: PlanResume[];
   appointments: Appointment[];
+  activitySamples: ActivitySample[];
+  activityImports: ActivityImport[];
   settings: ClinicSettings;
 }
 

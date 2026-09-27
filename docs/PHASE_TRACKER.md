@@ -41,7 +41,7 @@ A phase is never marked **done** on a clean build alone.
 | 8 | Clinician review and sign-off workflow | 7 | **engineering done – gate pending** | Accept/edit/reject/defer, exam findings, stale sign-off notice; clinician-only writes enforced. Usability with a real clinician pending. |
 | 9 | Prescription and plan versioning | 8 | **engineering done – gate pending** | Versions, change diff, reason for intensification, alternatives, pauses (patient/pain rule) with clinician-only resume, reassessment triggers, migration 003 with RLS. Clinical review of pause wording and triggers (on hold). |
 | 10 | Daily companion foundation | 9 | **engineering done – gate pending** | Offline recording and two-tab merge verified in the browser. **Cross-device sync not live:** it needs the Phase 6 server; the merge (`src/data/sync.ts`) is ready and tested. Copy review (Tamil, clinical) pending. |
-| 11 | Wearable and phone activity integration | 6, 10 | not started | Native app capability (Health Connect / HealthKit) |
+| 11 | Wearable and phone activity integration | 6, 10 | **engineering done – gate pending** | Apple Health export and CSV import, granular consent, de-duplication, revoked/absent handling, migration 004 with consent-enforcing RLS (`docs/ACTIVITY_INTEGRATION.md`). **Live Health Connect / HealthKit reads need native apps**; step totals not yet checked on real phones. |
 | 12 | Hip pathway | 1–4 | not started | Validation evidence |
 | 13 | Ankle and foot pathway | 1–4 | not started | Validation evidence |
 | 14 | Spine and neck pathway | 1–4 | not started | Validation evidence |
@@ -69,6 +69,8 @@ A phase is never marked **done** on a clean build alone.
 13. **Found in Phase 9 and fixed:** a patient session could call `remove()` on clinician-only tables, and history tables (impressions, decisions) could be edited. Store `remove` now applies the clinician guard, and history tables are append-only.
 14. **Found in Phase 9 and fixed:** on the server, a patient could read an unapproved draft program. `programs_read` now shows patients approved versions only.
 15. **Found in Phase 10 and fixed:** two open tabs each saved their whole in-memory copy, so the later save silently erased the other tab's new records. Saves now detect a newer stored revision and merge (audit-based), and conflicts are recorded in the audit and shown to the patient.
-16. **Open:** the demo clinician is named “Dheepika”, so demo plans and reports show approvals in her name. They are labelled demo, but consider renaming the demo account to avoid any reading of forged approval.
+16. ~~Demo sign-offs were attributed to “Dheepika”.~~ **Fixed** (commit `4e69c37`): the demo account is now “Demo clinician”, and older browser copies are migrated.
+17. **Found in Phase 11:** re-selecting the same file did not re-import. Fixed by resetting the file input.
+18. **Open → Phase 19:** account deletion and the patient data export do not yet cover the tables added in phases 3–11.
 
 Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.

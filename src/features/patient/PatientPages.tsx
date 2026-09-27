@@ -16,6 +16,7 @@ import { LOCALES, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
 import { DailyCompanion } from './DailyCompanion';
+import { ActivityPanel } from '../activity/ActivityPanel';
 import { SessionSummary } from '../session/SessionSummary';
 
 export function PatientHome() {
@@ -391,6 +392,8 @@ export function PatientProfile() {
           </label>
         ))}
       </section>
+
+      <ActivityPanel patient={patient} userId={user.id} />
 
       <section className="panel stack tight">
         <h2>{t('profile.consents')}</h2>

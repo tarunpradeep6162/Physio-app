@@ -13,6 +13,7 @@ import { useT } from '../../i18n';
 import { BodyMap } from '../bodymap/BodyMap';
 import { regionLabel } from '../bodymap/regions';
 import { ProgressView } from '../progress/ProgressView';
+import { ClinicianActivity } from '../activity/ActivityPanel';
 import { SessionSummary } from '../session/SessionSummary';
 
 /** Clinician experience: overview, patient list, patient record. */
@@ -392,6 +393,7 @@ function OverviewTab({ db, patient, actorId }: { db: DB; patient: Patient; actor
         </dl>
       </section>
       <CompanionPanel db={db} patient={patient} actorId={actorId} />
+      <ClinicianActivity db={db} patient={patient} />
     </div>
   );
 }
