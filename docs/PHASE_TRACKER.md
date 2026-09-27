@@ -46,9 +46,9 @@ A phase is never marked **done** on a clean build alone.
 | 13 | Ankle and foot pathway | 1–4 | **engineering done – gate pending** | Lunge (heel-down gate) and heel raise; occlusion, wrong-view and framing gates tested; browser capture verified with the simulated provider. Real-device validation pending. |
 | 14 | Spine and neck pathway | 1–4 | **engineering done – gate pending** | Trunk forward/side bend and neck change-from-start; no posture or structural claims; red-flag screen. Real-device validation pending. |
 | 15 | Balance, gait and functional performance | 1–4 | **engineering done – gate pending** | Single-leg stance timing and marching; the safety screen sends repeated falls to the clinician. Timing matches synthetic references; **stopwatch/real reference captures pending**. Walking gait is not implemented (needs a validated setup). |
-| 16 | Exercise content system at scale | 9 | not started | Licensed media and clinical content review |
-| 17 | Clinician intelligence and longitudinal trends | 8, 10 | not started | Threshold review |
-| 18 | Reference measurements and interoperability | 6 | not started | Device imports need real devices |
+| 16 | Exercise content system at scale | 9 | **engineering done – gate pending** | Schema, versioning, review workflow, import (always unreviewed), faceted index tested at 2,500 records, camera subset labelled by QA level, library prescriptions. 16 draft items, **0 published** (clinical review on hold); licensed media and bulk curated content pending. |
+| 17 | Clinician intelligence and longitudinal trends | 8, 10 | **engineering done – gate pending** | Trends break on incomparable data with reasons; exception queue with configurable rules shown as unreviewed until reviewed. **Clinical review of thresholds pending.** |
+| 18 | Reference measurements and interoperability | 6 | **engineering done – gate pending** | Device measurements (units, calibration, device, time, source) via entry and CSV; FHIR R4 export with round-trip test. **Real device files and care-system conformance testing pending.** |
 | 19 | Accessibility, localization, privacy and mobile hardening | all | not started | Tamil clinical review; real-device usability |
 | 20 | Evidence, clinical validation and controlled release | all | not started | Studies and Dheepika's approval (on hold) |
 
@@ -74,5 +74,7 @@ A phase is never marked **done** on a clean build alone.
 18. **Open → Phase 19:** account deletion and the patient data export do not yet cover the tables added in phases 3–11.
 19. **Found in Phases 12–15 and fixed:** the left/right table and the report printed every difference in degrees; they now use the metric's own unit (seconds, %, counts).
 20. **Found in Phase 15 and fixed:** marching with one foot below the detection level halved the cadence while reporting it as valid. It is now withheld with a reason.
+21. **Found in Phase 17 and fixed:** clinic settings could be written by any account through `updateSettings`; it is now clinician-only.
+22. **Open → Phase 19:** a pressed filter chip's CSS check mark becomes part of its accessible name ("✓ knee"). Harmless, but redundant for screen readers.
 
 Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.

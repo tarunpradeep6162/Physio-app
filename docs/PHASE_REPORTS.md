@@ -149,3 +149,29 @@ Evidence format per the brief: changed files and commit, before → after, migra
     - clinician DP-05 hip: refused capture shown, L/R table, AI draft lists the missing capture, "Hip assessment report" with scope limits;
     - no page errors.
 - **Gates:** real-device captures and reference instruments; clinical review of all protocol text and questionnaires (on hold).
+
+## Phases 16–18 — content system, clinician trends, reference measurements and interoperability
+Details: `docs/CONTENT_TRENDS_INTEROP.md`.
+- **Files:**
+  - `src/content/{library,seed,contentStore}.ts` (+ `library.test.ts`: 7 tests), `features/library/LibraryPage.tsx`
+  - `clinical/plan.ts` (library items in versions, `libDose`), `ProgramBuilder.tsx` (library picker), `TrainSession.tsx`, `PatientPages.tsx`
+  - `src/clinical/trends.ts` (+ `trends.test.ts`: 6 tests), `features/clinician/Trends.tsx`, `ClinicianPages.tsx` (Trends and Devices & export tabs, exception queue), `AnalyticsSettings.tsx` (rules)
+  - `src/interop/{deviceMeasurements,fhir}.ts` (+ `interop.test.ts`: 6 tests), `features/clinician/DeviceTab.tsx`, `clinical/report.ts` (device findings, data-change)
+  - `data/models.ts`, `data/store.ts` (schema v7 → v8; clinician-only settings), `data/migration.ts`, `app/App.tsx` (Library route), `i18n/en.ts`
+- **Migration:** local v6 → v8 adds empty tables (`contentItems`, `contentReviews`, `programLibraryItems`, `deviceMeasurements`) and optional `settings.exceptionRules`. Nothing existing changes.
+- **Risks:**
+  - all content is unpublished drafts;
+  - exception thresholds are unreviewed defaults;
+  - the FHIR output is not yet tested against a receiving system;
+  - the ±14-day window for showing device values in an assessment report is a presentation rule for review.
+- **Tests:**
+  - 19 new unit tests (223 total);
+  - Playwright (clinician demo):
+    - exception queue with the unreviewed badge;
+    - library: 16 items, 0 published, 4 camera-guided with the synthetic-QA label; submit → approve publishes v0.1.0;
+    - approved item prescribed in a new plan version with a reason;
+    - trends show protocol versions and a baseline;
+    - device grip entry (max of 3 trials, calibration badge, strength badge);
+    - FHIR download (collection, 30 entries, grip value kept, camera observations preliminary);
+    - the patient Train page shows the library item with its precaution;
+    - no page errors.

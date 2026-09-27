@@ -16,6 +16,8 @@ import { LOCALES, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
 import { DailyCompanion } from './DailyCompanion';
+import { allVersions } from '../../content/contentStore';
+import { libDose } from '../../clinical/plan';
 import { ActivityPanel } from '../activity/ActivityPanel';
 import { SessionSummary } from '../session/SessionSummary';
 
@@ -105,6 +107,44 @@ export function PatientHome() {
       <Link to="/p/progress" className="btn secondary">
         {t('home.recent_progress')} <IconChevron width={18} />
       </Link>
+    </div>
+  );
+}
+
+/** Library exercises in the approved plan: instructions and precautions of the exact approved version. */
+function PlanLibrary({ programId }: { programId: string }) {
+  const { t } = useT();
+  const items = useDb((d) => (d.programLibraryItems ?? []).filter((l) => l.programId === programId).sort((a, b) => a.order - b.order), [programId]);
+  const content = useDb((d) => allVersions(d), []);
+  if (!items.length) return null;
+  return (
+    <div className="stack tight">
+      <h3>{t('train.library_title')}</h3>
+      <div className="grid cols-2">
+        {items.map((l) => {
+          const it = content.find((c) => c.id === l.itemId && c.version === l.itemVersion);
+          return (
+            <article key={l.id} className="panel stack tight">
+              <div className="row between">
+                <h3>{it?.title ?? l.itemId}</h3>
+                <span className="badge">{libDose(l)}</span>
+              </div>
+              {it && (
+                <ol className="small" style={{ margin: 0, paddingLeft: '1.2rem' }}>
+                  {it.instructions.map((x) => (
+                    <li key={x}>{x}</li>
+                  ))}
+                </ol>
+              )}
+              {it?.precautions.map((x) => (
+                <p key={x} className="xs muted">
+                  ⚠ {x}
+                </p>
+              ))}
+            </article>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -223,6 +263,7 @@ export function PatientTrain() {
               );
             })}
           </div>
+          <PlanLibrary programId={program.id} />
           <Link to="/p/session" className="btn primary lg">
             <IconPlay width={20} /> {t('session.start')}
           </Link>

@@ -28,6 +28,7 @@ const PatientDetail = lazy(() => named(import('../features/clinician/ClinicianPa
 const AssessmentQueue = lazy(() => named(import('../features/clinician/AssessmentReview'), 'AssessmentQueue'));
 const AssessmentRoute = lazy(() => named(import('../features/knee/AssessmentRoute'), 'AssessmentRoute'));
 const ReportRoute = lazy(() => named(import('../features/report/ReportView'), 'ReportRoute'));
+const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 'LibraryPage'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
@@ -146,6 +147,7 @@ function ClinicianLayout() {
     { to: '/c/patients', label: t('nav.patients'), icon: IconUsers },
     { to: '/c/assessments', label: t('nav.assessments'), icon: IconClipboard },
     { to: '/c/programs', label: t('nav.programs'), icon: IconList },
+    { to: '/c/library', label: t('nav.library'), icon: IconList },
     { to: '/c/analytics', label: t('nav.analytics'), icon: IconChart },
     { to: '/c/settings', label: t('nav.settings'), icon: IconSettings },
   ];
@@ -255,6 +257,7 @@ export function App() {
               <Route path="assessments/:id" element={<AssessmentRoute />} />
               <Route path="programs" element={<ProgramsIndex />} />
               <Route path="programs/new" element={<ProgramBuilder />} />
+              <Route path="library" element={<LibraryPage />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<ClinicSettingsPage />} />
             </Route>

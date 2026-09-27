@@ -14,6 +14,8 @@ import { BodyMap } from '../bodymap/BodyMap';
 import { regionLabel } from '../bodymap/regions';
 import { ProgressView } from '../progress/ProgressView';
 import { ClinicianActivity } from '../activity/ActivityPanel';
+import { ExceptionQueuePanel, TrendsTab } from './Trends';
+import { DeviceTab } from './DeviceTab';
 import { SessionSummary } from '../session/SessionSummary';
 
 /** Clinician experience: overview, patient list, patient record. */
@@ -78,6 +80,8 @@ export function ClinicianOverview() {
           <Stat label="Open alerts" value={alerts.length} sub={`${alerts.filter((a) => a.severity === 'critical').length} critical`} />
         </div>
       </div>
+
+      <ExceptionQueuePanel db={db} />
 
       <div className="grid cols-2">
         <section className="panel stack">
@@ -263,7 +267,7 @@ export function PatientList() {
   );
 }
 
-type Tab = 'overview' | 'assessment' | 'measurements' | 'pros' | 'programs' | 'sessions' | 'progress' | 'notes';
+type Tab = 'overview' | 'assessment' | 'measurements' | 'pros' | 'programs' | 'sessions' | 'progress' | 'trends' | 'devices' | 'notes';
 
 export function PatientDetail() {
   const { id } = useParams();
@@ -284,6 +288,8 @@ export function PatientDetail() {
     { id: 'measurements', label: 'Movement measurements' },
     { id: 'pros', label: 'Patient-reported outcomes' },
     { id: 'programs', label: 'Programs' },
+    { id: 'trends', label: 'Trends' },
+    { id: 'devices', label: 'Devices & export' },
     { id: 'sessions', label: 'Session history' },
     { id: 'progress', label: 'Progress' },
     { id: 'notes', label: 'Clinical notes' },
@@ -359,6 +365,8 @@ export function PatientDetail() {
         </div>
       )}
       {tab === 'progress' && <ProgressView patientId={patient.id} />}
+      {tab === 'trends' && <TrendsTab db={db} patient={patient} />}
+      {tab === 'devices' && <DeviceTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'notes' && <NotesTab db={db} patient={patient} actorId={user.id} />}
     </div>
   );

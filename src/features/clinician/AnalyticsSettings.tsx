@@ -15,6 +15,7 @@ import type { ObservationThresholds } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
 import { getDb, purgeDemo, recordAudit, updateSettings, useDb } from '../../data/store';
+import { ExceptionRulesEditor } from './Trends';
 import { buildMigrationBundle } from '../../data/migration';
 import type { FilterKind } from '../../engine/filters';
 import type { PoseProviderId } from '../../engine/pose/provider';
@@ -153,6 +154,7 @@ export function ClinicSettingsPage() {
   const hasDemo = useDb((d) => d.users.some((u) => u.isDemo));
   const prefs = usePrefs();
   const [thr, setThr] = useState(settings.thresholds);
+  const clinicianName = useDb((d) => d.clinicians.find((c) => c.userId === user?.id)?.name ?? user?.displayName ?? '');
   if (!user) return null;
 
   return (
@@ -169,6 +171,8 @@ export function ClinicSettingsPage() {
           <input className="input" defaultValue={settings.emergencyNumber} onBlur={(e) => updateSettings({ emergencyNumber: e.target.value }, user.id)} />
         </label>
       </section>
+
+      <ExceptionRulesEditor rules={settings.exceptionRules} actorId={user.id} reviewerName={clinicianName} />
 
       <section className="panel stack">
         <div className="row between wrap">

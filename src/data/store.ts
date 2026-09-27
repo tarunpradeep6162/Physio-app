@@ -13,7 +13,7 @@ import { mergeReplicas, type SyncConflict } from './sync';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 8;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -86,6 +86,10 @@ export function emptyDb(): DB {
     appointments: [],
     activitySamples: [],
     activityImports: [],
+    contentItems: [],
+    contentReviews: [],
+    programLibraryItems: [],
+    deviceMeasurements: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -134,6 +138,8 @@ export function migrate(parsed: DB): DB {
   }
   // v4 → v5: appointments start empty; programs without scheduleDays stay flexible.
   // v5 → v6: activitySamples / activityImports start empty (Phase 11).
+  // v6 → v7: contentItems, contentReviews and programLibraryItems start empty (Phase 16).
+  // v7 → v8: deviceMeasurements starts empty (Phase 18).
   return out;
 }
 
@@ -284,6 +290,10 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   programExercises: () => true,
   planResumes: () => true,
   appointments: () => true,
+  contentItems: () => true,
+  contentReviews: () => true,
+  programLibraryItems: () => true,
+  deviceMeasurements: () => true,
   notes: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',
@@ -293,7 +303,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
 export class AuthorizationError extends Error {}
 
 /** History tables: rows are never edited or deleted through the app (Phase 9 append-only history). */
-const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
+const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['contentReviews', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
 function assertAppendOnly(table: Table, op: string) {
   if (APPEND_ONLY.has(table)) throw new AuthorizationError(`${table} is append-only history; ${op} is not allowed.`);
 }
@@ -351,6 +361,9 @@ export function recordAudit(actorId: ID, action: string, entity: string, entityI
 }
 
 export function updateSettings(patch: Partial<ClinicSettings>, actorId: ID) {
+  // Clinic settings (thresholds, rule reviews, approvals) are a clinician responsibility.
+  const actor = db.users.find((u) => u.id === actorId);
+  if (!actor || actor.role === 'patient') throw new AuthorizationError(`Only a clinician can change clinic settings (actor ${actorId}).`);
   const next = { ...db, settings: { ...db.settings, ...patch } };
   next.audit = [...next.audit, auditEvent(actorId, 'update', 'settings', 'clinic', Object.keys(patch).join(','))];
   commit(next);

@@ -2,7 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { NprsInput, Notice } from '../../components/ui';
-import { painRuleStopped, planState } from '../../clinical/plan';
+import { libDose, painRuleStopped, planState } from '../../clinical/plan';
+import { allVersions } from '../../content/contentStore';
 import type { Measurement, TrainingSession } from '../../data/models';
 import { fmtDateTime, programExercises } from '../../data/queries';
 import { insert, insertMany, useDb, uuid } from '../../data/store';
@@ -34,6 +35,9 @@ export function TrainSession() {
   const planExercises = useDb((d) => (program ? programExercises(d, program.id) : []), [program?.id]);
   const [useAlt, setUseAlt] = useState<Record<string, boolean>>({});
   const exercises = planExercises.map((e) => (useAlt[e.id] && e.prescription.alternative ? { ...e, prescription: e.prescription.alternative, usedAlternative: true } : { ...e, usedAlternative: false }));
+  const libItems = useDb((d) => (program ? (d.programLibraryItems ?? []).filter((l) => l.programId === program.id).sort((a, b) => a.order - b.order) : []), [program?.id]);
+  const content = useDb((d) => allVersions(d), []);
+  const [libDone, setLibDone] = useState<Record<string, boolean>>({});
   const [pausing, setPausing] = useState(false);
   const [pauseNote, setPauseNote] = useState('');
   const [step, setStep] = useState<Step>({ kind: 'pre' });
@@ -45,7 +49,7 @@ export function TrainSession() {
   const saved = useDb((d) => (step.kind === 'summary' ? d.sessions.find((s) => s.id === step.sessionId) : undefined), [step]);
 
   if (!patient || !user) return null;
-  if (!program || exercises.length === 0) {
+  if (!program || (exercises.length === 0 && libItems.length === 0)) {
     return (
       <div className="content narrow stack">
         <p>{t('home.no_program')}</p>
@@ -93,6 +97,7 @@ export function TrainSession() {
       painAfter: painAfter ?? undefined,
       rpe: rpe ?? undefined,
       painEvents: outcomes.current.flatMap((o) => o.painEvents),
+      libraryDone: libItems.length ? libItems.map((l) => ({ programLibraryItemId: l.id, itemId: l.itemId, itemVersion: l.itemVersion, done: !!libDone[l.id] })) : undefined,
       results: outcomes.current.map((o) => ({ ...o.result, programExerciseId: o.programExerciseId, usedAlternative: o.usedAlternative || undefined })),
       provenance,
       isDemo: patient.isDemo,
@@ -197,7 +202,21 @@ export function TrainSession() {
             })}
           </div>
           {painBefore !== null && painBefore >= 8 && <Notice tone="warn">{t('safety.review_body')}</Notice>}
-          <button className="btn primary lg block" disabled={painBefore === null} onClick={() => setStep({ kind: 'exercise', index: 0 })}>
+          {libItems.length > 0 && (
+            <div className="panel stack tight">
+              <strong className="small">{t('train.library_title')}</strong>
+              {libItems.map((l) => {
+                const it = content.find((c) => c.id === l.itemId && c.version === l.itemVersion);
+                return (
+                  <div key={l.id} className="row between small">
+                    <span>{it?.title ?? l.itemId}</span>
+                    <span className="muted num">{libDose(l)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <button className="btn primary lg block" disabled={painBefore === null} onClick={() => setStep(exercises.length ? { kind: 'exercise', index: 0 } : { kind: 'post' })}>
             {t('session.start')}
           </button>
           {pausing ? (
@@ -247,6 +266,22 @@ export function TrainSession() {
           <div className="panel stack">
             <NprsInput label={t('session.post_pain')} value={painAfter} onChange={setPainAfter} />
           </div>
+          {libItems.length > 0 && (
+            <fieldset className="panel stack tight" style={{ border: 0 }}>
+              <legend className="small">{t('train.library_done')}</legend>
+              {libItems.map((l) => {
+                const it = content.find((c) => c.id === l.itemId && c.version === l.itemVersion);
+                return (
+                  <label key={l.id} className="check">
+                    <input type="checkbox" checked={!!libDone[l.id]} onChange={(e) => setLibDone((d) => ({ ...d, [l.id]: e.target.checked }))} />
+                    <span>
+                      {it?.title ?? l.itemId} <span className="xs muted">({libDose(l)})</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          )}
           <div className="panel stack">
             <NprsInput label={t('session.rpe')} value={rpe} onChange={setRpe} />
             <p className="xs muted">{t('session.rpe_hint')}</p>
@@ -255,7 +290,7 @@ export function TrainSession() {
             className="btn primary lg block"
             disabled={painAfter === null || rpe === null}
             onClick={() => {
-              const complete = outcomes.current.length === exercises.length && outcomes.current.every((o) => !o.result.endedEarly);
+              const complete = outcomes.current.length === exercises.length && outcomes.current.every((o) => !o.result.endedEarly) && libItems.every((l) => libDone[l.id]);
               const id = save(complete ? 'completed' : 'interrupted');
               setStep({ kind: 'summary', sessionId: id });
             }}
@@ -279,3 +314,4 @@ export function TrainSession() {
     </div>
   );
 }
+

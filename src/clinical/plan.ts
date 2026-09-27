@@ -1,4 +1,4 @@
-import type { DB, ID, PlanPause, Program, ProgramExercise, ReassessTrigger } from '../data/models';
+import type { DB, ID, PlanPause, Program, ProgramExercise, ProgramLibraryItem, ReassessTrigger } from '../data/models';
 import { validatePrescription } from '../engine/exercises/definitions';
 import type { ExercisePrescription } from '../engine/exercises/types';
 
@@ -73,6 +73,31 @@ export function diffPlans(prev: ExercisePrescription[], next: ExercisePrescripti
   return out;
 }
 
+export type LibraryRx = Omit<ProgramLibraryItem, 'id' | 'programId' | 'order'>;
+
+/** Dosage changes for library (non-camera) exercises, keyed by item id. */
+export function diffLibrary(prev: LibraryRx[], next: LibraryRx[]): PlanChange[] {
+  const out: PlanChange[] = [];
+  const before = new Map(prev.map((r) => [r.itemId, r]));
+  const after = new Map(next.map((r) => [r.itemId, r]));
+  for (const [k, n] of after) {
+    const p = before.get(k);
+    const ex = `library:${k}`;
+    if (!p) {
+      out.push({ exercise: ex, field: 'exercise', from: '—', to: 'added', direction: 'intensify' });
+      continue;
+    }
+    if (p.itemVersion !== n.itemVersion) out.push({ exercise: ex, field: 'content version', from: p.itemVersion, to: n.itemVersion, direction: 'neutral' });
+    for (const f of ['sets', 'reps', 'holdSeconds', 'durationSeconds', 'frequencyPerWeek'] as const) {
+      const a = p[f] ?? 0;
+      const b = n[f] ?? 0;
+      if (a !== b) out.push({ exercise: ex, field: f, from: String(p[f] ?? '—'), to: String(n[f] ?? '—'), direction: b > a ? 'intensify' : 'reduce' });
+    }
+  }
+  for (const k of before.keys()) if (!after.has(k)) out.push({ exercise: `library:${k}`, field: 'exercise', from: 'present', to: 'removed', direction: 'reduce' });
+  return out;
+}
+
 export interface PublishInput {
   patientId: ID;
   clinicianId: ID;
@@ -86,6 +111,8 @@ export interface PublishInput {
   pauseOnPainStop?: boolean;
   scheduleDays?: number[];
   exercises: ExercisePrescription[];
+  /** Approved library items (validated by the caller against publishedItems). */
+  library?: LibraryRx[];
   isDemo?: boolean;
 }
 
@@ -95,6 +122,7 @@ export interface PublishPlan {
   previous?: Program;
   program?: Program;
   programExercises?: ProgramExercise[];
+  programLibraryItems?: ProgramLibraryItem[];
   /** Open pauses on the previous version; publishing a reviewed version closes them. */
   closesPauses: PlanPause[];
 }
@@ -107,9 +135,14 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
   const errors: string[] = [];
   const previous = latestApprovedPlan(db, input.patientId);
   const prevRx = previous ? db.programExercises.filter((e) => e.programId === previous.id).sort((a, b) => a.order - b.order).map((e) => e.prescription) : [];
-  const changes = previous ? diffPlans(prevRx, input.exercises) : [];
+  const prevLib = previous ? (db.programLibraryItems ?? []).filter((e) => e.programId === previous.id).sort((a, b) => a.order - b.order) : [];
+  const changes = previous ? [...diffPlans(prevRx, input.exercises), ...diffLibrary(prevLib, input.library ?? [])] : [];
   if (!input.title.trim()) errors.push('title_required');
-  if (input.exercises.length === 0) errors.push('no_exercises');
+  if (input.exercises.length === 0 && !(input.library ?? []).length) errors.push('no_exercises');
+  for (const l of input.library ?? []) {
+    if (!(l.sets >= 1 && l.sets <= 10) || !(l.frequencyPerWeek >= 1 && l.frequencyPerWeek <= 14)) errors.push('library_dosage');
+    if (!l.reps && !l.holdSeconds && !l.durationSeconds) errors.push('library_dosage');
+  }
   if (input.startDate > input.endDate) errors.push('dates');
   input.exercises.forEach((rx) => {
     errors.push(...validatePrescription(rx));
@@ -150,7 +183,8 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
     order: i,
     prescription: { ...rx, definitionVersion: definitionVersion(rx), alternative: rx.alternative ? { ...rx.alternative, definitionVersion: definitionVersion(rx.alternative) } : undefined },
   }));
-  return { errors: [], changes, previous, program, programExercises, closesPauses };
+  const programLibraryItems = (input.library ?? []).map((l, i) => ({ ...l, id: newId(), programId: program.id, order: i }));
+  return { errors: [], changes, previous, program, programExercises, programLibraryItems, closesPauses };
 }
 
 function versionCount(db: DB, patientId: ID) {
@@ -220,4 +254,10 @@ export function planState(db: DB, patientId: ID): PlanState {
 /** Did any in-session pain report stop a session under the clinician's pain rule? */
 export function painRuleStopped(painEvents: { paused: boolean }[] | undefined): boolean {
   return !!painEvents?.some((e) => e.paused);
+}
+
+/** Dosage text for a library prescription. */
+export function libDose(l: Pick<ProgramLibraryItem, 'sets' | 'reps' | 'holdSeconds' | 'durationSeconds' | 'frequencyPerWeek'>): string {
+  const per = l.reps ? `${l.sets}×${l.reps}` : l.durationSeconds ? `${l.sets}×${l.durationSeconds} s` : `${l.sets}×${l.holdSeconds} s hold`;
+  return `${per}${l.reps && l.holdSeconds ? ` · hold ${l.holdSeconds} s` : ''} · ${l.frequencyPerWeek}/wk`;
 }

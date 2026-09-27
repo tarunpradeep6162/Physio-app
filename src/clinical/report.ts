@@ -69,6 +69,11 @@ export function lastDataChange(db: DB, id: ID): string {
     ...db.amendments.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.safetyResponses.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.testPlans.filter((x) => x.assessmentId === id).map((x) => x.createdAt),
+    // Device measurements shown in this report (same rule as the Findings section).
+    ...(() => {
+      const a = db.assessments.find((x) => x.id === id);
+      return a ? (db.deviceMeasurements ?? []).filter((d) => d.patientId === a.patientId && (d.assessmentId === id || (!d.assessmentId && Math.abs(Date.parse(d.measuredAt) - Date.parse(a.createdAt)) <= 14 * 86_400_000))).map((d) => d.createdAt) : [];
+    })(),
   ];
   return ts.sort().at(-1) ?? '';
 }
@@ -246,7 +251,8 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     'Patient-reported',
   );
 
-  // 10. Findings — four categories kept separate
+  // 10. Findings — categories kept separate. Device rows: this assessment's, or the patient's within ±14 days of it.
+  const deviceRows = (db.deviceMeasurements ?? []).filter((d) => d.patientId === p.id && (d.assessmentId === a.id || (!d.assessmentId && Math.abs(Date.parse(d.measuredAt) - Date.parse(a.createdAt)) <= 14 * 86_400_000)));
   const byCat = (c: string) => evidence.filter((e) => e.category === c && e.validity !== 'invalid').map((e) => [e.label, e.value]);
   add(10, 'Findings', [
     { kind: 'para', text: 'Patient-reported', tone: 'strong' },
@@ -255,6 +261,10 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     byCat('camera_estimated').length ? { kind: 'table', head: ['Measure', 'Estimate'], rows: byCat('camera_estimated') } : { kind: 'missing', text: 'None.' },
     { kind: 'para', text: 'Algorithmic observations (clinician-configured thresholds)', tone: 'strong' },
     byCat('algorithmic').length ? { kind: 'table', head: ['Observation', 'Value'], rows: byCat('algorithmic') } : { kind: 'missing', text: 'None triggered.' },
+    { kind: 'para', text: 'Device-measured (strength, force, balance platform, instruments) — not camera estimates', tone: 'strong' },
+    deviceRows.length
+      ? { kind: 'table', head: ['Measure', 'Value', 'Device', 'Calibration', 'Measured', 'Source'], rows: deviceRows.map((d) => [`${d.measure}${d.side ? ` (${d.side})` : ''}`, `${d.value} ${d.unit}${d.trials ? ` (${d.summary} of ${d.trials.length})` : ''}`, `${d.device.manufacturer} ${d.device.model}${d.device.serial ? ` #${d.device.serial}` : ''}`, `${d.calibration.status.replace('_', ' ')}${d.calibration.lastCalibrated ? ` (${d.calibration.lastCalibrated})` : ''}`, d.measuredAt, d.source.kind === 'file_import' ? `${d.source.file} row ${d.source.row}` : 'clinician entry']) }
+      : { kind: 'missing', text: 'None recorded.' },
     { kind: 'para', text: 'Clinician findings', tone: 'strong' },
     reviewed && impression ? { kind: 'para', text: impression.text } : { kind: 'missing', text: 'No clinician-approved findings in this document.' },
   ]);

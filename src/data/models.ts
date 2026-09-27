@@ -1,6 +1,9 @@
 import type { ExerciseResult } from '../engine/exerciseRunner';
 import type { ExercisePrescription } from '../engine/exercises/types';
 import type { ActivitySample } from '../integrations/activity';
+import type { ContentItem } from '../content/library';
+import type { DeviceMeasurement } from '../interop/deviceMeasurements';
+export type { DeviceMeasurement };
 export type { ActivitySample };
 import type { Provenance } from '../engine/provenance';
 import type { CaptureConfig, ConditionMatch, ProtocolResult } from '../engine/protocols/types';
@@ -419,6 +422,38 @@ export interface ActivityImport {
   isDemo?: boolean;
 }
 
+/** One version of a library item (Phase 16). Row id = `${item.id}@${item.version}`; content of an approved version is never edited. */
+export interface ContentRow {
+  id: ID;
+  item: ContentItem;
+}
+
+/** Append-only content review trail. */
+export interface ContentReview {
+  id: ID;
+  itemId: string;
+  version: string;
+  action: 'submit' | 'approve' | 'request_changes' | 'retire' | 'import' | 'new_version';
+  note?: string;
+  by: ID;
+  at: ISODate;
+}
+
+/** A non-camera library exercise prescribed in a plan version (patient self-reports completion). */
+export interface ProgramLibraryItem {
+  id: ID;
+  programId: ID;
+  order: number;
+  itemId: string;
+  itemVersion: string;
+  sets: number;
+  reps?: number;
+  holdSeconds?: number;
+  durationSeconds?: number;
+  frequencyPerWeek: number;
+  instructions?: string;
+}
+
 export interface Appointment {
   id: ID;
   patientId: ID;
@@ -482,6 +517,8 @@ export interface TrainingSession {
   /** In-session pain reports and the configured rule's outcome. */
   painEvents?: { at: ISODate; nprs: number; paused: boolean; rule: string }[];
   results: (ExerciseResult & { programExerciseId: ID; usedAlternative?: boolean })[];
+  /** Library (non-camera) exercises the patient reported doing in this session (patient-reported). */
+  libraryDone?: { programLibraryItemId: ID; itemId: string; itemVersion: string; done: boolean }[];
   provenance: Provenance;
   isDemo?: boolean;
 }
@@ -558,6 +595,8 @@ export interface ClinicSettings {
   releaseThresholds?: { values: Record<string, { loaWithin: number; maxFailureRate: number; minIcc: number; minN: number }>; lockedBy: ID; lockedAt: ISODate } | null;
   /** Raw video is never stored; landmark data retention in days (0 = keep until deleted). */
   retentionDays: number;
+  /** Exception-queue rules (Phase 17); absent = defaults, all unreviewed. */
+  exceptionRules?: import('../clinical/trends').ExceptionRule[];
 }
 
 export interface DB {
@@ -596,6 +635,10 @@ export interface DB {
   appointments: Appointment[];
   activitySamples: ActivitySample[];
   activityImports: ActivityImport[];
+  contentItems: ContentRow[];
+  contentReviews: ContentReview[];
+  programLibraryItems: ProgramLibraryItem[];
+  deviceMeasurements: DeviceMeasurement[];
   settings: ClinicSettings;
 }
 

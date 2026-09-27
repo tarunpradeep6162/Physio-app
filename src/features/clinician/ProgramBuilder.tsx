@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { IconPlus } from '../../components/icons';
 import { CategoryBadge, DemoBadge, Notice, Segmented } from '../../components/ui';
-import { diffPlans, preparePublish, TRIGGER_LABELS } from '../../clinical/plan';
+import { diffLibrary, diffPlans, preparePublish, TRIGGER_LABELS, type LibraryRx } from '../../clinical/plan';
+import { publishedItems } from '../../content/contentStore';
+import type { ContentItem } from '../../content/library';
 import type { ReassessTrigger } from '../../data/models';
 import { activeProgram, fmtDate, programExercises } from '../../data/queries';
 import { getDb, insert, insertMany, update, useDb, uuid } from '../../data/store';
@@ -66,6 +68,8 @@ export function ProgramBuilder() {
       : [{ key: uuid(), rx: defaultPrescription('knee_flexion', 'left') }],
   );
   const [published, setPublished] = useState(false);
+  const [lib, setLib] = useState<LibraryRx[]>(() => (existing ? (db.programLibraryItems ?? []).filter((l) => l.programId === existing.id).sort((a, b) => a.order - b.order).map(({ id: _i, programId: _p, order: _o, ...r }) => r) : []));
+  const library = publishedItems(db);
 
   if (!user || !clinician) return null;
   const patient = db.patients.find((p) => p.id === patientId);
@@ -74,13 +78,17 @@ export function ProgramBuilder() {
     ...(r.rx.alternative ? [...validatePrescription(r.rx.alternative).map((e) => `alternative_${e}`), ...(r.rx.alternative.when.trim() ? [] : ['alternative_when_required'])] : []),
   ]);
   const changes = existing
-    ? diffPlans(
-        programExercises(db, existing.id).map((e) => e.prescription),
-        rows.map((r) => r.rx),
-      )
+    ? [
+        ...diffPlans(
+          programExercises(db, existing.id).map((e) => e.prescription),
+          rows.map((r) => r.rx),
+        ),
+        ...diffLibrary((db.programLibraryItems ?? []).filter((l) => l.programId === existing.id), lib),
+      ]
     : [];
   const intensifies = changes.some((c) => c.direction === 'intensify');
-  const valid = patient && rows.length > 0 && errors.every((e) => e.length === 0) && start <= end && title.trim() && (!intensifies || changeReason.trim());
+  const libOk = lib.every((l) => l.sets >= 1 && l.frequencyPerWeek >= 1 && (l.reps || l.holdSeconds || l.durationSeconds));
+  const valid = patient && rows.length + lib.length > 0 && libOk && errors.every((e) => e.length === 0) && start <= end && title.trim() && (!intensifies || changeReason.trim());
 
   const setRx = (key: string, patch: Partial<ExercisePrescription>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, rx: { ...r.rx, ...patch } } : r)));
 
@@ -101,6 +109,7 @@ export function ProgramBuilder() {
         pauseOnPainStop,
         scheduleDays,
         exercises: rows.map((r) => r.rx),
+        library: lib,
         isDemo: patient.isDemo,
       },
       new Date().toISOString(),
@@ -114,6 +123,7 @@ export function ProgramBuilder() {
     if (plan.previous) update('programs', plan.previous.id, { status: 'archived' }, user.id, `superseded by v${plan.program.version}`);
     insert('programs', plan.program, user.id, `approve_publish v${plan.program.version}`);
     insertMany('programExercises', plan.programExercises!, user.id);
+    insertMany('programLibraryItems', plan.programLibraryItems ?? [], user.id);
     // A reviewed new version answers any pause on the one it replaces.
     for (const pause of plan.closesPauses)
       insert(
@@ -319,6 +329,7 @@ export function ProgramBuilder() {
       >
         <IconPlus width={18} /> Add exercise
       </button>
+      <LibraryPicker library={library} value={lib} onChange={setLib} />
       <label className="field">
         <span>Program notes (clinician only)</span>
         <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -409,6 +420,69 @@ export function ProgramBuilder() {
         Approve & send to patient
       </button>
     </div>
+  );
+}
+
+/** Approved (published) library items only; each carries its own dosage in this plan version. */
+function LibraryPicker({ library, value, onChange }: { library: ContentItem[]; value: LibraryRx[]; onChange: (v: LibraryRx[]) => void }) {
+  const [pick, setPick] = useState('');
+  const set = (i: number, patch: Partial<LibraryRx>) => onChange(value.map((x, k) => (k === i ? { ...x, ...patch } : x)));
+  const num = (v: string) => (v === '' ? undefined : Number(v));
+  const avail = library.filter((it) => !value.some((v) => v.itemId === it.id));
+  return (
+    <section className="panel stack">
+      <div className="row between wrap">
+        <h2>Library exercises (not camera-tracked)</h2>
+        <span className="xs muted">Approved library items only · the patient reports completion</span>
+      </div>
+      {value.map((l, i) => {
+        const it = library.find((x) => x.id === l.itemId);
+        return (
+          <div key={l.itemId} className="stack tight" style={{ borderTop: i ? '1px solid var(--line)' : undefined, paddingTop: i ? '0.5rem' : undefined }}>
+            <div className="row between wrap">
+              <strong>
+                {it?.title ?? l.itemId} <span className="xs muted">v{l.itemVersion}</span>
+              </strong>
+              <button className="btn ghost sm" onClick={() => onChange(value.filter((_, k) => k !== i))}>
+                Remove
+              </button>
+            </div>
+            <div className="grid cols-4">
+              <NumField label="Sets" value={l.sets} onChange={(v) => set(i, { sets: num(v) ?? 0 })} />
+              <NumField label="Repetitions" value={l.reps ?? NaN} onChange={(v) => set(i, { reps: num(v) })} />
+              <NumField label="Hold (s)" value={l.holdSeconds ?? NaN} onChange={(v) => set(i, { holdSeconds: num(v) })} />
+              <NumField label="Duration (s)" value={l.durationSeconds ?? NaN} onChange={(v) => set(i, { durationSeconds: num(v) })} />
+              <NumField label="Frequency (per week)" value={l.frequencyPerWeek} onChange={(v) => set(i, { frequencyPerWeek: num(v) ?? 0 })} />
+            </div>
+          </div>
+        );
+      })}
+      {library.length === 0 ? (
+        <p className="small muted">No library item is approved yet. Items become available here after review in the Library.</p>
+      ) : (
+        <div className="row wrap">
+          <select className="input" style={{ width: 'auto' }} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Library item">
+            <option value="">Choose an approved item…</option>
+            {avail.map((it) => (
+              <option key={it.id} value={it.id}>
+                {it.title} (v{it.version})
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn secondary sm"
+            disabled={!pick}
+            onClick={() => {
+              const it = library.find((x) => x.id === pick)!;
+              onChange([...value, { itemId: it.id, itemVersion: it.version, ...it.defaultDosage }]);
+              setPick('');
+            }}
+          >
+            Add
+          </button>
+        </div>
+      )}
+    </section>
   );
 }
 

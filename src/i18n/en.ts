@@ -37,6 +37,7 @@ export const en = {
   'nav.patients': 'Patients',
   'nav.assessments': 'Assessments',
   'nav.programs': 'Programs',
+  'nav.library': 'Library',
   'nav.analytics': 'Analytics',
   'nav.settings': 'Settings',
   'nav.validation': 'Validation',
@@ -534,6 +535,8 @@ export const en = {
   'home.assessment_status': 'Assessment',
   'home.recent_progress': 'Recent progress',
   'home.other_areas': 'Assess another area',
+  'train.library_title': 'Also in your plan (no camera needed)',
+  'train.library_done': 'Which of these did you do today?',
 
   // Train
   'train.title': 'Your program',
