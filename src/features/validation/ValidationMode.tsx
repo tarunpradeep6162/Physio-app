@@ -9,16 +9,17 @@ import { Segmented } from '../../components/ui';
 import { usePrefs } from '../../data/prefs';
 import { uuid } from '../../data/store';
 import { evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
+import { jumpRate, LATENCY_BUCKETS, TrackingDiagnostics, type DiagSample, type DiagSnapshot } from '../../engine/diagnostics';
 import { ExerciseRunner, type RunnerSnapshot } from '../../engine/exerciseRunner';
 import { defaultPrescription, EXERCISE_LIST, getDefinition } from '../../engine/exercises/definitions';
 import { requiredView, type ExerciseId } from '../../engine/exercises/types';
 import type { FilterKind } from '../../engine/filters';
 import { LANDMARK_NAMES } from '../../engine/landmarks';
-import { estimate3d, MEASUREMENTS } from '../../engine/measurements';
+import { estimate, estimate3d, MEASUREMENTS } from '../../engine/measurements';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { PoseProviderId } from '../../engine/pose/provider';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
-import type { Side } from '../../engine/types';
+import type { Landmark, Side } from '../../engine/types';
 import { useT } from '../../i18n';
 import { StageMedia, RuntimeOverlay } from '../scan/StageParts';
 
@@ -68,11 +69,17 @@ export function ValidationMode() {
   const light = useRef<LightingSample | null>(null);
   const sampler = useRef<LightingSampler | null>(null);
   const simulated = providerId === 'simulated';
+  const diag = useRef(new TrackingDiagnostics(5000));
+  const diagRows = useRef<DiagSample[]>([]);
+  const diagLm = useRef<(string | null)[]>([]);
+  const prevRaw = useRef<{ lms: Landmark[] | null; t: number }>({ lms: null, t: 0 });
+  const [snap5, setSnap5] = useState<DiagSnapshot | null>(null);
 
   useEffect(() => {
     runner.current = new ExerciseRunner(defaultPrescription(exercise, side), filter);
     hist.current = { raw: [], filt: [] };
-  }, [exercise, side, filter]);
+    diag.current.reset();
+  }, [exercise, side, filter, providerId]);
 
   const onFrame = useCallback(
     (f: ProcessedFrame, ctx: FrameContext) => {
@@ -109,6 +116,36 @@ export function ValidationMode() {
         }
       }
 
+      // Stage-separated diagnostics: raw-landmark angle vs smoothed-landmark angle vs reported angle.
+      const m = def.primary;
+      const req = MEASUREMENTS[m].landmarks(side);
+      const rawA = estimate(m, f.raw, f.width, f.height, side, { ignoreView: true, minConfidence: 0 }).value;
+      const smA = estimate(m, f.smoothed, f.width, f.height, side, { ignoreView: true, minConfidence: 0 }).value;
+      const doneAt = ctx.timing.finishedAt;
+      const bodyPx = bodyExtentPx(f.raw, f.width, f.height);
+      const sample: DiagSample = {
+        t: doneAt,
+        captureTs: ctx.timing.captureTs,
+        presentedFrames: ctx.timing.presentedFrames,
+        inferenceMs: f.inferenceMs,
+        persons: f.personCount,
+        status: f.status,
+        orientation: f.orientation,
+        requiredVis: f.raw ? req.map((i) => f.raw![i].visibility) : [],
+        jumpRate: jumpRate(prevRaw.current.lms, f.raw, req, doneAt - prevRaw.current.t, bodyPx, f.width, f.height),
+        rawAngle: rawA,
+        smoothAngle: smA,
+        finalAngle: snap.estimate.value !== null ? snap.angle : null,
+        reason: snap.estimate.value === null ? (f.status !== 'tracking' ? f.status : snap.estimate.reason) : undefined,
+        meanLuma: light.current?.meanLuma ?? null,
+      };
+      prevRaw.current = { lms: f.raw, t: doneAt };
+      diag.current.record(sample);
+      if (recRef.current) {
+        diagRows.current.push(sample);
+        diagLm.current.push(includeLm && f.raw ? f.raw.map((l) => `${l.x.toFixed(4)},${l.y.toFixed(4)},${l.visibility.toFixed(3)}`).join(';') : null);
+      }
+
       if (snap.rawAngle !== null) {
         hist.current.raw.push(snap.rawAngle);
         hist.current.filt.push(snap.angle ?? snap.rawAngle);
@@ -141,6 +178,7 @@ export function ValidationMode() {
           return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
         };
         setUi({ f, snap, calib, world, jitterRaw: sd(hist.current.raw), jitterFilt: sd(hist.current.filt), fps: ctx.stats.fps, inf: ctx.stats.inferenceMs });
+        setSnap5(diag.current.snapshot());
       }
     },
     [exercise, side, simulated, includeLm],
@@ -161,6 +199,50 @@ export function ValidationMode() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `physiovision-validation-${exercise}-${side}-${filter}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  /** Privacy-conscious diagnostics record: timing, stage outputs and reasons — never video or identifiers. */
+  const exportDiagnostics = () => {
+    const video = runtime.videoRef.current;
+    const track = (video?.srcObject as MediaStream | null)?.getVideoTracks()[0];
+    const st = track?.getSettings();
+    const t0 = diagRows.current[0]?.t ?? 0;
+    const doc = {
+      kind: 'physiovision-tracking-diagnostics',
+      version: 1,
+      source: simulated ? 'simulated' : 'live_camera',
+      recordingId: uuid(),
+      exportedAt: new Date().toISOString(),
+      privacy: 'No video, images or patient identifiers. Landmark coordinates included only if selected.',
+      provider: runtime.providerRef.current?.info ?? null,
+      filter,
+      measurement: { exercise: `${exercise}@${getDefinition(exercise).version}`, primary: getDefinition(exercise).primary, side },
+      camera: st ? { width: st.width, height: st.height, frameRate: st.frameRate, facingMode: st.facingMode, displayMirrored: true } : null,
+      device: { userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency ?? null },
+      summary: diag.current.snapshot(),
+      frames: diagRows.current.map((r, i) => ({
+        t: Math.round(r.t - t0),
+        ageMs: r.captureTs === null ? null : Math.round(r.t - r.captureTs),
+        presented: r.presentedFrames,
+        inferMs: Math.round(r.inferenceMs * 10) / 10,
+        persons: r.persons,
+        status: r.status,
+        view: r.orientation,
+        vis: r.requiredVis.map((v) => Math.round(v * 100) / 100),
+        jump: r.jumpRate === null ? null : Math.round(r.jumpRate * 100) / 100,
+        raw: rnd(r.rawAngle),
+        smooth: rnd(r.smoothAngle),
+        final: rnd(r.finalAngle),
+        reason: r.reason ?? null,
+        luma: r.meanLuma === null || r.meanLuma === undefined ? null : Math.round(r.meanLuma),
+        lms: diagLm.current[i] ?? undefined,
+      })),
+    };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(doc)], { type: 'application/json' }));
+    a.download = `physiovision-diagnostics-${exercise}-${side}-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -191,6 +273,21 @@ export function ValidationMode() {
             <Segmented<Side> label="Side" value={side} onChange={setSide} options={[{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }]} />
             <Segmented<FilterKind> label="Filter" value={filter} onChange={setFilter} options={[{ id: 'one_euro', label: '1€' }, { id: 'ema', label: 'EMA' }, { id: 'kalman', label: 'Kalman' }, { id: 'none', label: 'Raw' }]} />
           </div>
+          <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
+          <StagePanel snap={snap5} />
+          <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
+          <table style={{ width: '100%' }}>
+            <tbody>
+              <KV k="Camera fps / inference fps" v={`${fmt(snap5?.cameraFps)} / ${fmt(snap5?.inferenceFps)}`} />
+              <KV k="Camera frames skipped" v={snap5?.skippedFraction === null || snap5?.skippedFraction === undefined ? '–' : `${Math.round(snap5.skippedFraction * 100)}%`} />
+              <KV k="Frame age capture→result p50 / p95" v={snap5?.frameAge ? `${fmt(snap5.frameAge.p50, 0)} / ${fmt(snap5.frameAge.p95, 0)} ms` : '–'} />
+              <KV k="Inference p50 / p95 / max" v={snap5 ? `${fmt(snap5.latency.p50)} / ${fmt(snap5.latency.p95)} / ${fmt(snap5.latency.max)} ms` : '–'} />
+              <KV k="Pose presence / >1 person" v={snap5 ? `${Math.round(snap5.presence * 100)}% / ${Math.round(snap5.multiplePeople * 100)}%` : '–'} />
+              <KV k="Implausible jumps" v={snap5 ? `${Math.round(snap5.jumpFraction * 100)}%` : '–'} />
+              <KV k="Filter lag / RMS Δ (raw→reported)" v={snap5 ? `${snap5.filterLagMs ?? '–'} ms / ${fmt(snap5.filterDeltaRms, 2)}°` : '–'} />
+            </tbody>
+          </table>
+          {snap5 && <LatencyHistogram counts={snap5.latency.histogram} />}
           <hr className="divider" style={{ margin: '0.6rem 0', background: '#2c4a4f' }} />
           <table style={{ width: '100%' }}>
             <tbody>
@@ -255,6 +352,8 @@ export function ValidationMode() {
               onClick={() => {
                 if (!recording) {
                   rows.current = [];
+                  diagRows.current = [];
+                  diagLm.current = [];
                   recStart.current = performance.now();
                 }
                 setRecording((r) => !r);
@@ -265,6 +364,9 @@ export function ValidationMode() {
             <button className="btn sm secondary" disabled={recording || rows.current.length === 0} onClick={exportCsv}>
               Export CSV
             </button>
+            <button className="btn sm secondary" disabled={recording || diagRows.current.length === 0} onClick={exportDiagnostics}>
+              Export diagnostics
+            </button>
           </div>
           <p style={{ color: '#8fb0aa', marginTop: '0.5rem' }}>Orange = raw landmarks, cyan = filtered. Exports contain no patient identifiers or images.</p>
         </aside>
@@ -272,6 +374,67 @@ export function ValidationMode() {
     </div>
   );
 }
+
+const STAGE_LABEL = { camera: 'Camera frame', pose: 'Pose output', filter: 'Filter', measurement: 'Measurement' } as const;
+const STAGE_COLOR = { ok: '#3ecf8e', warn: '#f5b83d', fail: '#ff6b5e', unknown: '#8fb0aa' } as const;
+
+/** Four pipeline stages; the first non-ok stage is where a problem starts. */
+function StagePanel({ snap }: { snap: DiagSnapshot | null }) {
+  const first = snap?.verdicts.find((v) => v.status === 'fail' || v.status === 'warn');
+  return (
+    <div role="group" aria-label="Pipeline stages">
+      <strong>Pipeline stages (last {snap?.windowSec ?? 0} s)</strong>
+      <table style={{ width: '100%', marginTop: 4 }}>
+        <tbody>
+          {(snap?.verdicts ?? []).map((v) => (
+            <tr key={v.stage} style={first?.stage === v.stage ? { outline: `1px solid ${STAGE_COLOR[v.status]}` } : undefined}>
+              <td style={{ whiteSpace: 'nowrap', paddingRight: 6 }}>
+                <span aria-hidden style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: STAGE_COLOR[v.status], marginRight: 6 }} />
+                {STAGE_LABEL[v.stage]}
+              </td>
+              <td style={{ textAlign: 'right' }}>
+                <span className="sr-only">{v.status}: </span>
+                {v.summary}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {first && <p style={{ color: STAGE_COLOR[first.status], margin: '4px 0 0' }}>Start with: {STAGE_LABEL[first.stage].toLowerCase()}</p>}
+    </div>
+  );
+}
+
+function LatencyHistogram({ counts }: { counts: number[] }) {
+  const max = Math.max(1, ...counts);
+  return (
+    <div aria-label="Inference latency distribution" style={{ marginTop: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 36 }}>
+        {counts.map((c, i) => (
+          <div key={i} title={`${c} frames`} style={{ flex: 1, height: `${(c / max) * 100}%`, minHeight: c ? 2 : 0, background: '#4fb3a6' }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 2, color: '#8fb0aa', fontSize: 9 }}>
+        {LATENCY_BUCKETS.map((b, i) => (
+          <span key={i} style={{ flex: 1, textAlign: 'center' }}>
+            {Number.isFinite(b) ? `≤${b}` : '>'}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function bodyExtentPx(lms: Landmark[] | null, w: number, h: number): number {
+  if (!lms) return 0;
+  const vis = lms.filter((l) => l.visibility > 0.5);
+  if (vis.length < 4) return h * 0.5;
+  const xs = vis.map((l) => l.x * w);
+  const ys = vis.map((l) => l.y * h);
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+}
+
+const rnd = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10);
 
 function KV({ k, v }: { k: string; v: string | number }) {
   return (

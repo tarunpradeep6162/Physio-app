@@ -22,11 +22,22 @@ export interface RuntimeStats {
   slow: boolean;
 }
 
+export interface FrameTiming {
+  /** Camera capture time of the analysed frame (performance clock), when the browser reports it. */
+  captureTs: number | null;
+  /** Frames presented by the camera so far (requestVideoFrameCallback metadata). */
+  presentedFrames: number | null;
+  /** When inference started and when landmarks were available. */
+  startedAt: number;
+  finishedAt: number;
+}
+
 export interface FrameContext {
   video: HTMLVideoElement;
   now: number;
   stats: RuntimeStats;
   provider: PoseProvider;
+  timing: FrameTiming;
 }
 
 export interface RuntimeOptions {
@@ -103,11 +114,11 @@ export function useMotionRuntime(opts: RuntimeOptions) {
     const useVfc = !simulated && video && 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
     function schedule() {
       if (cancelled) return;
-      if (useVfc && video) vfc = video.requestVideoFrameCallback(() => tick());
-      else raf = requestAnimationFrame(() => tick());
+      if (useVfc && video) vfc = video.requestVideoFrameCallback((_n, meta) => tick(meta));
+      else raf = requestAnimationFrame(() => tick(null));
     }
 
-    function tick() {
+    function tick(meta: VideoFrameCallbackMetadata | null) {
       if (cancelled) return;
       const provider = providerRef.current;
       if (!provider || !video || pausedRef.current) return schedule();
@@ -134,7 +145,13 @@ export function useMotionRuntime(opts: RuntimeOptions) {
         slowSince = null;
         statsRef.current.slow = false;
       }
-      onFrameRef.current(processed, { video, now, stats: statsRef.current, provider });
+      const timing: FrameTiming = {
+        captureTs: meta ? (meta.captureTime ?? meta.expectedDisplayTime ?? null) : null,
+        presentedFrames: meta ? meta.presentedFrames : null,
+        startedAt: now,
+        finishedAt: performance.now(),
+      };
+      onFrameRef.current(processed, { video, now, stats: statsRef.current, provider, timing });
       if (now - lastUi > 250) {
         lastUi = now;
         setStats({ ...statsRef.current });
