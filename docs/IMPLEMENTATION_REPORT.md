@@ -1,6 +1,8 @@
 # Implementation report: knee pathway (Dheepika edition)
 
 **Live build:** https://physiovision-ai-eta.vercel.app. This is a Vercel production deployment, git-linked to branch `claude/physiovision-ai-platform-49ysp2`.
+> Superseded for tracking and release status by [`RELEASE_GATE_REPORT.md`](RELEASE_GATE_REPORT.md) (Phases 1–20).
+
 **Status:** first-release knee pathway implemented end to end, for **demonstration and validation only**. It is not ready for real patient care (see "Production readiness").
 
 ## 1. Code changes
