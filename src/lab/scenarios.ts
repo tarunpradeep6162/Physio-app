@@ -51,6 +51,10 @@ const HELD_PHONE: Rect = { x: 0.42, y: 0.36, w: 0.16, h: 0.26 };
 /** A free-standing object covering the torso and hips, with the arms down (no hands involved). */
 const OBJECT: Rect = { x: 0.33, y: 0.3, w: 0.34, h: 0.34 };
 const KNEE_L: LabMeasure = { kind: 'angle', type: 'knee_flexion', side: 'left' };
+const SH_FLEX_L: LabMeasure = { kind: 'angle', type: 'shoulder_flexion', side: 'left' };
+const SH_ABD_L: LabMeasure = { kind: 'angle', type: 'shoulder_abduction', side: 'left' };
+const shFlex = (t: number, side: Side = 'left') => synth(sceneAt('shoulder_flexion_active', side, t, { peak: 150, cycles: 3 })!);
+const shAbd = (t: number) => synth(sceneAt('shoulder_abduction_active', 'left', t, { peak: 140, cycles: 3 })!);
 
 const sts = (t: number) => synth(sceneAt('knee_sit_to_stand', 'left', t, { peak: 92, tempo: 1 })!);
 const STS_CHAIR = (() => {
@@ -210,6 +214,47 @@ export const SCENARIOS: Scenario[] = [
     cameraFps: 30,
     measure: { kind: 'posture', id: 'knee_frontal_left' },
     frame: (t) => ({ figures: [{ lms: squat(t) }], render: { noise: 4 } }),
+  },
+  {
+    id: 'shoulder_flexion',
+    title: 'Shoulder flexion, side view, left arm 5→150° (protocol scenario)',
+    failure: 'protocol: shoulder flexion',
+    durationSec: 14,
+    cameraFps: 30,
+    measure: SH_FLEX_L,
+    frame: (t) => ({ figures: [{ lms: shFlex(t) }], render: { noise: 4 } }),
+  },
+  {
+    id: 'shoulder_abduction',
+    title: 'Shoulder abduction, front view, left arm 5→140° (protocol scenario)',
+    failure: 'protocol: shoulder abduction',
+    durationSec: 14,
+    cameraFps: 30,
+    measure: SH_ABD_L,
+    frame: (t) => ({ figures: [{ lms: shAbd(t) }], render: { noise: 4 } }),
+  },
+  {
+    id: 'shoulder_elbow_occlusion',
+    title: 'Shoulder abduction with the tested elbow hidden behind an object from 5 s',
+    failure: 'single-joint obstruction (arm)',
+    durationSec: 12,
+    cameraFps: 30,
+    measure: SH_ABD_L,
+    frame: (t) => {
+      const lms = shAbd(t);
+      const e = lms[LM.leftElbow];
+      const occ: Rect[] = t > 5 ? [{ x: e.x - 0.08, y: e.y - 0.06, w: 0.16, h: 0.12 }] : [];
+      return { figures: [{ lms }], render: { noise: 4, occluders: occ } };
+    },
+  },
+  {
+    id: 'shoulder_wrong_side',
+    title: 'Shoulder flexion measured for the LEFT arm while the RIGHT side faces the camera',
+    failure: 'wrong side toward camera',
+    durationSec: 8,
+    cameraFps: 30,
+    measure: SH_FLEX_L,
+    frame: (t) => ({ figures: [{ lms: shFlex(t, 'right') }], render: { noise: 4 } }),
   },
   {
     id: 'second_person',

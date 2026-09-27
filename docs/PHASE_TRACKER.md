@@ -32,7 +32,7 @@ A phase is never marked **done** on a clean build alone.
 | # | Phase | Depends on | Status | Remaining gate |
 |---|---|---|---|---|
 | 1 | Shoulder assessment pathway | — | **engineering done – gate pending** | Clinical review of the draft shoulder content (on hold); real-device captures (Phase 2). Details: `docs/SHOULDER_PROTOCOL.md` |
-| 2 | Real-phone tracking benchmark | 1 | not started | Real Android and iPhone runs |
+| 2 | Real-phone tracking benchmark | 1 | **engineering done – gate pending** | Harness, device matrix, sustained/thermal telemetry and shoulder scenarios delivered (`docs/tracking/PHONE_RUN.md`). **Device results pending:** no real phone available. |
 | 3 | Robust validity and person lock | 1 | not started | — |
 | 4 | Movement-specific setup and calibration | 1 | not started | — |
 | 5 | Low-latency coaching engine | 3, 4 | not started | Cue latency on supported devices |

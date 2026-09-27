@@ -1,6 +1,7 @@
 import { closeCamera, openCamera } from '../camera/camera';
 import { createPoseProvider, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
 import { WorkerPoseProvider } from '../engine/pose/workerProvider';
+import { sustainedWindows, type SustainedSummary } from './sustained';
 
 /**
  * Live camera benchmark: measures what the real-time loop actually delivers on this device —
@@ -35,6 +36,8 @@ export interface LiveBenchResult {
   /** Main-thread blocking: longest gap between animation frames and total long-task time. */
   ui: { rafGapP95Ms: number; rafGapMaxMs: number; longTaskMsPerSec: number };
   loadMs: number;
+  /** Per-window timings over the run (thermal / sustained-load slowdown). No frames are kept. */
+  sustained: SustainedSummary;
 }
 
 const pct = (xs: number[], p: number) => {
@@ -63,6 +66,7 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   const loadMs = performance.now() - t0Load;
 
   const inf: number[] = [];
+  const timeline: { t: number; ms: number }[] = [];
   const ages: number[] = [];
   let processed = 0;
   let present = 0;
@@ -96,6 +100,7 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   const analysed = (captured: number | null, inferenceMs: number, persons: number) => {
     const b = performance.now();
     inf.push(inferenceMs);
+    timeline.push({ t: b - start, ms: inferenceMs });
     if (captured) ages.push(b - captured);
     processed++;
     if (persons) present++;
@@ -156,5 +161,6 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
     presence: Math.round((present / Math.max(1, processed)) * 1000) / 1000,
     ui: { rafGapP95Ms: pct(gaps, 0.95), rafGapMaxMs: pct(gaps, 1), longTaskMsPerSec: Math.round((longTask / elapsed) * 1000) },
     loadMs: Math.round(loadMs),
+    sustained: sustainedWindows(timeline, elapsed),
   };
 }

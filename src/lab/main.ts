@@ -171,6 +171,15 @@ async function main() {
     last.live = [...(last.live ?? []), r];
     $('status').textContent = 'Done.';
   });
+  $('sustain').addEventListener('click', async () => {
+    const c = cfg();
+    $('status').textContent = 'Sustained 5-minute run — keep the phone on its mount; note its temperature at the end…';
+    const r = await runLiveBench($<HTMLVideoElement>('video'), { provider: c.model, delegate: c.delegate, loop: 'worker', durationSec: 300 });
+    $('liveOut').textContent = JSON.stringify(r, null, 1);
+    last = last ?? ({ kind: 'physiovision-tracking-lab', version: 1, source: 'synthetic_rendered', createdAt: new Date().toISOString(), env: env(), config: { model: c.model, delegate: r.delegate, coordFilter: c.coord, angleFilter: c.angle, loadMs: r.loadMs }, scenarios: [] } as LabReport);
+    last.live = [...(last.live ?? []), r];
+    $('status').textContent = `Done. Slowdown ratio ${r.sustained.slowdownRatio ?? '—'} (last ÷ first 30 s inference p50).`;
+  });
   $('save').addEventListener('click', () => last && download(`tracking-lab-${Date.now()}.json`, last));
 
   // ?make=y4m&scene=<id>&w=360&h=640 — renders a scenario as I420 frames for a fake-camera clip.

@@ -17,6 +17,39 @@
 
 Open `/lab.html` on the phone. Run the synthetic scenarios with Lite and Full, then the **live camera benchmark** with each camera. Download JSON. In clinician Validation Mode, run 60 seconds of the supported heel slide and export diagnostics. Record camera FPS, inference FPS, inference p50/p95, capture-to-landmark age p50/p95, UI responsiveness and each fallback reason. Do not label the synthetic mannequin error as clinical accuracy.
 
+## Device matrix (Phase 2) — repeat per device
+
+Run every cell that the device supports. Record the lab JSON filename in the cell. Leave a cell empty rather than estimating it.
+
+| Condition | Knee: heel slide (landscape, floor) | Knee: sit-to-stand (portrait) | Shoulder: flexion side view (portrait) | Shoulder: abduction front view (portrait) |
+|---|---|---|---|---|
+| Rear camera, recommended distance, good light | | | | |
+| Front camera, recommended distance, good light | | | | |
+| Too close (region fills > 90%) | | | | |
+| Too far (region < recommended minimum) | | | | |
+| Dim room (one lamp, no window) | | | | |
+| Backlit (window behind the participant) | | | | |
+| Loose clothing over the tested joint | | | | |
+| Fitted clothing / shorts / vest | | | | |
+| Participant with a larger body size (with consent) | | | | |
+| Wrong phone orientation (portrait for heel slide / landscape for shoulder) | | | | |
+
+For each cell, record:
+- valid / attempted repetitions;
+- the refusal reasons shown;
+- inference p50 / p95 from Validation Mode diagnostics;
+- whether any number appeared while invalid.
+
+## Sustained run (thermal)
+
+On `/lab.html`, tap **Sustained run (5 min, worker)** with the phone on its mount. The result JSON contains `sustained.windows` (fps and inference p50/p95 per 30 s) and `slowdownRatio` (last ÷ first window). Record the phone's temperature by touch (cool / warm / hot) and the battery change. **Only timings are kept; no frames or video.**
+
+## Supported-device limits (to fill from real runs only)
+
+| Device class | Minimum observed inference fps for a valid capture | Notes |
+|---|---|---|
+| — | pending | No real phone has been run. |
+
 ## Failure and recovery checklist
 
 For each row, write **pass/fail, the on-screen reason, whether any number appeared while invalid, recovery time, and the diagnostics timestamp**. A number appearing while the tested joint is hidden is a failure.
@@ -32,6 +65,9 @@ For each row, write **pass/fail, the on-screen reason, whether any number appear
 | Dim the room and restore light | | |
 | Stop the camera stream/lock the phone; confirm the number clears | | |
 | Interrupt a repetition with a covered knee; confirm it does not count | | |
+| Shoulder: hold a folder in front of the tested elbow during abduction | | |
+| Shoulder: turn the wrong side toward the camera for flexion | | |
+| Shoulder: lean the trunk away while raising the arm (check the compensation value) | | |
 
 Capture three heel slides, five sit-to-stands and three squats. Compare attempted, valid and rejected repetitions with the saved result and replay. Test TalkBack or VoiceOver, large text and high contrast. Note every unclear cue and every horizontal overflow.
 

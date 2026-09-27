@@ -6,6 +6,23 @@ The capture screen now clears its displayed angle and skeleton if no processed f
 
 The environment is the same as the [Phase 1 baseline](PHASE1_BASELINE.md) unless a row says otherwise: headless Chromium 141, 4 vCPU, **software WebGL (SwiftShader, no GPU)**, and a fake camera playing the rendered heel-slide clip at 360×640, 30 fps. **Real-phone results are outstanding.** The device procedure is at the end of the baseline document.
 
+## Dheepika Lab Phase 2: shoulder scenarios and sustained telemetry (container, rendered figures)
+
+Real BlazePose Lite, CPU, same container. Values are for the live display chain. These are rendered figures, **not people and not accuracy**.
+
+| Scenario | Invalid rate | Unsafe frames | Peak error / lag | Main refusal reasons |
+|---|---|---|---|---|
+| Shoulder flexion, side view, 5→150° | **0.70** | 0 | 1.2° / 40 ms | orientation uncertain (175), re-acquiring (111) |
+| Shoulder abduction, front view, 5→140° | 0.04 | 0 | −1.2° / 40 ms | re-acquiring (15) |
+| Abduction, elbow hidden behind an object from 5 s | 0.10 | **179** | — | the model reported the hidden elbow visible in 208 of 209 frames |
+| Flexion measured for the left arm with the right side facing the camera | 1.00 | 0 | — | occluded, orientation uncertain |
+
+Findings for Phase 3:
+- **Side-view flexion loses orientation** as the arm goes overhead: most frames are refused. This costs coverage, not safety.
+- **A hidden elbow is invented by the model.** Segmentation support was also tested (`seg=1`): the mask marked the hidden elbow as on the body in 181 of 209 frames, and 172 unsafe frames remained. **Segmentation does not solve this case.**
+
+**Sustained telemetry.** A 60 s worker run on the fake camera gave two 30 s windows at 11.8 and 11.4 fps, inference p50 77.4 ms in both. Slowdown ratio 1.00, fps ratio 0.97. Inference was slower than in the Phase 3 table (45 ms) because this container was under concurrent load at the time. **Container timings vary with load and are not phone figures.**
+
 ## Phase 2: diagnostics console
 
 Validation Mode now separates four stages: **camera frame → pose output → filter → measurement**. It highlights the first stage that is not OK.
