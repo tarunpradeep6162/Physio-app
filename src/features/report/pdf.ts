@@ -12,9 +12,9 @@ const PAGE_W = 210;
 const PAGE_H = 297;
 const M = 15;
 const CW = PAGE_W - 2 * M;
-const TEAL: [number, number, number] = [13, 148, 136];
-const INK: [number, number, number] = [16, 32, 29];
-const MUTED: [number, number, number] = [98, 115, 111];
+const TEAL: [number, number, number] = [8, 127, 121];
+const INK: [number, number, number] = [20, 43, 45];
+const MUTED: [number, number, number] = [82, 104, 106];
 
 /** Standard PDF fonts are WinAnsi-encoded; map characters outside it to safe equivalents. */
 export function pdfText(s: string): string {
@@ -33,17 +33,30 @@ export function pdfText(s: string): string {
 
 export function renderPdf(model: ReportModel): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-  doc.setProperties({ title: `PhysioVision knee report ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'PhysioVision AI' });
+  doc.setProperties({ title: `Dheepika Motion knee report ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'Dheepika Motion' });
   let y = 0;
   const prelim = model.state !== 'clinician_reviewed';
 
   const header = () => {
-    doc.setFillColor(7, 16, 18);
+    doc.setFillColor(11, 36, 39);
     doc.rect(0, 0, PAGE_W, 12, 'F');
     doc.setTextColor(236, 253, 250);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text('PhysioVision AI', M, 7.8);
+    // The small movement monogram is drawn as PDF vectors, so it survives monochrome print.
+    doc.setDrawColor(236, 253, 250);
+    doc.setLineWidth(0.55);
+    doc.line(M + 0.5, 2.5, M + 0.5, 9);
+    doc.line(M + 0.5, 2.5, M + 2.6, 2.5);
+    doc.ellipse(M + 2.6, 5.75, 2.7, 3.25, 'S');
+    doc.setDrawColor(128, 217, 199);
+    doc.line(M + 1.6, 8, M + 3.2, 6);
+    doc.line(M + 3.2, 6, M + 4.2, 3.8);
+    for (const [x, yy] of [[1.6, 8], [3.2, 6], [4.2, 3.8]]) {
+      doc.setFillColor(128, 217, 199);
+      doc.circle(M + x, yy, 0.42, 'F');
+    }
+    doc.text('Dheepika Motion', M + 10, 7.8);
     doc.setFont('helvetica', 'normal');
     doc.text(pdfText(`${model.audience === 'patient' ? 'Patient summary' : 'Clinician report'} · ${model.patientLabel}`), PAGE_W - M, 7.8, { align: 'right' });
     y = 18;
@@ -222,7 +235,7 @@ export function renderPdf(model: ReportModel): jsPDF {
   need(30);
   text('Sign-off', 12, 'bold');
   if (model.state === 'clinician_reviewed') {
-    text(`Reviewed and approved in PhysioVision by ${model.approvedBy ?? '—'} on ${model.approvedAt ? new Date(model.approvedAt).toLocaleString('en-GB') : '—'} (document v${model.documentVersion}).`, 9);
+    text(`Reviewed and approved in Dheepika Motion by ${model.approvedBy ?? '—'} on ${model.approvedAt ? new Date(model.approvedAt).toLocaleString('en-GB') : '—'} (document v${model.documentVersion}).`, 9);
     text('Electronic approval recorded in the application audit log. This document carries no cryptographic signature and no online verification link.', 8, 'italic', MUTED);
   } else {
     text('Not signed off. This document is an AI-assisted preliminary draft and must not be used as a clinical conclusion until a clinician has reviewed and approved it.', 9, 'bold', [138, 90, 0]);

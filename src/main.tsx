@@ -1,3 +1,11 @@
+import '@fontsource/outfit/latin-400.css';
+import '@fontsource/outfit/latin-600.css';
+import '@fontsource/outfit/latin-700.css';
+import '@fontsource/work-sans/latin-400.css';
+import '@fontsource/work-sans/latin-500.css';
+import '@fontsource/work-sans/latin-600.css';
+import '@fontsource/noto-sans-tamil/tamil-400.css';
+import '@fontsource/noto-sans-tamil/tamil-600.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';

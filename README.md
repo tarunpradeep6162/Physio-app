@@ -1,4 +1,4 @@
-# PhysioVision AI
+# Dheepika Motion
 
 A camera-first movement-intelligence platform for physiotherapy. The camera, the biomechanics engine, what the patient reports, and a clinician-controlled rehabilitation program all work together in one product. It is **not** a chatbot and **not** an exercise-video library.
 
@@ -6,7 +6,7 @@ A camera-first movement-intelligence platform for physiotherapy. The camera, the
 
 Built for Dheepika's physiotherapy practice. In the demo dataset she is the physiotherapist. You can change her name in Settings.
 
-**Live:** https://physiovision-ai-eta.vercel.app (Vercel, deployed from this branch).
+**Live:** https://physiovision-ai-eta.vercel.app (existing Vercel URL, deployed from this branch). Identity and trademark status: [`docs/BRAND.md`](docs/BRAND.md).
 
 **Knee pathway (first release).** The pathway runs: profile → symptom map with radiation path → adaptive history → versioned safety screen → clinician-editable test plan → calibration → three knee protocols (supported heel-slide flexion/extension, five-times sit-to-stand, double-leg squat) with landmark-only replay → bilateral comparison → evidence map with "Why?" → clinician reasoning review and impression → prescription with progression and pain-pause rule → Motion Mirror → matched reassessment → baseline/current comparison → 14-section PDF report. **Current release status and readiness: [`docs/RELEASE_GATE_REPORT.md`](docs/RELEASE_GATE_REPORT.md)** (tracking results in [`docs/tracking/RESULTS.md`](docs/tracking/RESULTS.md)). See [`docs/IMPLEMENTATION_REPORT.md`](docs/IMPLEMENTATION_REPORT.md) for status, measured performance and gaps, [`docs/KNEE_PROTOCOL.md`](docs/KNEE_PROTOCOL.md) for protocols and data contract, and [`docs/AUDIT.md`](docs/AUDIT.md) for the pre-build audit.
 

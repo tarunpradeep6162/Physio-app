@@ -171,15 +171,14 @@ export const IconMessage = (p: P) => (
   </svg>
 );
 
-/** PhysioVision brand mark: a joint angle arc inside an aperture. */
+/** Dheepika Motion: a D with a three-joint movement trajectory. */
 export function BrandMark({ className = 'brand-mark' }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="9" fill="#071012" />
-      <circle cx="16" cy="16" r="10.5" fill="none" stroke="#0D9488" strokeWidth="1.6" opacity="0.7" />
-      <path d="M9 23 16 13l7 7" fill="none" stroke="#22D3C5" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M13.2 17.4a4 4 0 0 0 5.4 0.1" fill="none" stroke="#31C48D" strokeWidth="1.8" strokeLinecap="round" />
-      <circle cx="16" cy="13" r="2" fill="#ECFDFA" />
+    <svg className={className} viewBox="0 0 64 64" aria-hidden="true">
+      <rect width="64" height="64" rx="16" fill="#0B2427" />
+      <path d="M15 12h12c16 0 25 8 25 20S43 52 27 52H15V12Z" fill="none" stroke="#F6F8F5" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 42 32 32 42 21" fill="none" stroke="#80D9C7" strokeWidth="2.5" strokeLinecap="round" />
+      <circle cx="22" cy="42" r="3.6" fill="#80D9C7" /><circle cx="32" cy="32" r="3.6" fill="#80D9C7" /><circle cx="42" cy="21" r="3.6" fill="#80D9C7" />
     </svg>
   );
 }
