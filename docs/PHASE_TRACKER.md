@@ -49,7 +49,7 @@ A phase is never marked **done** on a clean build alone.
 | 16 | Exercise content system at scale | 9 | **engineering done – gate pending** | Schema, versioning, review workflow, import (always unreviewed), faceted index tested at 2,500 records, camera subset labelled by QA level, library prescriptions. 16 draft items, **0 published** (clinical review on hold); licensed media and bulk curated content pending. |
 | 17 | Clinician intelligence and longitudinal trends | 8, 10 | **engineering done – gate pending** | Trends break on incomparable data with reasons; exception queue with configurable rules shown as unreviewed until reviewed. **Clinical review of thresholds pending.** |
 | 18 | Reference measurements and interoperability | 6 | **engineering done – gate pending** | Device measurements (units, calibration, device, time, source) via entry and CSV; FHIR R4 export with round-trip test. **Real device files and care-system conformance testing pending.** |
-| 19 | Accessibility, localization, privacy and mobile hardening | all | not started | Tamil clinical review; real-device usability |
+| 19 | Accessibility, localization, privacy and mobile hardening | all | **engineering done – gate pending** | Linkage-based data export and erasure covering every table; redacted local incident log; source scan for telemetry and logging; axe clean on 16 new screens at 390 px; larger live numerals in large-text mode; Tamil review sheet (152 of 545 drafts, questionnaires English-only). **Tamil clinical translation, real-phone usability and screen-reader testing pending.** |
 | 20 | Evidence, clinical validation and controlled release | all | not started | Studies and Dheepika's approval (on hold) |
 
 ## Gap list (updated as work proceeds)
@@ -71,10 +71,10 @@ A phase is never marked **done** on a clean build alone.
 15. **Found in Phase 10 and fixed:** two open tabs each saved their whole in-memory copy, so the later save silently erased the other tab's new records. Saves now detect a newer stored revision and merge (audit-based), and conflicts are recorded in the audit and shown to the patient.
 16. ~~Demo sign-offs were attributed to “Dheepika”.~~ **Fixed** (commit `4e69c37`): the demo account is now “Demo clinician”, and older browser copies are migrated.
 17. **Found in Phase 11:** re-selecting the same file did not re-import. Fixed by resetting the file input.
-18. **Open → Phase 19:** account deletion and the patient data export do not yet cover the tables added in phases 3–11.
+18. ~~Account deletion and export missed the tables added in phases 3–11.~~ **Fixed in Phase 19** by linkage-based export and erasure (`src/data/privacy.ts`), tested across every table and in the browser.
 19. **Found in Phases 12–15 and fixed:** the left/right table and the report printed every difference in degrees; they now use the metric's own unit (seconds, %, counts).
 20. **Found in Phase 15 and fixed:** marching with one foot below the detection level halved the cadence while reporting it as valid. It is now withheld with a reason.
 21. **Found in Phase 17 and fixed:** clinic settings could be written by any account through `updateSettings`; it is now clinician-only.
-22. **Open → Phase 19:** a pressed filter chip's CSS check mark becomes part of its accessible name ("✓ knee"). Harmless, but redundant for screen readers.
+22. ~~A pressed chip's check mark was part of its accessible name.~~ **Fixed in Phase 19** with CSS alt text (`content: '✓' / ''`).
 
 Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.

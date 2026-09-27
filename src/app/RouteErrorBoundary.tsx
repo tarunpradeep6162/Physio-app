@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { recordIncident } from './incidents';
 
 interface Props { children: ReactNode }
 interface State { failed: boolean }
@@ -12,7 +13,7 @@ export class RouteErrorBoundary extends Component<Props, State> {
   static getDerivedStateFromError(): State { return { failed: true }; }
 
   componentDidCatch(error: Error, _info: ErrorInfo) {
-    console.error('Unable to open this screen', error);
+    recordIncident('route', error);
   }
 
   render() {

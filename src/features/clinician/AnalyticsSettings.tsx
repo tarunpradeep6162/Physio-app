@@ -16,6 +16,46 @@ import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
 import { getDb, purgeDemo, recordAudit, updateSettings, useDb } from '../../data/store';
 import { ExceptionRulesEditor } from './Trends';
+import { clearIncidents, readIncidents } from '../../app/incidents';
+
+/** Redacted error log kept on this device only (Phase 19). Nothing is sent anywhere. */
+function IncidentsPanel() {
+  const [list, setList] = useState(readIncidents());
+  return (
+    <section className="panel stack tight">
+      <h2>Incidents on this device</h2>
+      <p className="xs muted">Errors are recorded here after redaction (no names, identifiers, dates, numbers or free text) and are never sent anywhere. Export them for support if needed.</p>
+      {list.length === 0 ? (
+        <p className="small muted">None recorded.</p>
+      ) : (
+        list.slice(-10).reverse().map((i, n) => (
+          <div key={n} className="xs">
+            {i.at.slice(0, 16).replace('T', ' ')} · {i.kind} · {i.message}
+            {i.where ? ` · ${i.where}` : ''}
+            {i.build ? ` · ${i.build}` : ''}
+          </div>
+        ))
+      )}
+      <div className="row">
+        <button
+          className="btn secondary sm"
+          disabled={!list.length}
+          onClick={() => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([JSON.stringify(list, null, 2)], { type: 'application/json' }));
+            a.download = 'incidents.json';
+            a.click();
+          }}
+        >
+          Export
+        </button>
+        <button className="btn ghost sm" disabled={!list.length} onClick={() => { clearIncidents(); setList([]); }}>
+          Clear
+        </button>
+      </div>
+    </section>
+  );
+}
 import { buildMigrationBundle } from '../../data/migration';
 import type { FilterKind } from '../../engine/filters';
 import type { PoseProviderId } from '../../engine/pose/provider';
@@ -173,6 +213,7 @@ export function ClinicSettingsPage() {
       </section>
 
       <ExceptionRulesEditor rules={settings.exceptionRules} actorId={user.id} reviewerName={clinicianName} />
+      <IncidentsPanel />
 
       <section className="panel stack">
         <div className="row between wrap">

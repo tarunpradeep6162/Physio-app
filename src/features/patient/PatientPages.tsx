@@ -16,6 +16,7 @@ import { LOCALES, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
 import { DailyCompanion } from './DailyCompanion';
+import { erasePatient, exportPatientData } from '../../data/privacy';
 import { allVersions } from '../../content/contentStore';
 import { libDose } from '../../clinical/plan';
 import { ActivityPanel } from '../activity/ActivityPanel';
@@ -329,56 +330,18 @@ export function PatientProfile() {
   };
 
   const exportData = () => {
-    const d = getDb();
-    const aIds = new Set(d.assessments.filter((a) => a.patientId === patient.id).map((a) => a.id));
-    const data = {
-      exportedAt: new Date().toISOString(),
-      patient,
-      consents: d.consents.filter((c) => c.patientId === patient.id),
-      assessments: d.assessments.filter((a) => a.patientId === patient.id),
-      painRegions: d.painRegions.filter((r) => aIds.has(r.assessmentId)),
-      patientReportedOutcomes: d.pros.filter((p) => p.patientId === patient.id),
-      scans: d.scans.filter((s) => s.patientId === patient.id),
-      measurements: d.measurements.filter((m) => m.patientId === patient.id),
-      programs: d.programs.filter((p) => p.patientId === patient.id),
-      sessions: d.sessions.filter((s) => s.patientId === patient.id),
-      messages: d.messages.filter((m) => m.patientId === patient.id),
-    };
+    // Everything linked to this patient, found by linkage (covers every table, including newer ones).
+    const data = { patient, ...exportPatientData(getDb(), patient.id) };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `physiovision-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `dheepika-lab-export-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
 
   const deleteAccount = () => {
-    const d = getDb();
-    const pid = patient.id;
-    const aIds = new Set(d.assessments.filter((a) => a.patientId === pid).map((a) => a.id));
-    const progIds = new Set(d.programs.filter((p) => p.patientId === pid).map((p) => p.id));
-    const byPatient = <T extends { patientId: string }>(rows: T[]) => rows.filter((r) => r.patientId !== pid);
-    replaceDb({
-      ...d,
-      users: d.users.filter((u) => u.id !== user.id),
-      patients: d.patients.filter((p) => p.id !== pid),
-      careRelationships: byPatient(d.careRelationships),
-      consents: byPatient(d.consents),
-      assessments: byPatient(d.assessments),
-      painRegions: d.painRegions.filter((r) => !aIds.has(r.assessmentId)),
-      pros: byPatient(d.pros),
-      scans: byPatient(d.scans),
-      measurements: byPatient(d.measurements),
-      observations: byPatient(d.observations),
-      programs: byPatient(d.programs),
-      programExercises: d.programExercises.filter((e) => !progIds.has(e.programId)),
-      sessions: byPatient(d.sessions),
-      notes: byPatient(d.notes),
-      alerts: byPatient(d.alerts),
-      messages: byPatient(d.messages),
-      // The audit trail keeps only a pseudonymous deletion record.
-      audit: [...d.audit.filter((a) => a.actorId !== user.id), { id: uuid(), actorId: 'system', action: 'account_deleted', entity: 'patients', entityId: pid, at: new Date().toISOString() }],
-    });
+    replaceDb(erasePatient(getDb(), patient.id, new Date().toISOString()));
     signOut();
     nav('/');
   };

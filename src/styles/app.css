@@ -519,7 +519,10 @@ textarea.input {
 }
 .chip[aria-pressed='true']::before,
 .chip[aria-checked='true']::before {
+  /* Decorative: the state is already announced by aria-pressed / aria-checked. Empty alt text keeps
+     the check mark out of the accessible name ("knee", not "✓ knee"). */
   content: '✓';
+  content: '✓' / '';
   font-weight: 800;
 }
 .segmented {

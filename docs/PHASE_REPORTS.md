@@ -175,3 +175,25 @@ Details: `docs/CONTENT_TRENDS_INTEROP.md`.
     - FHIR download (collection, 30 entries, grip value kept, camera observations preliminary);
     - the patient Train page shows the library item with its precaution;
     - no page errors.
+
+## Phase 19 — accessibility, localisation, privacy and mobile hardening
+- **Files:**
+  - `src/data/privacy.ts` (+ `privacy.test.ts`: 4 tests)
+  - `src/app/incidents.ts`, `app/RouteErrorBoundary.tsx`, `main.tsx`
+  - `features/patient/PatientPages.tsx` (export and delete use linkage)
+  - `features/clinician/AnalyticsSettings.tsx` (incident panel)
+  - `src/i18n/i18n.test.ts`, `scripts/i18n-review.mjs`, generated `docs/I18N_REVIEW.md`
+  - `styles/app.css` (chip alt text), `styles/experience.css` (large-text live numerals)
+- **Privacy:**
+  - Data access and erasure find rows by linkage (patientId / assessmentId / programId / sessionId / captureId / importId …), so every table, including future ones, is covered.
+  - A test checks every schema table for leftovers after erasure and that the export matches exactly what erasure removes.
+  - Password material is never exported.
+  - In the browser: a new patient with a check-in note, an intake and activity consent deleted their account; afterwards no name, email or note remained in storage.
+- **Observability without leaks:** errors are kept in a local ring buffer (50 entries) after redaction of e-mails, ids, dates, numbers and free text, keeping file:line only. Nothing is sent anywhere. A source scan test fails the build on analytics/telemetry SDKs, `sendBeacon`, console output outside the lab tools, or unexpected `fetch` calls. MediaPipe's own telemetry endpoint is already blocked by the CSP.
+- **Accessibility:**
+  - axe-core (WCAG 2.0/2.1/2.2 A and AA) on 16 screens from phases 9–18 at 390×844: **no violations, no horizontal overflow**. The only target under 24 px is the visually hidden skip link, which is full size when focused.
+  - Pressed chips no longer read "✓ knee".
+  - Large-text mode now enlarges the live camera numerals.
+  - Voice and caption cues, camera-permission denial and offline recording were already in place (offline and multi-tab: Phase 10).
+- **Localisation:** 152 of 545 UI strings have Tamil drafts; a test enforces matching placeholders and no stale keys. Clinical questionnaires stay English-only until professionally translated, back-translated and reviewed. They are not machine-translated.
+- **Gates:** Tamil clinical translation and review; usability with real patients on real low-end phones; VoiceOver/TalkBack testing; security review of the server deployment (Phase 6).

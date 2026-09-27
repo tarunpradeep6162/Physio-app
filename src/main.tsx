@@ -13,8 +13,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { RouteErrorBoundary } from './app/RouteErrorBoundary';
+import { installIncidentHandlers } from './app/incidents';
 import './styles/app.css';
 import './styles/experience.css';
+
+installIncidentHandlers();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -139,3 +139,8 @@ h2 { letter-spacing: -.032em; }
   .daily-rhythm { background: transparent; }
   .panel, .session-hero { box-shadow: none !important; }
 }
+
+/* Phase 19: large-text mode also enlarges the live measurement numerals (they are sized by the
+   viewport, so the root font size alone would not change them). */
+html.large-text .stage .hud-value.hud-hero { font-size: clamp(3.8rem, 9.5vmin, 6.8rem); }
+html.large-text .hud-value:not(.hud-hero) { font-size: 2.5rem; }
