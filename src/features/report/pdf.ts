@@ -33,7 +33,7 @@ export function pdfText(s: string): string {
 
 export function renderPdf(model: ReportModel): jsPDF {
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-  doc.setProperties({ title: `Dheepika Motion knee report ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'Dheepika Motion' });
+  doc.setProperties({ title: `Dheepika Lab knee report ${model.assessmentId.slice(0, 8)}`, subject: model.state === 'clinician_reviewed' ? 'Clinician-reviewed report' : 'AI preliminary — requires clinician review', creator: 'Dheepika Lab' });
   let y = 0;
   const prelim = model.state !== 'clinician_reviewed';
 
@@ -56,7 +56,7 @@ export function renderPdf(model: ReportModel): jsPDF {
       doc.setFillColor(128, 217, 199);
       doc.circle(M + x, yy, 0.42, 'F');
     }
-    doc.text('Dheepika Motion', M + 10, 7.8);
+    doc.text('Dheepika Lab', M + 10, 7.8);
     doc.setFont('helvetica', 'normal');
     doc.text(pdfText(`${model.audience === 'patient' ? 'Patient summary' : 'Clinician report'} · ${model.patientLabel}`), PAGE_W - M, 7.8, { align: 'right' });
     y = 18;
@@ -235,7 +235,7 @@ export function renderPdf(model: ReportModel): jsPDF {
   need(30);
   text('Sign-off', 12, 'bold');
   if (model.state === 'clinician_reviewed') {
-    text(`Reviewed and approved in Dheepika Motion by ${model.approvedBy ?? '—'} on ${model.approvedAt ? new Date(model.approvedAt).toLocaleString('en-GB') : '—'} (document v${model.documentVersion}).`, 9);
+    text(`Reviewed and approved in Dheepika Lab by ${model.approvedBy ?? '—'} on ${model.approvedAt ? new Date(model.approvedAt).toLocaleString('en-GB') : '—'} (document v${model.documentVersion}).`, 9);
     text('Electronic approval recorded in the application audit log. This document carries no cryptographic signature and no online verification link.', 8, 'italic', MUTED);
   } else {
     text('Not signed off. This document is an AI-assisted preliminary draft and must not be used as a clinical conclusion until a clinician has reviewed and approved it.', 9, 'bold', [138, 90, 0]);

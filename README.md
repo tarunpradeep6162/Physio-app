@@ -1,4 +1,4 @@
-# Dheepika Motion
+# Dheepika Lab
 
 A camera-first movement-intelligence platform for physiotherapy. The camera, the biomechanics engine, what the patient reports, and a clinician-controlled rehabilitation program all work together in one product. It is **not** a chatbot and **not** an exercise-video library.
 

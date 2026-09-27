@@ -18,7 +18,7 @@ export function downloadReport(assessmentId: string, audience: 'clinician' | 'pa
     insert('reports', { id: uuid(), assessmentId, version: model.documentVersion, status: 'preliminary', generatedAt: model.generatedAt, generatedBy: actorId, templateVersion: REPORT_TEMPLATE_VERSION }, actorId, `pdf:${audience}`);
   }
   const doc = renderPdf(model);
-  doc.save(`dheepika-motion-knee-${audience}-${assessmentId.slice(0, 8)}-v${model.documentVersion}.pdf`);
+  doc.save(`dheepika-lab-knee-${audience}-${assessmentId.slice(0, 8)}-v${model.documentVersion}.pdf`);
   return doc;
 }
 

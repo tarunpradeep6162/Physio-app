@@ -110,7 +110,7 @@ function PatientLayout() {
   ];
   return (
     <RequireRole role="patient">
-      <div className="shell">
+      <div className="shell patient-shell">
         <Banners />
         <header className="topbar">
           <NavLink to="/p/home" className="brand">
@@ -149,7 +149,7 @@ function ClinicianLayout() {
   ];
   return (
     <RequireRole role="clinician">
-      <div className="clin-layout">
+      <div className="clin-layout clinician-shell">
         <nav className="side-rail" aria-label="Clinician">
           <NavLink to="/c/overview" className="brand">
             <BrandMark />

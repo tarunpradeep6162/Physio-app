@@ -47,8 +47,8 @@ export function ClinicianOverview() {
   const pname = (id: string) => db.patients.find((p) => p.id === id)?.name ?? '—';
 
   return (
-    <div className="content stack loose">
-      <div className="row between wrap">
+    <div className="content stack loose clinician-overview">
+      <div className="row between wrap page-intro clinician-intro">
         <div>
           <p className="eyebrow">{db.settings.clinicName}</p>
           <h1>{t('nav.overview')}</h1>
@@ -59,7 +59,7 @@ export function ClinicianOverview() {
         </Link>
       </div>
 
-      <div className="grid cols-4">
+      <div className="grid cols-4 overview-stats">
         <div className="panel">
           <Stat label="Active patients" value={patients.filter((p) => activeProgram(db, p.id)).length} sub={`${patients.length} total`} />
         </div>
@@ -630,4 +630,3 @@ function NotesTab({ db, patient, actorId }: { db: DB; patient: Patient; actorId:
     </div>
   );
 }
-

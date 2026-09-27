@@ -1,14 +1,18 @@
-# Dheepika Motion — identity v1
+# Dheepika Lab — identity v2
 
-**Working product name:** Dheepika Motion  
-**Descriptor:** Clinical movement intelligence  
-**Line:** See movement. Guide recovery.  
-**Public URL:** the existing `physiovision-ai-eta.vercel.app` remains in place.  
+**Product name:** Dheepika Lab
+
+**Descriptor:** Clinical movement intelligence
+
+**Line:** See movement. Guide recovery.
+
+**Public URL:** the existing `physiovision-ai-eta.vercel.app` remains in place.
+
 **Status:** app identity implemented for this pilot. Trademark clearance and domain purchase remain open before commercial launch.
 
 ## Why this name
 
-Dheepika's name gives the product a human point of view; Motion describes what the camera actually observes. The app does not claim to diagnose tissue injury from a video. Alternative `Dheepika Lab` reads more experimental; `PhysioVision AI` is broader but less distinctive. A Vercel registrar lookup on 27 September 2026 reported `dheepikamotion.com` available and `dheepikamotion.in` unavailable. Availability can change. The Indian Trade Marks Registry public search requires OTP/CAPTCHA, so this is not a trademark clearance. Review exact and similar marks in the relevant classes with counsel before buying a domain or publishing to app stores.
+Dheepika's name gives the product a human point of view; Lab conveys careful observation and clinician review. The app does not claim to diagnose tissue injury from a video. Alternative `Dheepika Motion` is descriptive but narrower; `PhysioVision AI` is broader but less distinctive. A Vercel registrar lookup on 27 September 2026 reported `dheepikalab.com` available and `dheepikalab.in` unavailable. Availability can change. The Indian Trade Marks Registry public search requires OTP/CAPTCHA, so this is not a trademark clearance. Review exact and similar marks in the relevant classes with counsel before buying a domain or publishing to app stores.
 
 ## Mark
 
@@ -25,10 +29,20 @@ The 64-unit D outline frames a rising three-point path. The points suggest hip, 
 | `--panel` | `#FFFFFF` | Cards and printed report |
 | `--ink` | `#142B2D` | Primary text |
 | `--ink-3` | `#52686A` | Secondary text |
-| `--amber-ink` | `#8A5A00` | Review required |
-| `--red-ink` | `#B53131` | Escalation and invalid |
+| `--amber-ink` | `#8A510E` | Review required |
+| `--red-ink` | `#A62F39` | Escalation and invalid |
 
 Outfit is used for headings and the name; Work Sans for interface copy and tabular measurements. Noto Sans Tamil is self-hosted for Tamil glyphs. All three are installed from `@fontsource` packages and served from the same origin. Their package licenses are OFL. Body text and camera validity take precedence over decorative motion. The welcome illustration remains explicitly synthetic. Focus rings, high-contrast mode and reduced-motion preferences remain active.
+
+## Experience modes
+
+The design uses the existing React components and clinical data, with mode-specific presentation:
+
+- **Patient:** a dated greeting, one prominent clinician-approved session card, then progress and assessment context. Buttons remain at least 48 px high where primary.
+- **Camera lab:** dark workspace, scrim-backed controls, large single cue, persistent labeled landmark validity and clearly paused measurements. Decoration never overlays an inferred clinical result.
+- **Clinician:** light documentation surface, restrained green rail, tabular numbers, source-colored evidence with text labels, and compact rows for audit review.
+
+At desktop widths the welcome illustration and clinical explanation sit side by side; below 900 px they stack. At 600 px the patient action fills the width and camera controls can wrap. Focus, high-contrast and reduced-motion preferences apply in all modes. The motion intensity is restrained (3/10); subtle hover feedback cannot imply tracking validity.
 
 ## Applied surfaces
 

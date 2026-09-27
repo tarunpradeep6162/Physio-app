@@ -171,7 +171,7 @@ export const IconMessage = (p: P) => (
   </svg>
 );
 
-/** Dheepika Motion: a D with a three-joint movement trajectory. */
+/** Dheepika Lab: a D with a three-joint movement trajectory. */
 export function BrandMark({ className = 'brand-mark' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 64 64" aria-hidden="true">

@@ -3,7 +3,7 @@
  * Clinical wording in this file is a DRAFT pending review by the supervising physiotherapist.
  */
 export const en = {
-  'app.name': 'Dheepika Motion',
+  'app.name': 'Dheepika Lab',
   'app.tagline': 'Camera-first movement intelligence for physiotherapy',
   'common.continue': 'Continue',
   'common.back': 'Back',
@@ -52,7 +52,7 @@ export const en = {
 
   // Welcome / auth
   'welcome.title': 'See movement. Guide recovery.',
-  'welcome.body': 'Dheepika Motion measures how you move using your phone or laptop camera, guides the exercises your physiotherapist prescribes, and tracks your progress over time.',
+  'welcome.body': 'Dheepika Lab measures how you move using your phone or laptop camera, guides the exercises your physiotherapist prescribes, and tracks your progress over time.',
   'welcome.point1': 'Your physiotherapist sets every target — the app never changes your plan on its own.',
   'welcome.point2': 'Movement is analysed on this device. Video is not uploaded.',
   'welcome.point3': 'Camera readings are estimates and are reviewed by your clinician.',

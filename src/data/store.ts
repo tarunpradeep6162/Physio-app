@@ -30,7 +30,7 @@ export function uuid(): string {
 }
 
 export const DEFAULT_SETTINGS: ClinicSettings = {
-  clinicName: 'Dheepika Motion',
+  clinicName: 'Dheepika Lab',
   emergencyNumber: '112',
   thresholds: {
     shoulder_level: 2,

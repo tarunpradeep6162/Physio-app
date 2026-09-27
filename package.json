@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Dheepika Motion — camera-first movement intelligence platform for physiotherapy (MVP).",
+  "description": "Dheepika Lab — camera-first movement intelligence platform for physiotherapy (MVP).",
   "scripts": {
     "postinstall": "node scripts/prepare-pose-assets.mjs",
     "dev": "vite",

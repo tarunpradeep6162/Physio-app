@@ -1,7 +1,7 @@
-// Dheepika Motion service worker: offline app shell + cached pose runtime.
+// Dheepika Lab service worker: offline app shell + cached pose runtime.
 // Never caches API responses or anything containing patient data (all patient data lives in
 // on-device storage in this MVP build).
-const VERSION = 'dm-sw-1';
+const VERSION = 'dl-sw-2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (e) => {

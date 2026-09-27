@@ -28,8 +28,8 @@ export function PatientHome() {
   const alerts = db.alerts.filter((a) => a.patientId === patient.id && !a.resolvedAt && a.type.startsWith('red_flag'));
 
   return (
-    <div className="content stack loose">
-      <div className="row between wrap">
+    <div className="content stack loose patient-home">
+      <div className="row between wrap page-intro">
         <div>
           <p className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1>{t('home.greeting', { name: patient.name.split(' ')[0] })}</h1>
@@ -38,7 +38,7 @@ export function PatientHome() {
       </div>
       {alerts.length > 0 && <Notice tone="warn">{t('safety.review_body')}</Notice>}
 
-      <section className="panel dark stack">
+      <section className="panel dark stack session-hero">
         <div className="row between wrap">
           <span className="eyebrow" style={{ color: '#8fb0aa' }}>
             {t('home.today')}
@@ -75,11 +75,11 @@ export function PatientHome() {
         )}
       </section>
 
-      <div className="grid cols-3">
-        <div className="panel">
+      <div className="grid cols-3 patient-overview">
+        <div className="panel metric-card">
           <Stat label={t('home.adherence')} value={adh.pct === null ? '–' : `${Math.round(adh.pct * 100)}%`} sub={t('home.sessions_done', { done: adh.done, planned: adh.planned })} />
         </div>
-        <div className="panel">
+        <div className="panel metric-card">
           <Stat
             label={t('home.last_session')}
             value={last ? fmtDeg(Math.max(...last.results.map((r) => r.peakRom ?? 0))) : '–'}
@@ -105,7 +105,7 @@ function KneeCard({ patientId }: { patientId: string }) {
   // The most recent assessment whose report a clinician has approved (may be older than lastDone).
   const approvedReport = knee.find((a) => reportStatus(db, a.id).state === 'clinician_reviewed');
   return (
-    <div className="panel stack tight">
+    <div className="panel stack tight metric-card knee-card">
       <span className="stat-label">Knee assessment</span>
       {open ? (
         <>
