@@ -37,6 +37,11 @@ export interface Patient {
   preferredLanguage: 'en' | 'ta';
   concern?: string;
   goal?: string;
+  /**
+   * Validation-study split, fixed per PARTICIPANT (never per clip) so tuning and final-evaluation
+   * data never share a person.
+   */
+  validationSplit?: 'tuning' | 'evaluation';
   createdAt: ISODate;
   isDemo?: boolean;
 }
@@ -305,6 +310,8 @@ export interface Measurement {
   reviewedBy?: ID;
   reviewedAt?: ISODate;
   reviewNote?: string;
+  /** When this clinician measurement is a REFERENCE for a camera capture metric (validation study). */
+  reference?: { instrument: 'goniometer' | 'inclinometer' | 'stopwatch' | 'video_annotation' | 'other'; blinded: boolean; note?: string };
   createdAt: ISODate;
   isDemo?: boolean;
 }
@@ -427,6 +434,11 @@ export interface ClinicSettings {
   validationModeEnabled: boolean;
   /** Clinical-lead sign-off of versioned clinical rule sets (safety, reasoning, protocols). */
   ruleApprovals: Record<string, { approvedBy: ID; approvedAt: ISODate }>;
+  /**
+   * Validation release thresholds, set and LOCKED by the clinical lead before the final evaluation
+   * set is analysed. Null until set — nothing passes without them.
+   */
+  releaseThresholds?: { values: Record<string, { loaWithin: number; maxFailureRate: number; minIcc: number; minN: number }>; lockedBy: ID; lockedAt: ISODate } | null;
   /** Raw video is never stored; landmark data retention in days (0 = keep until deleted). */
   retentionDays: number;
 }

@@ -1,5 +1,5 @@
 import { idx, LM } from '../landmarks';
-import { estimate } from '../measurements';
+import { checkRequired, estimate } from '../measurements';
 import type { ProcessedFrame } from '../pipeline';
 import type { Side } from '../types';
 import { jointAngle, toPixels } from '../vector';
@@ -12,7 +12,12 @@ import type { MetricSpec, ProtocolDef, ProtocolMetric, Recording, SignalFn } fro
  * patient's own baseline (and descriptive left/right differences).
  */
 
-export const KNEE_ALGORITHM_VERSION = 'pv-knee-1.0.0';
+/**
+ * pv-knee-1.1.0: plausibility guard + recovery window, per-landmark validation with body support,
+ * no coordinate smoothing, and stored signals/metrics from zero-phase smoothing (no filter lag).
+ * pv-knee-1.0.0 results are kept as recorded.
+ */
+export const KNEE_ALGORITHM_VERSION = 'pv-knee-1.1.0';
 
 const median = (xs: number[]) => {
   if (!xs.length) return null;
@@ -38,8 +43,8 @@ function kneeFlexionSignal(side: Side, extrasFn?: (f: ProcessedFrame) => Record<
   return (f) => {
     if (f.status !== 'tracking') return { value: null, confidence: 0, reason: f.status };
     if (f.orientation === 'unknown') return { value: null, confidence: 0, reason: 'orientation_uncertain' };
-    const e = estimate('knee_flexion', f.smoothed, f.width, f.height, side, { view: f.orientation });
-    return { value: e.value, confidence: e.confidence, reason: e.reason, extras: e.value === null ? undefined : extrasFn?.(f) };
+    const e = estimate('knee_flexion', f.smoothed, f.width, f.height, side, { view: f.orientation, support: f.support });
+    return { value: e.value, confidence: e.confidence, reason: e.reason, missing: e.missing, extras: e.value === null ? undefined : extrasFn?.(f) };
   };
 }
 
@@ -60,7 +65,8 @@ const FLEX_EXT: MetricSpec = {
   interpretation: '0° = straight. Higher = knee did not fully straighten. Hyperextension cannot be measured by this 2D method.',
 };
 
-export const KNEE_SUPPORTED_FLEXION: ProtocolDef = {
+/** v1.0.0 — kept so records made with it can be shown and recalculated as originally defined. */
+export const KNEE_SUPPORTED_FLEXION_V1_0: ProtocolDef = {
   id: 'knee_supported_flexion',
   version: '1.0.0',
   region: 'knee',
@@ -115,7 +121,8 @@ const STS_LEAN: MetricSpec = {
 };
 const STS_SEAT: MetricSpec = { id: 'sts_seated_knee_flexion', label: 'Seated knee flexion', unit: 'deg', method: 'Median knee flexion in the second before each rise.' };
 
-export const KNEE_SIT_TO_STAND: ProtocolDef = {
+/** v1.0.0 — kept for existing records. */
+export const KNEE_SIT_TO_STAND_V1_0: ProtocolDef = {
   id: 'knee_sit_to_stand',
   version: '1.0.0',
   region: 'knee',
@@ -141,7 +148,7 @@ export const KNEE_SIT_TO_STAND: ProtocolDef = {
   signalLabel: 'Knee flexion',
   signalUnit: 'deg',
   createSignal: (side) =>
-    kneeFlexionSignal(side ?? 'left', (f) => ({ trunk_lean: estimate('trunk_sagittal_lean', f.smoothed, f.width, f.height, side ?? 'left', { ignoreView: true }).value })),
+    kneeFlexionSignal(side ?? 'left', (f) => ({ trunk_lean: estimate('trunk_sagittal_lean', f.smoothed, f.width, f.height, side ?? 'left', { ignoreView: true, support: f.support }).value })),
   isComplete: (d) => d.validCount + (d.current?.engagedT != null ? 1 : 0) >= 5,
   closeAcceptsEngaged: true,
   analyze: (rec) => {
@@ -239,9 +246,10 @@ function squatSignal(): SignalFn {
     if (f.status !== 'tracking') return { value: null, confidence: 0, reason: f.status };
     if (f.orientation !== 'anterior') return { value: null, confidence: 0, reason: f.orientation === 'unknown' ? 'orientation_uncertain' : 'wrong_orientation' };
     const lms = f.smoothed!;
-    const conf = Math.min(...SQUAT_LMS.map((i) => lms[i].visibility));
-    if (SQUAT_LMS.some((i) => lms[i].x < -0.02 || lms[i].x > 1.02 || lms[i].y < -0.02 || lms[i].y > 1.02)) return { value: null, confidence: 0, reason: 'out_of_frame' };
-    if (conf < 0.6) return { value: null, confidence: conf, reason: 'occluded' };
+    // Each required landmark on its own: in frame, on the body (segmentation) and visible.
+    const chk = checkRequired(lms, SQUAT_LMS, 0.6, f.support);
+    const conf = chk.confidence;
+    if (chk.issue) return { value: null, confidence: chk.issue === 'out_of_frame' ? 0 : conf, reason: chk.issue, missing: chk.missing };
     const p = (i: number) => toPixels(lms[i], f.width, f.height);
     const hipY = (p(LM.leftHip).y + p(LM.rightHip).y) / 2;
     const len = (Math.hypot(p(LM.leftHip).x - p(LM.leftAnkle).x, p(LM.leftHip).y - p(LM.leftAnkle).y) + Math.hypot(p(LM.rightHip).x - p(LM.rightAnkle).x, p(LM.rightHip).y - p(LM.rightAnkle).y)) / 2;
@@ -260,7 +268,8 @@ function extraNearPeak(rec: Recording, c: Cycle, key: string): number | null {
   return median(vs);
 }
 
-export const KNEE_SQUAT: ProtocolDef = {
+/** v1.0.0 — kept for existing records. */
+export const KNEE_SQUAT_V1_0: ProtocolDef = {
   id: 'knee_squat',
   version: '1.0.0',
   region: 'knee',
@@ -302,13 +311,106 @@ export const KNEE_SQUAT: ProtocolDef = {
   references: ['Munro A, Herrington L, Carolan M. Reliability of 2-dimensional video assessment of frontal-plane dynamic knee valgus during common athletic screening tasks. J Sport Rehabil. 2012;21(1):7-11.'],
 };
 
+// ---------------------------------------------------------------------------------------------
+// v1.1.0 — same calculation as 1.0.0; adds per-test framing (distance judged on the body region
+// the test needs, not standing full-body rules), recommended phone orientation and an
+// illustrated setup guide. Captures made under 1.0.0 keep 1.0.0.
+// ---------------------------------------------------------------------------------------------
+const V1_1_CHANGES = [
+  'Distance is judged on the body region this test needs, not on whole-body standing rules',
+  'Recommended phone orientation and camera placement are shown with an illustrated example',
+  'A repetition with a tracking gap over 250 ms is not counted (interrupted), and needs a minimum number of valid frames',
+  'Each required landmark must be in frame, visible and on the body (segmentation, where enabled); a bystander, identity change or leg-label swap pauses measurement until tracking is stable again',
+  'Stored values use zero-phase smoothing (no filter lag); physically impossible jumps are rejected (algorithm pv-knee-1.1.0)',
+];
+const LIGHTING = 'Light falling on you from the front or side — not a bright window behind you.';
+const CLOTHING = 'Shorts or fitted clothing so the knee outline is visible; nothing covering the joints.';
+const leg = (s: Side | null) => {
+  const side = s ?? 'left';
+  return [idx('hip', side), idx('knee', side), idx('ankle', side), idx('heel', side), idx('foot', side)];
+};
+
+export const KNEE_SUPPORTED_FLEXION: ProtocolDef = {
+  ...KNEE_SUPPORTED_FLEXION_V1_0,
+  version: '1.1.0',
+  cycle: { ...KNEE_SUPPORTED_FLEXION_V1_0.cycle, maxGapInCycleMs: 250, minSamples: 10 },
+  framing: { axis: 'horizontal', extentLandmarks: leg, range: [0.3, 0.9], orientation: 'landscape', maxRollDeg: 4, minConfidence: 0.65 },
+  guide: {
+    camera: 'Phone turned sideways (landscape) on the floor or a low step, level, about 2–3 m from your side.',
+    distance: 'Your tested leg, hip to foot, fills about a third to most of the screen width.',
+    view: 'Lie on your back with the tested leg nearest the camera.',
+    region: 'Hip, knee, ankle and foot of the tested leg must stay visible the whole time.',
+    lighting: LIGHTING,
+    clothing: CLOTHING,
+    example: (s) => ({ kind: 'supine_heel_slide', side: s ?? 'left', kneeFlexion: 3 }),
+  },
+  changes: V1_1_CHANGES,
+};
+
+export const KNEE_SIT_TO_STAND: ProtocolDef = {
+  ...KNEE_SIT_TO_STAND_V1_0,
+  version: '1.1.0',
+  cycle: { ...KNEE_SIT_TO_STAND_V1_0.cycle, maxGapInCycleMs: 250, minSamples: 6 },
+  framing: {
+    axis: 'vertical',
+    extentLandmarks: (s) => {
+      const side = s ?? 'left';
+      return [idx('shoulder', side), idx('hip', side), idx('knee', side), idx('ankle', side), idx('foot', side)];
+    },
+    // Seated shoulder→foot extent; leaves headroom for standing up.
+    range: [0.3, 0.62],
+    orientation: 'portrait',
+    maxRollDeg: 4,
+    minConfidence: 0.65,
+  },
+  guide: {
+    camera: 'Phone upright (portrait) at about hip height, level, 2–3 m to your side.',
+    distance: 'Seated, your shoulders to feet fill about half of the screen height, so you still fit when you stand.',
+    view: 'Sit side-on, the chosen side nearest the camera, arms crossed on your chest.',
+    region: 'Shoulder, hip, knee, ankle and foot on that side stay visible, seated and standing.',
+    lighting: LIGHTING,
+    clothing: CLOTHING,
+    example: (s) => ({ kind: 'sit_to_stand_lateral', side: s ?? 'left', kneeFlexion: 92, trunkLean: 8 }),
+  },
+  changes: V1_1_CHANGES,
+};
+
+export const KNEE_SQUAT: ProtocolDef = {
+  ...KNEE_SQUAT_V1_0,
+  version: '1.1.0',
+  cycle: { ...KNEE_SQUAT_V1_0.cycle, maxGapInCycleMs: 250, minSamples: 8 },
+  framing: {
+    axis: 'vertical',
+    extentLandmarks: () => [LM.leftHip, LM.rightHip, LM.leftKnee, LM.rightKnee, LM.leftAnkle, LM.rightAnkle, LM.leftFootIndex, LM.rightFootIndex],
+    range: [0.3, 0.7],
+    orientation: 'portrait',
+    maxRollDeg: 4,
+    minConfidence: 0.65,
+  },
+  guide: {
+    camera: 'Phone upright (portrait) at knee height, level, 2–3 m in front of you.',
+    distance: 'Standing, your hips to feet fill about half of the screen height; both feet in view.',
+    view: 'Face the camera, feet hip-width apart, toes forward.',
+    region: 'Both hips, knees, ankles and feet stay visible, including at the bottom of the squat.',
+    lighting: LIGHTING,
+    clothing: CLOTHING,
+    example: () => ({ kind: 'squat_anterior', depth: 0 }),
+  },
+  changes: V1_1_CHANGES,
+};
+
 export const PROTOCOLS: Record<string, ProtocolDef> = {
   [KNEE_SUPPORTED_FLEXION.id]: KNEE_SUPPORTED_FLEXION,
   [KNEE_SIT_TO_STAND.id]: KNEE_SIT_TO_STAND,
   [KNEE_SQUAT.id]: KNEE_SQUAT,
 };
 
-const HISTORY: Record<string, ProtocolDef> = Object.fromEntries(Object.values(PROTOCOLS).map((p) => [`${p.id}@${p.version}`, p]));
+const HISTORY: Record<string, ProtocolDef> = Object.fromEntries(
+  [KNEE_SUPPORTED_FLEXION_V1_0, KNEE_SIT_TO_STAND_V1_0, KNEE_SQUAT_V1_0, ...Object.values(PROTOCOLS)].map((p) => [`${p.id}@${p.version}`, p]),
+);
+
+/** Every version ever released, for provenance display. */
+export const PROTOCOL_VERSIONS = Object.keys(HISTORY);
 
 export function getProtocol(id: string, version?: string): ProtocolDef {
   return (version && HISTORY[`${id}@${version}`]) || PROTOCOLS[id];

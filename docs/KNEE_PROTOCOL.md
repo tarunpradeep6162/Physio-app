@@ -12,7 +12,7 @@ Step 2 of the build sequence. Everything below is implemented in code. The sourc
 | Safety (red-flag) questionnaire | `knee-safety@1.0.0` | Clinical lead | Draft |
 | Observation rules | `knee-observations-1.0.0` | Clinical lead | Draft. Thresholds are editable in Settings. |
 | Differential consideration rules | `knee-considerations@0.1.0` | Clinical lead | Draft |
-| Test protocols | `knee_supported_flexion@1.0.0`, `knee_sit_to_stand@1.0.0`, `knee_squat@1.0.0` | Clinical lead (protocol), engineering (algorithm `pv-knee-1.0.0`) | Draft |
+| Test protocols | `knee_supported_flexion@1.1.0`, `knee_sit_to_stand@1.1.0`, `knee_squat@1.1.0` (1.0.0 retained for older records) | Clinical lead (protocol), engineering (algorithm `pv-knee-1.1.0`) | Draft |
 | Report template | `pv-knee-report-1.0.0` | Clinical lead | Draft |
 
 Code may organise language and evidence. It cannot add emergency criteria, change a safety action, or change a prescription. Those change only through a new clinician-authored version.
@@ -32,10 +32,22 @@ The most severe triggered action wins. Anything other than `clear` does three th
 
 ## Capture protocols
 
-These rules apply to all three protocols:
+### Version 1.1.0 (current) and 1.0.0 (history)
 
-- Angles are computed in pixel space from filtered landmarks (One Euro filter).
-- A frame yields `null`, never a number, when there is no person, more than one person, the wrong or uncertain view, a required landmark below 0.6 visibility, a landmark out of frame, or a degenerate segment.
+New captures use **1.1.0** with algorithm `pv-knee-1.1.0`. Each saved capture keeps the protocol and algorithm version it was recorded with, and is always read back with that version's definition (`getProtocol(id, version)` looks in `HISTORY`). Changes in 1.1.0, as listed in each protocol's `changes` field:
+
+1. Distance is judged on the body region the test needs (the tested leg for the heel slide; shoulder to foot for sit-to-stand; hips to feet for the squat), not on whole-body standing rules.
+2. The capture screen shows the recommended phone orientation, placement, distance, view, lighting and clothing with an illustration.
+3. A repetition with a tracking gap longer than 250 ms is **not counted** (`tracking_gap`), and needs a minimum number of valid frames (`too_few_frames`: 10 heel slide, 6 sit-to-stand, 8 squat).
+4. Each required landmark must be inside the frame (not within 4% of the edge, where the model extrapolates), visible and, where segmentation is enabled, on the body. A bystander, a sudden identity change or a left/right leg swap pauses measurement for at least 500 ms / 3 frames until tracking is stable again.
+5. Stored values use zero-phase smoothing (median ±100 ms, then mean ±150 ms), so peaks are not delayed or flattened by a causal filter. The live display uses a One Euro angle filter. Physically implausible jumps (> 900°/s for angles, > 400 %/s for squat depth) are rejected, with a 250 ms recovery window. The raw, guarded and stored values are all kept, together with the filter settings (`processing` in the capture).
+
+The thresholds in 1.1.0 are engineering choices tested on rendered figures (see `docs/tracking/RESULTS.md`). They are drafts for the clinical lead like everything else in this document.
+
+### Rules for all protocols
+
+- Angles are computed in 2D pixel space from unsmoothed landmarks. The live display smooths the angle; the stored signal is smoothed zero-phase after capture.
+- A frame yields `null`, never a number, when there is no person, more than one person, the wrong or uncertain view, a required landmark below 0.6 visibility, a landmark out of frame or in the edge band, hands in front of the torso (for torso and pelvis measures), re-acquisition after a tracking gap or identity change, or a degenerate segment.
 - Calibration must pass and stay stable before recording. It checks that **every** required landmark is at or above the confidence threshold.
 - Replay stores landmarks only, never images: 19 joints at 10 Hz, encoded as uint16.
 
@@ -46,7 +58,7 @@ These rules apply to all three protocols:
 | View | Lateral, with the tested side toward the camera. The camera is low and level. Distance is judged on horizontal extent. |
 | Landmarks | Hip, knee and ankle on the tested side |
 | Signal | Knee flexion = 180° − ∠(hip, knee, ankle) |
-| Cycle | Rises past 25° (rest), reaches ≥ 45° (engaged), returns below 25°. Minimum 1.5 s. A gap over 2 s discards the cycle. It needs 0.5 s of steady rest before counting. |
+| Cycle | Rises past 25° (rest), reaches ≥ 45° (engaged), returns below 25°. Minimum 1.5 s. A gap over 2 s discards the cycle (1.1.0: over 250 ms, and at least 10 valid frames). It needs 0.5 s of steady rest before counting. |
 | Target | 3 cycles, 75 s max |
 | Metrics | `knee_flexion_peak`: max over valid cycles. `knee_extension_position`: 5th percentile of the signal, floored at 0. |
 | Quality gate | Coverage ≥ 75%, mean confidence ≥ 0.7, ≥ 2 valid cycles |

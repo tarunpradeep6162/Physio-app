@@ -129,3 +129,56 @@ describe('reassessment condition matching', () => {
     expect(far.score).toBeLessThan(1);
   });
 });
+
+describe('engine change during capture', () => {
+  it('invalidates every metric when the tracking engine changed mid-capture', async () => {
+    const { ProtocolRecorder } = await import('./recorder');
+    const { getProtocol } = await import('./knee');
+    const { MotionPipeline } = await import('../pipeline');
+    const { sceneAt, SIM_PROVIDER } = await import('./simulate');
+    const { synthesize } = await import('../pose/synthetic');
+    const rec = new ProtocolRecorder(getProtocol('knee_supported_flexion'), 'left');
+    const pipe = new MotionPipeline();
+    let t = 0;
+    for (; t < 16000; t += 33) {
+      const lms = synthesize(sceneAt('knee_supported_flexion', 'left', t / 1000, { peak: 110 })!);
+      rec.update(pipe.process({ timestamp: t, width: 720, height: 1280, poses: [lms], inferenceMs: 4, provider: SIM_PROVIDER }), t, 30);
+      if (t === 6006) rec.invalidate('Tracking engine changed during capture');
+    }
+    const r = rec.finish(t);
+    expect(r.quality.verdict).toBe('invalid');
+    expect(r.quality.reasons).toContain('Tracking engine changed during capture');
+    expect(r.metrics.every((m) => m.validity === 'invalid')).toBe(true);
+  });
+});
+
+describe('per-test framing (v1.1.0)', () => {
+  it('a heel slide framed on the leg passes even with the head out of frame; whole-body rules would refuse it', async () => {
+    const { evaluateCalibration } = await import('../calibration');
+    const { MotionPipeline } = await import('../pipeline');
+    const { synthesize } = await import('../pose/synthetic');
+    const { getProtocol } = await import('./knee');
+    const { SIM_PROVIDER } = await import('./simulate');
+    const def = getProtocol('knee_supported_flexion');
+    expect(def.version).toBe('1.1.0');
+    // Left heel slide (head at image-right). Shift the body so the head leaves the frame.
+    const lms = synthesize({ kind: 'supine_heel_slide', side: 'left', kneeFlexion: 3 }).map((l) => ({ ...l, x: l.x + 0.2 }));
+    expect(lms[LM.nose].x).toBeGreaterThan(1);
+    const pipe = new MotionPipeline();
+    let f = pipe.process({ timestamp: 0, width: 720, height: 1280, poses: [lms], inferenceMs: 1, provider: SIM_PROVIDER });
+    for (let t = 33; t < 400; t += 33) f = pipe.process({ timestamp: t, width: 720, height: 1280, poses: [lms], inferenceMs: 1, provider: SIM_PROVIDER });
+    const fr = def.framing!;
+    const base = { landmarks: def.requiredLandmarks('left'), views: def.views('left'), minConfidence: 0.65, maxRollDeg: 4 };
+    const now = evaluateCalibration({ frame: f, req: { ...base, heightRange: fr.range, extentAxis: fr.axis, extentLandmarks: fr.extentLandmarks('left') }, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
+    const old = evaluateCalibration({ frame: f, req: { ...base, heightRange: [0.45, 0.98], extentAxis: 'horizontal' }, lighting: { meanLuma: 140, clippedFraction: 0 }, cameraRollDeg: 0, facing: 'user' });
+    expect(now.checks.find((c) => c.id === 'distance')!.status).toBe('pass');
+    expect(old.checks.find((c) => c.id === 'distance')!.status).toBe('fail');
+  });
+
+  it('keeps v1.0.0 definitions for existing records', async () => {
+    const { getProtocol, PROTOCOL_VERSIONS } = await import('./knee');
+    expect(getProtocol('knee_squat', '1.0.0').version).toBe('1.0.0');
+    expect(getProtocol('knee_squat', '1.0.0').framing).toBeUndefined();
+    expect(PROTOCOL_VERSIONS).toEqual(expect.arrayContaining(['knee_squat@1.0.0', 'knee_squat@1.1.0']));
+  });
+});

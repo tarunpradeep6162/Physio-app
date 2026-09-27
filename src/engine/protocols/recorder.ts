@@ -1,11 +1,17 @@
 import { createAngleFilter, type ScalarFilter } from '../filters';
+import { SignalGuard } from '../signalGuard';
+import { zeroPhaseSmooth } from '../zeroPhase';
 import { LM } from '../landmarks';
 import type { ProcessedFrame } from '../pipeline';
 import type { Landmark, Side } from '../types';
 import { compactLandmarks, encodeFrames } from './codec';
 import { CycleDetector, type Cycle, type CycleEvent } from './cycles';
 import { KNEE_ALGORITHM_VERSION } from './knee';
-import type { CaptureConfig, ConditionMatch, Keyframe, MovementEvent, ProtocolDef, ProtocolResult, QualityReport, Recording, SignalFn } from './types';
+import type { CaptureConfig, ConditionMatch, Keyframe, MovementEvent, ProtocolDef, ProtocolResult, QualityReport, Recording, SignalFn, SignalProcessing } from './types';
+
+/** Stored signals: centred median ±100 ms then centred mean ±150 ms (Phase 7 filter study). */
+export const STORED_MEDIAN_MS = 100;
+export const STORED_MEAN_MS = 150;
 
 /**
  * Records one protocol capture: per-frame signal (confidence-gated, filtered), cycle
@@ -21,6 +27,8 @@ export interface LiveState {
   attempts: number;
   value: number | null;
   reason?: string;
+  /** Required landmarks that failed validation on the latest frame (indices). */
+  missing?: number[];
   complete: boolean;
   elapsedSec: number;
 }
@@ -39,16 +47,28 @@ export class ProtocolRecorder {
   private dims = { w: 720, h: 1280 };
   private fpsSum = 0;
   private fpsN = 0;
+  private forced: string[] = [];
+  private readonly guard: SignalGuard;
 
   constructor(readonly def: ProtocolDef, readonly side: Side | null) {
     this.signal = def.createSignal(side);
     this.filter = createAngleFilter('one_euro');
+    // Physically impossible jumps are rejected; values resume only after a short stable window.
+    this.guard = new SignalGuard(def.signalUnit === 'deg' ? 900 : 400);
     this.detector = new CycleDetector(def.cycle);
     this.rec = { samples: [], detector: this.detector, events: [], fps: null };
   }
 
   get state(): LiveState {
     return this.live;
+  }
+
+  /**
+   * Marks this attempt invalid (e.g. the pose model, delegate or thread changed mid-capture).
+   * Numbers from a capture that mixed two tracking engines are never reported.
+   */
+  invalidate(reason: string) {
+    if (!this.forced.includes(reason)) this.forced.push(reason);
   }
 
   update(frame: ProcessedFrame, t: number, fps?: number): CycleEvent[] {
@@ -60,10 +80,12 @@ export class ProtocolRecorder {
     if (frame.orientation !== 'unknown') this.view = frame.orientation;
     this.dims = { w: frame.width, h: frame.height };
     const s = this.signal(frame);
+    const g = this.guard.update(t, s.value);
     let value: number | null = null;
-    if (s.value !== null) value = this.filter.filter(s.value, t);
+    if (g.value !== null) value = this.filter.filter(g.value, t);
     else this.filter.reset();
-    this.rec.samples.push({ t, raw: s.value, value, confidence: s.confidence, reason: s.reason, extras: s.extras });
+    const reason = s.value === null ? s.reason : g.reason;
+    this.rec.samples.push({ t, raw: s.value, guarded: g.value, live: value, value, confidence: s.confidence, reason, extras: g.value === null ? undefined : s.extras, missing: s.missing });
     const events = this.detector.update(t, value);
     for (const e of events) {
       const me: MovementEvent = { t, type: e.type === 'complete' ? 'end' : e.type, cycle: 'index' in e ? e.index : 'cycle' in e ? e.cycle.index : undefined };
@@ -80,7 +102,8 @@ export class ProtocolRecorder {
       validCycles: this.detector.validCount,
       attempts: this.detector.cycles.length + (this.detector.current ? 1 : 0),
       value,
-      reason: s.reason,
+      reason,
+      missing: s.missing,
       complete: this.def.isComplete(this.detector) || (t - this.startT) / 1000 >= this.def.maxDurationSec,
       elapsedSec: (t - this.startT) / 1000,
     };
@@ -91,6 +114,7 @@ export class ProtocolRecorder {
     this.detector.close(t, this.def.closeAcceptsEngaged);
     this.rec.fps = this.fpsN ? this.fpsSum / this.fpsN : null;
     const t0 = this.startT ?? t;
+    this.reanalyseZeroPhase(t);
     const metrics = this.def.analyze(this.rec, this.side);
     const quality = this.quality();
     // A failed capture keeps its numbers for audit/validation, but every metric is invalid.
@@ -124,7 +148,52 @@ export class ProtocolRecorder {
       events,
       keyframes: this.keyframes(t0),
       frames: encodeFrames(this.stored),
+      processing: this.processing(),
     };
+  }
+
+  private processing(): SignalProcessing {
+    return {
+      coordinateFilter: 'none',
+      liveAngleFilter: 'one_euro(minCutoff 1.2 Hz, beta 0.015)',
+      guard: { maxRatePerSec: this.guard.maxRate, recoverMs: this.guard.recoverMs, gapMs: this.guard.gapMs },
+      stored: `zero-phase median ±${STORED_MEDIAN_MS} ms then mean ±${STORED_MEAN_MS} ms of the guarded signal`,
+    };
+  }
+
+  /**
+   * After the capture, replace the (lagging) live values with a zero-phase smoothing of the guarded
+   * signal and re-locate each repetition's peak and engaged time on it, so stored values, peaks and
+   * keyframes refer to the moment the frame was captured. Cycle boundaries stay as detected live.
+   */
+  private reanalyseZeroPhase(tEnd: number) {
+    const S = this.rec.samples;
+    const stored = zeroPhaseSmooth(S.map((x) => ({ t: x.t, v: x.guarded ?? null })), STORED_MEDIAN_MS, STORED_MEAN_MS);
+    S.forEach((x, i) => (x.value = stored[i]));
+    const keys = new Set(S.flatMap((x) => Object.keys(x.extras ?? {})));
+    for (const k of keys) {
+      const sm = zeroPhaseSmooth(S.map((x) => ({ t: x.t, v: typeof x.extras?.[k] === 'number' ? (x.extras[k] as number) : null })), STORED_MEDIAN_MS, STORED_MEAN_MS);
+      S.forEach((x, i) => {
+        if (x.extras && k in x.extras) x.extras[k] = sm[i];
+      });
+    }
+    const up = this.def.cycle.direction === 'up';
+    const eng = this.def.cycle.engaged;
+    for (const c of this.detector.cycles) {
+      const end = c.endT ?? tEnd;
+      let best: { t: number; v: number } | null = null;
+      let engagedT: number | null = null;
+      for (const x of S) {
+        if (x.t < c.startT || x.t > end || x.value === null) continue;
+        if (!best || (up ? x.value > best.v : x.value < best.v)) best = { t: x.t, v: x.value };
+        if (engagedT === null && (up ? x.value >= eng : x.value <= eng)) engagedT = x.t;
+      }
+      if (best) {
+        c.peak = best.v;
+        c.peakT = best.t;
+      }
+      if (c.engagedT !== null && engagedT !== null) c.engagedT = engagedT;
+    }
   }
 
   private quality(): QualityReport {
@@ -142,6 +211,7 @@ export class ProtocolRecorder {
     if (coverage < q.minCoverage) reasons.push(`Tracking coverage ${Math.round(coverage * 100)}% < ${Math.round(q.minCoverage * 100)}% required`);
     if (meanConfidence !== null && meanConfidence < q.minMeanConfidence) reasons.push(`Mean landmark confidence ${meanConfidence.toFixed(2)} < ${q.minMeanConfidence}`);
     if (validCycles < q.minValidCycles) reasons.push(`${validCycles} valid repetition(s) < ${q.minValidCycles} required`);
+    reasons.push(...this.forced);
     return {
       verdict: reasons.length ? 'invalid' : 'valid',
       reasons,

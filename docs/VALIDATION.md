@@ -33,7 +33,7 @@ Also record the reassessment setup-match score for each repeat capture, so you c
 1. **Concurrent validity.** Record camera estimates and universal-goniometer measurements (from a blinded assessor) at the same instant, on at least 30 participants per movement and side. Report the mean difference (bias), 95% Bland–Altman limits of agreement, and ICC(2,1).
 2. **Reliability.** Repeat on 2 separate days (test–retest ICC, SEM, MDC95).
 3. **Conditions matrix.** Test phone vs laptop, front vs rear camera, distance, lighting, clothing, and skin tones (Fitzpatrick I–VI). Tracking coverage and bias must hold across all of them.
-4. **Filter selection.** Compare One Euro, EMA and Kalman on the recorded traces: jitter SD while holding still, and peak attenuation and lag during movement. Choose the default from the data.
+4. **Filter selection.** Done on rendered figures (Phase 7, `docs/tracking/RESULTS.md`): coordinates are not smoothed; the live angle uses One Euro; stored signals use zero-phase median + mean smoothing. Repeat the comparison on real recorded traces (landmark-only, consented) before freezing the evaluation split.
 5. **Rep counting.** Compare with manual video annotation and report precision and recall for counted reps and false counts.
 6. **Clinical content review.** Review the red-flag questions, default targets, observation thresholds and translations.
 
