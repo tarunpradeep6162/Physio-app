@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { buildDemoDb } from './demo';
+import { migrate } from './store';
 
 describe('demo data', () => {
   const db = buildDemoDb();
   it('uses pseudonymous patients only', () => {
     expect(db.patients.every((p) => /^Demo patient DP-\d\d$/.test(p.name) && p.isDemo)).toBe(true);
+  });
+  it('attributes simulated approvals to a demo clinician, including existing browser copies', () => {
+    expect(db.clinicians[0].name).toBe('Demo clinician');
+    const old = structuredClone(db);
+    old.clinicians[0].name = 'Dheepika';
+    old.users[0].displayName = 'Dheepika';
+    const restored = migrate(old);
+    expect(restored.clinicians[0].name).toBe('Demo clinician');
+    expect(restored.users[0].displayName).toBe('Demo clinician');
+    const real = structuredClone(old);
+    real.clinicians[0].isDemo = false;
+    expect(migrate(real).clinicians[0].name).toBe('Dheepika');
   });
   it('derives every camera number from engine runs over synthetic landmarks', () => {
     expect(db.captures.length).toBeGreaterThan(8);

@@ -43,8 +43,8 @@ function simConfig(protocolId: string, side: Side | null, p: SimParams) {
 export function buildDemoDb(): DB {
   const db = emptyDb();
   const now = new Date().toISOString();
-  const clinUser = { id: uuid(), email: 'demo.clinician@physiovision.local', passwordHash: '', passwordSalt: '', role: 'clinician' as const, displayName: 'Dheepika', createdAt: now, isDemo: true };
-  const clin = { id: uuid(), userId: clinUser.id, name: 'Dheepika', title: 'Physiotherapist', clinic: 'Dheepika Lab', createdAt: now, isDemo: true };
+  const clinUser = { id: uuid(), email: 'demo.clinician@physiovision.local', passwordHash: '', passwordSalt: '', role: 'clinician' as const, displayName: 'Demo clinician', createdAt: now, isDemo: true };
+  const clin = { id: uuid(), userId: clinUser.id, name: 'Demo clinician', title: 'Physiotherapist (simulation)', clinic: 'Dheepika Lab', createdAt: now, isDemo: true };
   db.users.push(clinUser);
   db.clinicians.push(clin);
 

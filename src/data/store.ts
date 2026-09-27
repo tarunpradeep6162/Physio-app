@@ -112,6 +112,10 @@ export function migrate(parsed: DB): DB {
   if (v > SCHEMA_VERSION) return parsed;
   const out: DB = { ...base, ...parsed, schemaVersion: SCHEMA_VERSION };
   out.settings = { ...DEFAULT_SETTINGS, ...parsed.settings, thresholds: { ...DEFAULT_SETTINGS.thresholds, ...parsed.settings?.thresholds } };
+  // Earlier demo fixtures used the clinical lead's real name for a simulated sign-off. Existing
+  // browser copies must be corrected too; scope this to explicitly marked demo identities only.
+  out.users = out.users.map((u) => u.isDemo && u.displayName === 'Dheepika' ? { ...u, displayName: 'Demo clinician' } : u);
+  out.clinicians = out.clinicians.map((c) => c.isDemo && c.name === 'Dheepika' ? { ...c, name: 'Demo clinician', title: 'Physiotherapist (simulation)' } : c);
   if (v < 2) {
     // v1 → v2: knee pathway tables; existing assessments are 'general' initial assessments.
     out.assessments = parsed.assessments.map((a) => ({ region: 'general', type: 'initial', ...a }));
