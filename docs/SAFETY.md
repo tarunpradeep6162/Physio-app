@@ -41,6 +41,15 @@ When that happens the UI shows "Measurement paused — reposition your body". Ho
 - **Review** (progressive weakness, unassessed trauma, fever, weight loss, night pain, cancer history): the assessment goes on safety hold, camera tests are blocked, and a warning alert is raised.
 - A pain increase of 2 or more points across a session raises a clinician alert, and the patient is told to stop if the pain is sharp or worsening.
 
+## Knee pathway additions
+
+- **Safety questionnaire `knee-safety@1.0.0`** (draft) has 11 items with emergency, urgent or clinician-review actions. Every response stores the questionnaire version, the question text, the answer, whether it triggered, the action and the time. Any triggered item blocks camera tests and exercise, raises an alert, and puts every differential consideration into `safety_hold`.
+- **Reasoning support, never diagnosis.** Considerations are shown as *supportive*, *conflicting*, *insufficient evidence*, *additional examination required* or *safety hold*. Each has linked evidence, missing information and "What would change this assessment?". There are no probabilities or scores. A consideration with a declared defining feature cannot be *supportive* without it. The clinician can accept, reject, defer or annotate each one and records the final impression. The AI suggestion and the clinician action are both kept.
+- **Invalid captures are never evidence.** A capture that fails its quality gate has every metric marked invalid and shown as "Not reported". No observation fact is drawn from it.
+- **Left/right differences are descriptive.** An asymmetry observation is never labelled as pathology.
+- **Reports.** A report is "AI preliminary — requires clinician review" (watermarked, no sign-off block) until a clinician approves it with an impression recorded. If assessment data changes after approval, the report reverts to preliminary. Patients see only clinician-reviewed reports.
+- **Pain-pause rule.** A session stops only under the clinician-set limits (`painStopAt`, `painRiseStop`). The prescription is never altered automatically.
+
 ## Demo data
 
-Every simulated row is flagged `isDemo` and/or has provenance source `simulated_demo`. It is shown with a DEMO/SIMULATED badge and a banner. It can be removed in Settings.
+Every simulated row is flagged `isDemo` and/or has provenance source `simulated_demo`. It is shown with a DEMO/SIMULATED badge and a banner. It can be removed in Settings. Demo patients are pseudonymous codes (DP-01…), and every demo value is produced by the real engine running on synthetic landmarks, never typed in.

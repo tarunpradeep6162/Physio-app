@@ -6,20 +6,25 @@ A camera-first movement-intelligence platform for physiotherapy. The camera, the
 
 Built for Dheepika's physiotherapy practice. In the demo dataset she is the physiotherapist. You can change her name in Settings.
 
+**Live:** https://physiovision-ai-eta.vercel.app (Vercel, deployed from this branch).
+
+**Knee pathway (first release).** The pathway runs: profile → symptom map with radiation path → adaptive history → versioned safety screen → clinician-editable test plan → calibration → three knee protocols (supported heel-slide flexion/extension, five-times sit-to-stand, double-leg squat) with landmark-only replay → bilateral comparison → evidence map with "Why?" → clinician reasoning review and impression → prescription with progression and pain-pause rule → Motion Mirror → matched reassessment → baseline/current comparison → 14-section PDF report. See [`docs/IMPLEMENTATION_REPORT.md`](docs/IMPLEMENTATION_REPORT.md) for status, measured performance and gaps, [`docs/KNEE_PROTOCOL.md`](docs/KNEE_PROTOCOL.md) for protocols and data contract, and [`docs/AUDIT.md`](docs/AUDIT.md) for the pre-build audit.
+
 ---
 
 ## Quick start
 
 ```bash
-npm install          # also copies the MediaPipe WASM runtime and downloads the pose model into public/pose/
+npm install          # also copies the MediaPipe WASM runtime and downloads the Lite and Full pose models into public/pose/
 npm run dev          # http://localhost:5173
 npm test             # engine + assessment unit tests
 npm run build        # type-check + production build (dist/)
+npm run serve        # serve dist/ with the same headers and rewrites as vercel.json
 ```
 
 The camera needs a **secure context**. `localhost` works. To test on a phone over your LAN, serve over HTTPS, for example with `vite --host` behind a TLS proxy or a tunnel.
 
-On the welcome screen, **Explore demo — patient** or **Explore demo — physiotherapist** loads clearly labelled simulated data. To try the full camera experience without a camera, choose **Settings → Motion engine → Simulated**. Every camera screen also offers "Use simulated demo instead" if the camera fails.
+On the welcome screen, **Explore demo — patient** or **Explore demo — physiotherapist** loads clearly labelled simulated data: three pseudonymous patients (DP-01 reviewed baseline, report and reassessment; DP-02 submitted assessment with one invalid capture; DP-03 safety hold). Every demo number is produced by running the real engine on synthetic landmarks. To try the full camera experience without a camera, choose **Settings → Motion engine → Simulated**. Every camera screen also offers "Use simulated demo instead" if the camera fails.
 
 ## What's in the MVP
 
@@ -62,18 +67,20 @@ src/
     measurements.ts  measurement registry (method, landmarks, valid views, version)
     calibration.ts   scene checks + stability gate
     posture.ts       static posture metrics + capture aggregation
-    exercises/       versioned exercise definitions & prescription validation
+    protocols/       knee test protocols, cycle detector, recorder + quality gates, replay codec, simulator
+    exercises/       versioned exercise definitions, prescription validation, pain-pause rule
     stateMachine.ts  repetition state machine
     exerciseRunner.ts sets/rest/form rules/result recording
     feedback.ts      display cue + event-driven speech cues
     provenance.ts    who/when/how/model/algorithm/device
   camera/            getUserMedia, device roll, real-time loop hook, canvas overlay renderer
   voice/             Web Speech voice coach (priority, cooldowns, captions)
-  data/              domain models, local repository (audited writes), auth, prefs, demo seed
+  clinical/          versioned intake, safety, evidence, reasoning and report rules (knee)
+  data/              domain models, local repository (audited writes, schema v2 migration), auth, prefs, demo seed
   features/          onboarding · bodymap · assessment · scan · mirror · session · progress ·
-                     patient · clinician · validation
+                     patient · clinician · validation · knee · report
 db/schema.sql        PostgreSQL target schema
-docs/                SAFETY.md · ARCHITECTURE.md · VALIDATION.md
+docs/                AUDIT.md · KNEE_PROTOCOL.md · IMPLEMENTATION_REPORT.md · SAFETY.md · ARCHITECTURE.md · VALIDATION.md
 ```
 
 Real-time path: `camera frame → pose provider (on-device) → MotionPipeline → measurement estimate → angle filter → RepStateMachine → FeedbackEngine → canvas + voice`. The loop runs outside React. The canvas is drawn every frame, and React state updates at about 4–15 Hz. Every screen is lazy-loaded. The pose runtime (≈46 kB gz + WASM/model) loads only when a camera screen opens.
@@ -87,5 +94,6 @@ More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Safety model: [`doc
 - **No C7 landmark in BlazePose.** Forward-head posture is reported as an *ear–shoulder line angle (proxy)*, never as a craniovertebral angle.
 - **Camera level** comes from the device tilt sensor. Laptops have no sensor, so their level check shows as "unknown" rather than "pass".
 - The **3D anatomy** body map is not yet built. The 2D map uses view-independent region ids, so a WebGL renderer can replace it without data migration.
-- **Clinical content** is a draft awaiting review by the supervising physiotherapist: red-flag questions, default targets, observation thresholds and Tamil translations.
+- **Clinical content** is a draft awaiting review by the supervising physiotherapist: safety and history questionnaires, knee protocols, observation and consideration rules, the report template, default targets, observation thresholds and Tamil translations. Approvals are recorded per version in Settings.
+- The knee pathway has only been exercised with the simulator and a fake camera in this environment. A real-person capture on a phone still needs to be tested, and so does real on-device inference latency.
 - The single-clinic MVP shows clinicians every patient on the device. Care-relationship scoping is modelled in the schema/RLS.

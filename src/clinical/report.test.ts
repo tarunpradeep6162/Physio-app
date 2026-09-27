@@ -15,13 +15,21 @@ describe('report', () => {
     const reasoning = JSON.stringify(m.sections.find((s) => s.n === 11));
     expect(reasoning).toContain('DRAFT — no clinician conclusion');
     // Missing data is marked, never invented.
-    expect(JSON.stringify(m.sections.find((s) => s.n === 4))).toContain('Not available'.slice(0, 0) + 'No static posture capture');
+    expect(JSON.stringify(m.sections.find((s) => s.n === 4))).toContain('No static posture capture');
   });
 
   it('shows the clinician conclusion only once approved', () => {
     const m = buildReport(db, base.id, 'clinician');
     expect(m.state).toBe('clinician_reviewed');
     expect(JSON.stringify(m.sections.find((s) => s.n === 11))).toContain('Clinician conclusion');
+  });
+
+  it('reverts to preliminary when assessment data changes after approval', () => {
+    const copy = structuredClone(db);
+    copy.amendments.push({ id: 'late', assessmentId: base.id, by: 'u', at: new Date(Date.now() + 60_000).toISOString(), key: 'onset', text: 'late edit' } as never);
+    const m = buildReport(copy, base.id, 'clinician');
+    expect(m.state).toBe('preliminary');
+    expect(JSON.stringify(m.sections.find((s) => s.n === 11))).not.toContain('Clinician conclusion');
   });
 
   it('renders a real multi-page PDF', () => {

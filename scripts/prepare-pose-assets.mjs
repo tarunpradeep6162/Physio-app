@@ -13,6 +13,8 @@ const modelDir = join(root, 'public/pose/models');
 const MODELS = {
   'pose_landmarker_lite.task':
     'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
+  'pose_landmarker_full.task':
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
 };
 
 async function exists(p) {
@@ -37,10 +39,14 @@ try {
   for (const [file, url] of Object.entries(MODELS)) {
     const dst = join(modelDir, file);
     if (await exists(dst)) continue;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-    await writeFile(dst, Buffer.from(await res.arrayBuffer()));
-    console.log(`[pose-assets] downloaded ${file}`);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      await writeFile(dst, Buffer.from(await res.arrayBuffer()));
+      console.log(`[pose-assets] downloaded ${file}`);
+    } catch (err) {
+      console.warn(`[pose-assets] could not download ${file}; runtime will use CDN fallback.`, err.message);
+    }
   }
 } catch (err) {
   console.warn('[pose-assets] could not prepare local pose assets; runtime will use CDN fallback.', err.message);

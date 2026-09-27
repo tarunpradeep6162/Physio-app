@@ -98,6 +98,21 @@ describe('knee protocols on synthetic captures', () => {
     expect(Object.keys(r.quality.issues)).toContain('wrong_orientation');
   });
 
+  it('still measures on a slow device (10 fps), within the same tolerance', () => {
+    const r = simulateCapture('knee_supported_flexion', 'right', { peak: 118, fps: 10 });
+    expect(r.quality.verdict).toBe('valid');
+    expect(metric(r, 'knee_flexion_peak').value!).toBeGreaterThan(112);
+    expect(metric(r, 'knee_flexion_peak').value!).toBeLessThan(122);
+  });
+
+  it('refuses to measure when part of the body leaves the frame', () => {
+    const r = simulateCapture('knee_squat', null, {
+      perturb: (lms, t) => (t > 2 ? lms.map((l, i) => (i === LM.leftAnkle || i === LM.rightAnkle ? { ...l, y: 1.2 } : l)) : lms),
+    });
+    expect(r.quality.verdict).toBe('invalid');
+    expect(Object.keys(r.quality.issues)).toContain('out_of_frame');
+  });
+
   it('refuses to measure when nobody is in view', () => {
     const r = simulateCapture('knee_sit_to_stand', 'left', { perturb: () => null });
     expect(r.quality.verdict).toBe('invalid');
