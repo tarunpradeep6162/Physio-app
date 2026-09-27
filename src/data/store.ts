@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import type { AuditEvent, ClinicSettings, DB, ID, Program, Table } from './models';
 import { applyScope, scopeFor } from './scope';
+import { mergeReplicas, type SyncConflict } from './sync';
 
 /**
  * Local repository (MVP). Persists to localStorage on this device only.
@@ -12,7 +13,7 @@ import { applyScope, scopeFor } from './scope';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -82,6 +83,7 @@ export function emptyDb(): DB {
     examFindings: [],
     planPauses: [],
     planResumes: [],
+    appointments: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -124,13 +126,54 @@ export function migrate(parsed: DB): DB {
     for (const list of byPatient.values()) list.forEach((p, i) => numbered.set(p.id, { ...p, version: p.version ?? i + 1, supersedes: p.supersedes ?? (i > 0 ? list[i - 1].id : undefined) }));
     out.programs = out.programs.map((p) => numbered.get(p.id) ?? p);
   }
+  // v4 → v5: appointments start empty; programs without scheduleDays stay flexible.
   return out;
 }
 
-let persistError: string | null = null;
-function persist() {
+// ---- Persistence and multi-tab safety (Phase 10) ----------------------------------------------
+// Each save writes a revision token next to the data. If another tab saved since this tab last
+// loaded or saved, the two copies are MERGED (sync.ts) before writing, so neither tab's records are
+// overwritten. A deliberate reset (account deletion, demo purge, seeding) writes a 'reset:' token
+// that other tabs adopt wholesale instead of merging deleted rows back in.
+const REV_KEY = `${KEY}.rev`;
+let knownRev: string | null = readRev();
+let conflicts: SyncConflict[] = [];
+
+function readRev(): string | null {
   try {
+    return typeof localStorage !== 'undefined' ? localStorage.getItem(REV_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+function recordConflicts(found: SyncConflict[]) {
+  if (!found.length) return;
+  conflicts = [...conflicts, ...found];
+  db = { ...db, audit: [...db.audit, ...found.map((c) => auditEvent('system', 'sync_conflict', c.table, c.rowId, `kept ${c.kept} version (${c.keptAt}); other version from ${c.discardedAt} not applied`))] };
+}
+
+/** Conflicts found while merging changes from another tab/device in this session. */
+export function syncConflicts(): readonly SyncConflict[] {
+  return conflicts;
+}
+
+let persistError: string | null = null;
+function persist(reset = false) {
+  try {
+    const stored = readRev();
+    if (!reset && stored && stored !== knownRev && !stored.startsWith('reset:')) {
+      const raw = localStorage.getItem(KEY);
+      if (raw) {
+        const merged = mergeReplicas(db, migrate(JSON.parse(raw) as DB));
+        db = merged.db;
+        recordConflicts(merged.conflicts);
+      }
+    }
+    const rev = `${reset ? 'reset:' : ''}${uuid()}`;
     localStorage.setItem(KEY, JSON.stringify(db));
+    localStorage.setItem(REV_KEY, rev);
+    knownRev = rev;
     persistError = null;
   } catch (e) {
     // Quota exceeded or storage disabled: keep working in memory and surface the problem.
@@ -138,13 +181,34 @@ function persist() {
   }
 }
 
+/** Another tab saved: merge its copy into this one (or adopt it after a deliberate reset). */
+function onStorage(e: StorageEvent) {
+  if (e.key !== REV_KEY || !e.newValue || e.newValue === knownRev) return;
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    const remote = migrate(JSON.parse(raw) as DB);
+    if (e.newValue.startsWith('reset:')) db = remote;
+    else {
+      const merged = mergeReplicas(db, remote);
+      db = merged.db;
+      recordConflicts(merged.conflicts);
+    }
+    knownRev = e.newValue;
+    listeners.forEach((l) => l());
+  } catch {
+    /* unreadable copy: keep this tab's data; the next save merges again */
+  }
+}
+if (typeof window !== 'undefined') window.addEventListener('storage', onStorage);
+
 export function storageError(): string | null {
   return persistError;
 }
 
-function commit(next: DB) {
+function commit(next: DB, reset = false) {
   db = next;
-  persist();
+  persist(reset);
   listeners.forEach((l) => l());
 }
 
@@ -212,6 +276,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   programs: () => true,
   programExercises: () => true,
   planResumes: () => true,
+  appointments: () => true,
   notes: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',
@@ -286,7 +351,7 @@ export function updateSettings(patch: Partial<ClinicSettings>, actorId: ID) {
 
 /** Replace the whole database (seeding, account deletion). */
 export function replaceDb(next: DB) {
-  commit(next);
+  commit(next, true);
 }
 
 /** Removes every row flagged as demonstration data. */
@@ -303,5 +368,5 @@ export function purgeDemo(actorId: ID) {
   next.painRegions = next.painRegions.filter((r) => next.assessments.some((a) => a.id === r.assessmentId));
   next.programExercises = next.programExercises.filter((pe) => next.programs.some((p) => p.id === pe.programId));
   next.audit = [...next.audit, auditEvent(actorId, 'purge_demo', 'db', 'all')];
-  commit(next);
+  commit(next, true);
 }

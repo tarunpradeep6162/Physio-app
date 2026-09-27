@@ -22,7 +22,7 @@ export interface MigrationBundle {
   sha256: string;
 }
 
-const TABLES = ['users', 'patients', 'clinicians', 'careRelationships', 'consents', 'assessments', 'painRegions', 'pros', 'scans', 'measurements', 'observations', 'programs', 'programExercises', 'sessions', 'notes', 'alerts', 'messages', 'audit', 'radiationPaths', 'intakeAnswers', 'safetyResponses', 'amendments', 'testPlans', 'captures', 'reasoningDecisions', 'impressions', 'reports'] as const;
+const TABLES = ['users', 'patients', 'clinicians', 'careRelationships', 'consents', 'assessments', 'painRegions', 'pros', 'scans', 'measurements', 'observations', 'programs', 'programExercises', 'sessions', 'notes', 'alerts', 'messages', 'audit', 'radiationPaths', 'intakeAnswers', 'safetyResponses', 'amendments', 'testPlans', 'captures', 'reasoningDecisions', 'impressions', 'reports', 'draftDecisions', 'examFindings', 'planPauses', 'planResumes', 'appointments'] as const;
 const LINK_KEYS = ['patientId', 'assessmentId', 'programId', 'sessionId', 'captureId', 'scanId', 'userId', 'clinicianId', 'fromUserId', 'createdBy', 'reviewedBy', 'authorId', 'approvedBy', 'actorId', 'baselineAssessmentId', 'baselineCaptureId', 'entityId'] as const;
 
 /** Follow demo relationships, including rows without patientId or isDemo (plans, paths, audit). */

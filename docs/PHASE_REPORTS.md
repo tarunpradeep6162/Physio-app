@@ -44,3 +44,43 @@ Evidence format per the brief: changed files and commit, before → after, migra
   - `db-check.sh`: all plan RLS tests and the restore drill pass (39 tables, migrations 001–003).
   - Playwright journey on the demo: patient pause → paused screen and home notice → clinician alert → resume with note → v2 with intensification diff, publish disabled until a reason is given → history shows v2 and v1. No page errors.
 - **Gates:** clinical review (on hold); server deployment (Phase 6 gate).
+
+## Phase 10 — daily companion foundation
+- **Files:**
+  - `src/clinical/companion.ts` (+ `companion.test.ts`)
+  - `src/data/sync.ts` (+ `sync.test.ts`)
+  - `data/store.ts`: revision-checked save with merge, reset tokens, `syncConflicts()`, schema v5
+  - `data/models.ts`: `Appointment`, `DailyCheckin`, `Program.scheduleDays`, alert `checkin_note`
+  - `features/patient/DailyCompanion.tsx`, `features/patient/PatientPages.tsx`
+  - `features/clinician/ClinicianPages.tsx` (check-ins, appointment booking)
+  - `ProgramBuilder.tsx` (session days), `clinical/plan.ts`, `data/demo.ts`, `data/migration.ts` (exports the new tables), `i18n/en.ts`
+- **Before:** the home screen showed the plan, adherence and last peak ROM only. There was no check-in, appointment, session log or missed-day handling. Two open tabs could overwrite each other's records.
+- **After:** the patient home shows:
+  - today's status: session day, rest day or flexible; sessions this week against the clinician's target;
+  - a daily pain check-in with an optional note. It is shown verbatim to the clinician; a note raises an informational alert. The app does not interpret it;
+  - missed-day recovery copy that reassures and explicitly says **not** to add sessions to catch up. Paused days are not counted as missed;
+  - the last five sessions (completed / ended early, pain before → after — no scores);
+  - the next appointment, or a reassessment-due note when none is booked;
+  - an offline notice.
+
+  Clinicians book, complete or cancel appointments and set session days.
+- **Sync and conflict model:** every write is audited, so replicas merge by row id:
+  - rows written on either side are kept;
+  - deletes are honoured;
+  - a row edited on both sides keeps the later write, and the conflict (with the discarded version) goes to the audit and to a patient-visible notice;
+  - a deliberate reset (account deletion, demo purge) is adopted, not merged back.
+- **Migration:** local v4 → v5 adds `appointments` (empty). Existing plans stay flexible (no `scheduleDays`).
+- **Risks:**
+  - Cross-device sync is **not** live. Two devices do not see each other's records until a server exists (Phase 6 gate).
+  - Changes to session days are not yet in the plan diff; the weekly frequency is.
+  - The companion copy is draft clinical/patient content; Tamil strings for it fall back to English.
+- **Tests:**
+  - `companion.test.ts` (4: flexible/scheduled weeks, missed-day logic with paused days, check-in/appointment selection, copy-language guard);
+  - `sync.test.ts` (4: union, one-sided edit, two-sided conflict, delete, idempotence);
+  - Playwright on the demo:
+    - home shows the week line, next appointment and log;
+    - an offline check-in is saved;
+    - two tabs writing at once keep all 5 check-ins;
+    - the clinician sees the note alert and check-ins and books an appointment;
+    - no page errors.
+- **Gates:** server sync (Phase 6); patient-copy review in English and Tamil; usability with real patients.

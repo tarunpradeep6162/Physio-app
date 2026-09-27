@@ -4,7 +4,7 @@ import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { IconChevron, IconPlus } from '../../components/icons';
 import { CategoryBadge, ConfidenceBadge, DemoBadge, fmtDeg, initials, Notice, Segmented, Stat } from '../../components/ui';
 import { diffPlans, openPauses, planHistory, reassessmentDue } from '../../clinical/plan';
-import type { Alert, DB, Patient } from '../../data/models';
+import type { Alert, Appointment, DailyCheckin, DB, Patient } from '../../data/models';
 import { activeProgram, adherence, age, fmtDate, fmtDateTime, latestAssessment, openAlerts, programExercises, sessionsFor } from '../../data/queries';
 import { insert, update, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
@@ -29,6 +29,7 @@ function alertText(a: Alert, t: (k: string, p?: Record<string, string | number>)
     tracking_quality: 'Low tracking quality',
     plan_paused: 'Plan paused — clinician review needed',
     reassess_due: 'Reassessment due',
+    checkin_note: 'Note in daily check-in',
   };
   return map[a.type] + (a.detail ? ` · ${a.detail}` : '');
 }
@@ -330,7 +331,7 @@ export function PatientDetail() {
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab db={db} patient={patient} />}
+      {tab === 'overview' && <OverviewTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'assessment' && <AssessmentTab db={db} patient={patient} />}
       {tab === 'measurements' && <MeasurementsTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'pros' && <ProsTab db={db} patient={patient} />}
@@ -362,7 +363,7 @@ export function PatientDetail() {
   );
 }
 
-function OverviewTab({ db, patient }: { db: DB; patient: Patient }) {
+function OverviewTab({ db, patient, actorId }: { db: DB; patient: Patient; actorId: string }) {
   const prog = activeProgram(db, patient.id);
   const a = adherence(db, patient.id, 28);
   const last = sessionsFor(db, patient.id)[0];
@@ -390,7 +391,94 @@ function OverviewTab({ db, patient }: { db: DB; patient: Patient }) {
           <dd>{la ? `${la.status.replace('_', ' ')} · ${fmtDate(la.createdAt)}` : '–'}</dd>
         </dl>
       </section>
+      <CompanionPanel db={db} patient={patient} actorId={actorId} />
     </div>
+  );
+}
+
+/** Phase 10: the patient's daily check-ins and appointment booking, clinician side. */
+function CompanionPanel({ db, patient, actorId }: { db: DB; patient: Patient; actorId: string }) {
+  const clinician = db.clinicians.find((c) => c.userId === actorId);
+  const [at, setAt] = useState('');
+  const [kind, setKind] = useState<Appointment['kind']>('reassessment');
+  const [note, setNote] = useState('');
+  const checkins = db.pros.filter((p) => p.patientId === patient.id && p.type === 'daily_checkin').sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).slice(0, 7);
+  const appts = (db.appointments ?? []).filter((a) => a.patientId === patient.id).sort((a, b) => b.at.localeCompare(a.at));
+  return (
+    <>
+      <section className="panel stack tight">
+        <div className="row between">
+          <h2>Daily check-ins</h2>
+          <CategoryBadge kind="pro" />
+        </div>
+        {checkins.length === 0 ? (
+          <p className="small muted">None recorded.</p>
+        ) : (
+          checkins.map((c) => {
+            const v = c.value as DailyCheckin;
+            return (
+              <div key={c.id} className="small">
+                {fmtDateTime(c.recordedAt)} · pain {v.pain}/10{v.note ? ` — “${v.note}”` : ''}
+              </div>
+            );
+          })
+        )}
+        <p className="xs muted">Patient-reported, shown verbatim. The app does not interpret check-ins.</p>
+      </section>
+      <section className="panel stack tight">
+        <h2>Appointments</h2>
+        {appts.map((a) => (
+          <div key={a.id} className="row between small">
+            <span>
+              {fmtDateTime(a.at)} · {a.kind}
+              {a.note ? ` — ${a.note}` : ''}
+            </span>
+            <span className="row" style={{ gap: '0.3rem' }}>
+              <span className="badge">{a.status}</span>
+              {a.status === 'scheduled' && (
+                <>
+                  <button className="btn ghost sm" onClick={() => update('appointments', a.id, { status: 'done' }, actorId)}>
+                    Done
+                  </button>
+                  <button className="btn ghost sm" onClick={() => update('appointments', a.id, { status: 'cancelled' }, actorId)}>
+                    Cancel
+                  </button>
+                </>
+              )}
+            </span>
+          </div>
+        ))}
+        <div className="row wrap" style={{ alignItems: 'flex-end' }}>
+          <label className="field">
+            <span>Date and time</span>
+            <input className="input" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Type</span>
+            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as Appointment['kind'])}>
+              <option value="reassessment">Reassessment</option>
+              <option value="review">Review</option>
+              <option value="call">Phone or video call</option>
+            </select>
+          </label>
+          <label className="field grow">
+            <span>Note for the patient (optional)</span>
+            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <button
+            className="btn primary sm"
+            disabled={!at || !clinician}
+            onClick={() => {
+              insert('appointments', { id: uuid(), patientId: patient.id, clinicianId: clinician!.id, at: new Date(at).toISOString(), kind, note: note.trim() || undefined, status: 'scheduled', createdBy: actorId, createdAt: new Date().toISOString(), isDemo: patient.isDemo }, actorId, 'appointment');
+              setAt('');
+              setNote('');
+            }}
+          >
+            Book
+          </button>
+        </div>
+      </section>
+    </>
   );
 }
 

@@ -15,14 +15,17 @@ import { reportStatus } from '../../clinical/report';
 import { LOCALES, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
+import { DailyCompanion } from './DailyCompanion';
 import { SessionSummary } from '../session/SessionSummary';
 
 export function PatientHome() {
   const { t } = useT();
   const patient = useCurrentPatient();
+  const user = useCurrentUser();
   const db = useDb((d) => d);
-  if (!patient) return null;
+  if (!patient || !user) return null;
   const program = activeProgram(db, patient.id);
+  const paused = !!program && openPauses(db, program.id).length > 0;
   const exs = program ? programExercises(db, program.id) : [];
   const last = sessionsFor(db, patient.id)[0];
   const adh = adherence(db, patient.id, 7);
@@ -66,9 +69,11 @@ export function PatientHome() {
                 );
               })}
             </div>
-            <Link to="/p/session" className="btn primary lg">
-              <IconPlay width={20} /> {t('session.start')}
-            </Link>
+            {!paused && (
+              <Link to="/p/session" className="btn primary lg">
+                <IconPlay width={20} /> {t('session.start')}
+              </Link>
+            )}
           </>
         ) : (
           <>
@@ -77,6 +82,8 @@ export function PatientHome() {
           </>
         )}
       </section>
+
+      <DailyCompanion patient={patient} userId={user.id} />
 
       <div className="grid cols-3 patient-overview">
         <div className="panel metric-card">

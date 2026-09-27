@@ -150,6 +150,13 @@ export function buildDemoDb(): DB {
     }
   });
 
+  // Daily companion (Phase 10): two check-ins and a booked reassessment — all simulated.
+  db.pros.push(
+    { id: uuid(), patientId: p1.id, type: 'daily_checkin', value: { pain: 3 }, recordedAt: iso(2 * DAY), isDemo: true },
+    { id: uuid(), patientId: p1.id, type: 'daily_checkin', value: { pain: 2, note: 'Demo: stairs easier this week' }, recordedAt: iso(1 * DAY), isDemo: true },
+  );
+  db.appointments.push({ id: uuid(), patientId: p1.id, clinicianId: clin.id, at: iso(-5 * DAY), kind: 'reassessment', note: 'Demo appointment', status: 'scheduled', createdBy: clinUser.id, createdAt: iso(1 * DAY), isDemo: true });
+
   // Matched reassessment (submitted, awaiting review).
   const re = mkAssessment(p1, 2 * DAY, { type: 'reassessment', baselineAssessmentId: base.id });
   kneeRegion(re, 'left', ['medial'], ['pain']);

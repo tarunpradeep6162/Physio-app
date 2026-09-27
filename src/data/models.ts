@@ -288,7 +288,14 @@ export type ProType =
   | 'red_flags'
   | 'session_pain_before'
   | 'session_pain_after'
-  | 'session_rpe';
+  | 'session_rpe'
+  /** Daily companion check-in (Phase 10): { pain: 0–10, note?: string }. */
+  | 'daily_checkin';
+
+export interface DailyCheckin {
+  pain: number;
+  note?: string;
+}
 
 /** Patient-reported outcome — stored verbatim, never interpreted by the engine. */
 export interface PatientReportedOutcome {
@@ -297,7 +304,7 @@ export interface PatientReportedOutcome {
   assessmentId?: ID;
   sessionId?: ID;
   type: ProType;
-  value: number | string | string[] | Record<string, boolean>;
+  value: number | string | string[] | Record<string, boolean> | DailyCheckin;
   recordedAt: ISODate;
   isDemo?: boolean;
 }
@@ -388,6 +395,22 @@ export interface Program {
   reassessTriggers?: ReassessTrigger[];
   /** A session stopped by the pain rule pauses the whole plan until a clinician resumes it. */
   pauseOnPainStop?: boolean;
+  /** Days of the week the clinician scheduled sessions on (0 = Sunday). Absent = flexible (N per week). */
+  scheduleDays?: number[];
+  isDemo?: boolean;
+}
+
+/** Next contact with the clinician, set by the clinician (Phase 10). */
+export interface Appointment {
+  id: ID;
+  patientId: ID;
+  clinicianId: ID;
+  at: ISODate;
+  kind: 'reassessment' | 'review' | 'call';
+  note?: string;
+  status: 'scheduled' | 'cancelled' | 'done';
+  createdBy: ID;
+  createdAt: ISODate;
   isDemo?: boolean;
 }
 
@@ -455,7 +478,7 @@ export interface ClinicalNote {
   isDemo?: boolean;
 }
 
-export type AlertType = 'red_flag_urgent' | 'red_flag_review' | 'pain_increase' | 'low_adherence' | 'assessment_submitted' | 'tracking_quality' | 'plan_paused' | 'reassess_due';
+export type AlertType = 'red_flag_urgent' | 'red_flag_review' | 'pain_increase' | 'low_adherence' | 'assessment_submitted' | 'tracking_quality' | 'plan_paused' | 'reassess_due' | 'checkin_note';
 
 export interface Alert {
   id: ID;
@@ -552,6 +575,7 @@ export interface DB {
   examFindings: ExamFinding[];
   planPauses: PlanPause[];
   planResumes: PlanResume[];
+  appointments: Appointment[];
   settings: ClinicSettings;
 }
 

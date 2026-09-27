@@ -84,6 +84,7 @@ export interface PublishInput {
   reassessAfterDays?: number;
   reassessTriggers?: ReassessTrigger[];
   pauseOnPainStop?: boolean;
+  scheduleDays?: number[];
   exercises: ExercisePrescription[];
   isDemo?: boolean;
 }
@@ -117,6 +118,7 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
       if (!rx.alternative.when.trim()) errors.push('alternative_when_required');
     }
   });
+  if (input.scheduleDays?.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) errors.push('schedule_days');
   if (input.reassessAfterDays !== undefined && !(input.reassessAfterDays >= 1 && input.reassessAfterDays <= 365)) errors.push('reassess_days_range');
   if (changes.some((c) => c.direction === 'intensify') && !input.changeReason?.trim()) errors.push('intensify_needs_reason');
   const closesPauses = previous ? openPauses(db, previous.id) : [];
@@ -139,6 +141,7 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
     reassessAfterDays: input.reassessAfterDays,
     reassessTriggers: input.reassessTriggers?.length ? input.reassessTriggers : undefined,
     pauseOnPainStop: input.pauseOnPainStop ?? true,
+    scheduleDays: input.scheduleDays?.length ? [...new Set(input.scheduleDays)].sort() : undefined,
     isDemo: input.isDemo,
   };
   const programExercises = input.exercises.map((rx, i) => ({

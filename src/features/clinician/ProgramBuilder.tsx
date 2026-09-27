@@ -55,6 +55,7 @@ export function ProgramBuilder() {
   const [reassessDays, setReassessDays] = useState<string>(existing?.reassessAfterDays ? String(existing.reassessAfterDays) : '28');
   const [triggers, setTriggers] = useState<ReassessTrigger[]>(existing?.reassessTriggers ?? ['pain_stop', 'patient_pause']);
   const [pauseOnPainStop, setPauseOnPainStop] = useState(existing?.pauseOnPainStop ?? true);
+  const [scheduleDays, setScheduleDays] = useState<number[]>(existing?.scheduleDays ?? []);
   const [publishError, setPublishError] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>(() =>
     existing
@@ -98,6 +99,7 @@ export function ProgramBuilder() {
         reassessAfterDays: reassessDays === '' ? undefined : Number(reassessDays),
         reassessTriggers: triggers,
         pauseOnPainStop,
+        scheduleDays,
         exercises: rows.map((r) => r.rx),
         isDemo: patient.isDemo,
       },
@@ -341,6 +343,17 @@ export function ProgramBuilder() {
               {TRIGGER_LABELS[tr]}
             </label>
           ))}
+        </fieldset>
+        <fieldset className="stack tight" style={{ border: 0, padding: 0 }}>
+          <legend className="small">Session days (none ticked = any days, up to the weekly frequency)</legend>
+          <div className="row wrap" style={{ gap: '0.75rem' }}>
+            {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => (
+              <label key={d} className="row small" style={{ gap: '0.3rem' }}>
+                <input type="checkbox" checked={scheduleDays.includes(i)} onChange={(e) => setScheduleDays((ds) => (e.target.checked ? [...ds, i] : ds.filter((x) => x !== i)))} />
+                {d}
+              </label>
+            ))}
+          </div>
         </fieldset>
         <p className="xs muted">These are reminders you choose. The patient app can pause a plan; it can never change or intensify it.</p>
       </section>
