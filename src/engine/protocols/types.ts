@@ -63,6 +63,8 @@ export interface CaptureConfig {
   cameraRollDeg: number | null;
   /** Vertical fraction of the frame the body occupies (distance proxy — NOT a metric distance). */
   bodyHeightFrac: number;
+  /** Horizontal fraction of the frame the body occupies (distance proxy for lying tests). */
+  bodyWidthFrac?: number;
   bodyCenterX: number;
   bodyCenterY: number;
 }

@@ -102,7 +102,8 @@ function KneeCard({ patientId }: { patientId: string }) {
   const open = knee.find((a) => !a.submittedAt);
   const lastDone = knee.find((a) => a.submittedAt);
   const reviewed = knee.find((a) => a.status === 'reviewed');
-  const approved = lastDone ? reportStatus(db, lastDone.id).state === 'clinician_reviewed' : false;
+  // The most recent assessment whose report a clinician has approved (may be older than lastDone).
+  const approvedReport = knee.find((a) => reportStatus(db, a.id).state === 'clinician_reviewed');
   return (
     <div className="panel stack tight">
       <span className="stat-label">Knee assessment</span>
@@ -117,9 +118,9 @@ function KneeCard({ patientId }: { patientId: string }) {
         <>
           <strong>{lastDone.status === 'reviewed' ? 'Reviewed by your physiotherapist' : lastDone.status === 'safety_hold' ? 'Waiting for physiotherapist (safety review)' : 'Submitted — awaiting review'}</strong>
           <span className="xs muted">{fmtDate(lastDone.submittedAt!)}</span>
-          {approved && (
-            <Link to={`/report/${lastDone.id}?audience=patient`} className="btn secondary sm">
-              View report
+          {approvedReport && (
+            <Link to={`/report/${approvedReport.id}?audience=patient`} className="btn secondary sm">
+              View report ({fmtDate(approvedReport.createdAt)})
             </Link>
           )}
           {reviewed && (

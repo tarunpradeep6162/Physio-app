@@ -342,6 +342,170 @@ CREATE TABLE audit_events (
 CREATE INDEX audit_entity ON audit_events (entity, entity_id, at DESC);
 CREATE INDEX audit_actor ON audit_events (actor_id, at DESC);
 
+
+-- ---------------------------------------------------------------------------------------------
+-- Knee pathway (schema v2) — intake, safety, test plans, captures, reasoning, reports
+-- ---------------------------------------------------------------------------------------------
+ALTER TABLE assessments
+  ADD COLUMN region text NOT NULL DEFAULT 'general' CHECK (region IN ('knee', 'shoulder', 'low_back', 'general')),
+  ADD COLUMN type text NOT NULL DEFAULT 'initial' CHECK (type IN ('initial', 'reassessment')),
+  ADD COLUMN baseline_assessment_id uuid REFERENCES assessments(id),
+  ADD COLUMN safety_level text CHECK (safety_level IN ('clear', 'clinician_review', 'urgent', 'emergency'));
+
+ALTER TABLE pain_regions
+  ADD COLUMN anatomy text,
+  ADD COLUMN side text CHECK (side IN ('left', 'right')),
+  ADD COLUMN symptom_types text[] NOT NULL DEFAULT '{pain}',
+  ADD COLUMN sub_locations text[];
+
+CREATE TABLE radiation_paths (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id  uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  view           text NOT NULL,
+  symptom_type   text NOT NULL CHECK (symptom_type IN ('pain', 'stiffness', 'weakness', 'numbness', 'tingling')),
+  points         jsonb NOT NULL,           -- [[x, y], …] in map-view coordinates
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+
+-- Versioned clinical content (questionnaires, safety rules, reasoning rules, protocols, report
+-- templates) with clinical-lead approval.
+CREATE TABLE clinical_rule_versions (
+  key            text PRIMARY KEY,         -- e.g. 'knee-safety@1.0.0'
+  kind           text NOT NULL CHECK (kind IN ('questionnaire', 'safety', 'reasoning', 'observation', 'protocol', 'report_template')),
+  content        jsonb NOT NULL,
+  approved_by    uuid REFERENCES clinicians(id),
+  approved_at    timestamptz
+);
+
+-- Immutable original answers; corrections supersede.
+CREATE TABLE intake_answers (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id          uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  patient_id             uuid NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  questionnaire_key      text NOT NULL REFERENCES clinical_rule_versions(key),
+  question_id            text NOT NULL,
+  question_text          text NOT NULL,     -- text exactly as shown
+  answer                 jsonb,
+  answered_at            timestamptz NOT NULL DEFAULT now(),
+  superseded_by          uuid REFERENCES intake_answers(id)
+);
+CREATE INDEX intake_current ON intake_answers (assessment_id, question_id) WHERE superseded_by IS NULL;
+
+CREATE TABLE safety_responses (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id      uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  patient_id         uuid NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  questionnaire_key  text NOT NULL REFERENCES clinical_rule_versions(key),
+  question_id        text NOT NULL,
+  question_text      text NOT NULL,
+  answer             boolean NOT NULL,
+  triggered          boolean NOT NULL,
+  action             text CHECK (action IN ('emergency', 'urgent', 'clinician_review')),
+  answered_at        timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE summary_amendments (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id  uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  target         text NOT NULL,             -- summary line key
+  original_text  text NOT NULL,
+  amended_text   text NOT NULL,
+  amended_by     uuid NOT NULL REFERENCES users(id),
+  amended_at     timestamptz NOT NULL DEFAULT now()
+);
+
+-- Test-plan revisions (latest is current; history kept).
+CREATE TABLE test_plans (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id  uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  items          jsonb NOT NULL,            -- [{protocol_key, side}]
+  source         text NOT NULL CHECK (source IN ('protocol_default', 'clinician', 'baseline_copy')),
+  created_by     uuid NOT NULL REFERENCES users(id),
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  note           text
+);
+
+-- One recorded protocol attempt (valid or not); raw video is never stored.
+CREATE TABLE capture_sessions (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id        uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  patient_id           uuid NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+  protocol_key         text NOT NULL REFERENCES clinical_rule_versions(key),
+  side                 text CHECK (side IN ('left', 'right')),
+  view                 text NOT NULL,
+  quality_verdict      text NOT NULL CHECK (quality_verdict IN ('valid', 'invalid')),
+  quality              jsonb NOT NULL,      -- coverage, confidence, reasons, issues, fps
+  capture_config       jsonb,               -- view, frame, roll, body extent/centre (no metric distance)
+  baseline_capture_id  uuid REFERENCES capture_sessions(id),
+  condition_match      jsonb,
+  setup_notes          text,
+  landmark_frames      jsonb NOT NULL,      -- compact codec, filtered, 10 Hz
+  keyframes            jsonb NOT NULL,      -- start/mid/peak/return raw + filtered landmarks
+  signal               jsonb NOT NULL,
+  provenance           jsonb NOT NULL,
+  created_at           timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX captures_assessment ON capture_sessions (assessment_id, protocol_key, side, created_at DESC);
+ALTER TABLE measurements ADD COLUMN capture_id uuid REFERENCES capture_sessions(id) ON DELETE CASCADE,
+                         ADD COLUMN metric_id text,
+                         ADD COLUMN validity text CHECK (validity IN ('valid', 'invalid')),
+                         ADD COLUMN validity_reason text;
+
+CREATE TABLE movement_events (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  capture_id   uuid NOT NULL REFERENCES capture_sessions(id) ON DELETE CASCADE,
+  t_ms         integer NOT NULL,
+  type         text NOT NULL,               -- ready/start/engaged/peak/returning/end/incomplete/discarded/paused/resumed
+  cycle        integer
+);
+
+-- Clinician actions on rule-generated considerations (suggestion snapshot preserved).
+CREATE TABLE reasoning_decisions (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id      uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  rule_set_key       text NOT NULL REFERENCES clinical_rule_versions(key),
+  consideration_id   text NOT NULL,
+  suggestion         jsonb NOT NULL,
+  action             text NOT NULL CHECK (action IN ('accept', 'reject', 'defer', 'annotate')),
+  note               text,
+  decided_by         uuid NOT NULL REFERENCES users(id),
+  decided_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE clinical_impressions (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id  uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  text           text NOT NULL,
+  recorded_by    uuid NOT NULL REFERENCES users(id),
+  recorded_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE reports (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  assessment_id     uuid NOT NULL REFERENCES assessments(id) ON DELETE CASCADE,
+  version           integer NOT NULL,
+  status            text NOT NULL CHECK (status IN ('preliminary', 'clinician_reviewed')),
+  template_key      text NOT NULL,
+  generated_at      timestamptz NOT NULL DEFAULT now(),
+  generated_by      uuid NOT NULL REFERENCES users(id),
+  approved_by       uuid REFERENCES clinicians(id),
+  approved_at       timestamptz,
+  UNIQUE (assessment_id, version),
+  CHECK (status <> 'clinician_reviewed' OR (approved_by IS NOT NULL AND approved_at IS NOT NULL))
+);
+
+ALTER TABLE training_sessions ADD COLUMN pain_events jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE program_exercises ADD COLUMN progression text,
+                              ADD COLUMN pain_stop_at smallint CHECK (pain_stop_at BETWEEN 0 AND 10),
+                              ADD COLUMN pain_rise_stop smallint CHECK (pain_rise_stop BETWEEN 1 AND 10);
+
+-- Retention: landmark data older than the configured window can be purged by a scheduled job.
+CREATE TABLE retention_policies (
+  clinic_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  landmark_days  integer NOT NULL DEFAULT 0 CHECK (landmark_days >= 0),
+  raw_video      text NOT NULL DEFAULT 'never_stored' CHECK (raw_video = 'never_stored')
+);
+
 -- ---------------------------------------------------------------------------------------------
 -- Row-level security (sketch): patients see only their own rows; clinicians see patients with
 -- an active care relationship. The API sets `app.user_id` per request.

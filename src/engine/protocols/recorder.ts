@@ -192,6 +192,7 @@ export function captureConfig(frame: ProcessedFrame, facing: 'user' | 'environme
     frameHeight: frame.height,
     cameraRollDeg: roll,
     bodyHeightFrac: Math.round((Math.max(...ys) - Math.min(...ys)) * 1000) / 1000,
+    bodyWidthFrac: Math.round((Math.max(...xs) - Math.min(...xs)) * 1000) / 1000,
     bodyCenterX: Math.round(((Math.max(...xs) + Math.min(...xs)) / 2) * 1000) / 1000,
     bodyCenterY: Math.round(((Math.max(...ys) + Math.min(...ys)) / 2) * 1000) / 1000,
   };
@@ -201,12 +202,15 @@ export function captureConfig(frame: ProcessedFrame, facing: 'user' | 'environme
  * Compares the current capture setup with the baseline's. Distances are relative framing
  * proxies (share of frame) — never metres, because distance is not calibrated.
  */
+/** Larger of the body's vertical/horizontal extent — works for standing and lying tests. */
+const size = (c: CaptureConfig) => Math.max(c.bodyHeightFrac, c.bodyWidthFrac ?? 0);
+
 export function compareConfig(base: CaptureConfig, cur: CaptureConfig): ConditionMatch {
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const checks = [
     { id: 'view', label: 'Camera view', baseline: base.view, current: cur.view, match: base.view === cur.view },
     { id: 'aspect', label: 'Frame orientation', baseline: base.frameWidth > base.frameHeight ? 'landscape' : 'portrait', current: cur.frameWidth > cur.frameHeight ? 'landscape' : 'portrait', match: base.frameWidth > base.frameHeight === cur.frameWidth > cur.frameHeight },
-    { id: 'distance', label: 'Body size in frame (distance proxy)', baseline: pct(base.bodyHeightFrac), current: pct(cur.bodyHeightFrac), match: Math.abs(base.bodyHeightFrac - cur.bodyHeightFrac) <= 0.08 },
+    { id: 'distance', label: 'Body size in frame (distance proxy)', baseline: pct(size(base)), current: pct(size(cur)), match: Math.abs(size(base) - size(cur)) <= 0.08 },
     { id: 'position', label: 'Horizontal position', baseline: pct(base.bodyCenterX), current: pct(cur.bodyCenterX), match: Math.abs(base.bodyCenterX - cur.bodyCenterX) <= 0.1 },
     {
       id: 'roll',

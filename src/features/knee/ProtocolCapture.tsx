@@ -163,14 +163,16 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         // Baseline alignment guide: ghost skeleton + body box from the baseline capture.
         if (baseGhost) drawSkeleton(c2d, baseGhost, f.width, f.height, { mirrored, color: 'rgba(124,92,214,0.55)', thin: true, jointRadius: 2, minVisibility: 0 });
         if (baseCfg) {
-          const h = baseCfg.bodyHeightFrac * f.height;
+          const h = Math.max(baseCfg.bodyHeightFrac * f.height, 40);
+          const w = Math.max((baseCfg.bodyWidthFrac ?? baseCfg.bodyHeightFrac * 0.6) * f.width, 40);
+          const top = baseCfg.bodyCenterY * f.height - h / 2 - 20;
           c2d.save();
           c2d.setLineDash([10, 8]);
           c2d.strokeStyle = 'rgba(167,139,250,0.9)';
           c2d.lineWidth = Math.max(2, f.height / 400);
-          c2d.strokeRect(baseCfg.bodyCenterX * f.width - h * 0.3, baseCfg.bodyCenterY * f.height - h / 2, h * 0.6, h);
+          c2d.strokeRect(baseCfg.bodyCenterX * f.width - w / 2 - 20, top, w + 40, h + 40);
           c2d.restore();
-          label(c2d, 'Baseline position', baseCfg.bodyCenterX * f.width, baseCfg.bodyCenterY * f.height - h / 2 - 18, f.height, mirrored, { size: 12, color: '#e9e3ff' });
+          label(c2d, 'Baseline position', baseCfg.bodyCenterX * f.width, top - f.height * 0.03, f.height, mirrored, { size: 12, color: '#e9e3ff' });
         } else if (def.position !== 'supine') drawAlignmentFrame(c2d, f.width, f.height, g.ready, g.progress);
         if (f.smoothed) drawSkeleton(c2d, f.smoothed, f.width, f.height, { mirrored, focus, state: c.frameReady ? 'target' : 'tracked' });
         if (p === 'setup' && g.ready) {

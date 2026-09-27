@@ -62,6 +62,11 @@ describe('knee protocols on synthetic captures', () => {
     expect(time.value!).toBeGreaterThan(10.5);
     expect(time.value!).toBeLessThan(12.5);
     expect(metric(r, 'sts_trunk_lean_peak').value!).toBeGreaterThan(25);
+    // Simulated rise: 92°→3° over 0.9 s with cosine easing. By definition (plateau − 5° → ≤ 25°)
+    // the reference rise time is 0.9 × (u(25°) − u(87°)) = 0.9 × (0.672 − 0.152) ≈ 0.47 s.
+    // Before the fix onset was taken at the 61° cycle boundary (≈ 0.24 s).
+    expect(metric(r, 'sts_rise_time').value!).toBeGreaterThan(0.35);
+    expect(metric(r, 'sts_rise_time').value!).toBeLessThan(0.55);
   });
 
   it('squat reports signed left/right FPPA and depth', () => {

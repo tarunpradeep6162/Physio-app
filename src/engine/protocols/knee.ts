@@ -105,8 +105,8 @@ export const KNEE_SUPPORTED_FLEXION: ProtocolDef = {
 // ---------------------------------------------------------------------------------------------
 // 2. Five-times sit-to-stand (lateral view)
 // ---------------------------------------------------------------------------------------------
-const STS_TIME: MetricSpec = { id: 'sts_time_5', label: 'Time for 5 stands', unit: 's', method: 'From the first rise onset to reaching full standing on the 5th stand (knee flexion ≤ 25°).' };
-const STS_RISE: MetricSpec = { id: 'sts_rise_time', label: 'Mean rise time', unit: 's', method: 'Mean time from rise onset to full standing across valid stands.' };
+const STS_TIME: MetricSpec = { id: 'sts_time_5', label: 'Time for 5 stands', unit: 's', method: 'From the first rise onset (knee flexion leaves the seated plateau by > 5°) to reaching full standing on the 5th stand (knee flexion ≤ 25°).' };
+const STS_RISE: MetricSpec = { id: 'sts_rise_time', label: 'Mean rise time', unit: 's', method: 'Mean time from rise onset (leaving the seated plateau by > 5°) to full standing (≤ 25°) across valid stands.' };
 const STS_LEAN: MetricSpec = {
   id: 'sts_trunk_lean_peak',
   label: 'Peak trunk forward lean during rise',
@@ -148,13 +148,14 @@ export const KNEE_SIT_TO_STAND: ProtocolDef = {
     const all = rec.detector.cycles;
     const valid = all.filter((c) => c.valid);
     const invalidBefore5 = all.slice(0, all.indexOf(valid[4] ?? all[all.length - 1]) + 1).filter((c) => !c.valid).length;
-    const rise = valid.filter((c) => c.engagedT !== null).map((c) => (c.engagedT! - c.startT) / 1000);
+    const onset = (c: Cycle) => riseOnset(rec, c);
+    const rise = valid.filter((c) => c.engagedT !== null).map((c) => (c.engagedT! - onset(c)) / 1000);
     const leans = valid.map((c) => maxExtra(rec, 'trunk_lean', c.startT, c.engagedT ?? c.peakT)).filter((v): v is number => v !== null);
     const seated = valid.map((c) => maxValue(rec, c.startT - 1000, c.startT)).filter((v): v is number => v !== null);
     let time: number | null = null;
     let reason: string | undefined;
     if (valid.length >= 5 && valid[4].engagedT !== null) {
-      time = (valid[4].engagedT - valid[0].startT) / 1000;
+      time = (valid[4].engagedT - onset(valid[0])) / 1000;
       if (invalidBefore5 > 0) reason = `${invalidBefore5} incomplete stand(s) during the test — protocol deviation`;
     } else reason = 'Fewer than 5 complete stands';
     return [metric(STS_TIME, time, [], reason), metric(STS_RISE, mean(rise), rise), metric(STS_LEAN, median(leans), leans), metric(STS_SEAT, median(seated), seated)];
@@ -171,6 +172,19 @@ export const KNEE_SIT_TO_STAND: ProtocolDef = {
     'Bohannon RW. Reference values for the five-repetition sit-to-stand test: a descriptive meta-analysis of data from elders. Percept Mot Skills. 2006;103(1):215-222.',
   ],
 };
+
+/**
+ * Rise onset: the cycle detector starts a cycle only when flexion crosses the rest boundary, which
+ * is part-way through the rise. Onset is taken as the last moment the knee was still within 5° of
+ * the seated plateau (median flexion in the preceding second).
+ */
+function riseOnset(rec: Recording, c: Cycle): number {
+  const before = rec.samples.filter((s) => s.t >= c.startT - 1000 && s.t <= c.startT && s.value !== null);
+  const seated = median(before.map((s) => s.value as number));
+  if (seated === null) return c.startT;
+  for (let i = before.length - 1; i >= 0; i--) if ((before[i].value as number) >= seated - 5) return before[i].t;
+  return c.startT;
+}
 
 function maxExtra(rec: Recording, key: string, t0: number, t1: number): number | null {
   const vs = rec.samples.filter((s) => s.t >= t0 && s.t <= t1).map((s) => s.extras?.[key]).filter((v): v is number => typeof v === 'number');
