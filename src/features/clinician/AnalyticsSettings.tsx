@@ -23,22 +23,35 @@ import { INTENDED_USES, releaseGate } from '../../release/intendedUses';
 function ReleasePanel() {
   const gate = useDb((d) => releaseGate(d));
   const tone = (s: string) => (s === 'pass' ? 'clinical' : s === 'fail' ? 'danger' : 'warn');
+  const counts = { fail: gate.filter((g) => g.status === 'fail').length, pending: gate.filter((g) => g.status === 'pending').length, pass: gate.filter((g) => g.status === 'pass').length };
   return (
-    <section className="panel stack tight">
-      <div className="row between wrap">
-        <h2>Release readiness</h2>
+    <section className="panel release-readiness" aria-labelledby="release-readiness-h">
+      <div className="release-head">
+        <div>
+          <p className="eyebrow">Controlled release</p>
+          <h2 id="release-readiness-h">Release readiness</h2>
+          <p className="small">Real-patient use is disabled. This is a review record, not an approval control.</p>
+        </div>
         <span className="badge danger">Real-patient use: disabled</span>
       </div>
-      <p className="xs muted">Every item must pass, and the build flag must be changed by a reviewed release, before any real patient use. The clinical lead's approval is recorded outside the app; there is no button for it here. Intended uses: {INTENDED_USES.length}, validated: {INTENDED_USES.filter((u) => u.status === 'validated').length}.</p>
-      {gate.map((g) => (
-        <div key={g.id} className="row between wrap small" style={{ borderTop: '1px solid var(--line)', paddingTop: '0.35rem' }}>
-          <span>
-            {g.label}
-            <span className="xs muted"> · {g.detail} · owner: {g.owner}</span>
-          </span>
-          <span className={`badge ${tone(g.status)}`}>{g.status}</span>
-        </div>
-      ))}
+      <div className="release-summary" aria-label="Release gate counts">
+        <span><strong className="num">{counts.fail}</strong> failed</span>
+        <span><strong className="num">{counts.pending}</strong> pending</span>
+        <span><strong className="num">{counts.pass}</strong> passed</span>
+      </div>
+      <p className="small muted release-explain">All gates must pass before a reviewed build can enable real-patient use. The clinical lead's decision is recorded outside the app. Intended uses: {INTENDED_USES.length}; validated: {INTENDED_USES.filter((u) => u.status === 'validated').length}.</p>
+      <ol className="release-gates">
+        {gate.map((g) => (
+          <li key={g.id} className={`release-gate release-gate-${g.status}`}>
+            <div className="release-gate-copy">
+              <strong>{g.label}</strong>
+              <p className="small muted">{g.detail}</p>
+              <span className="xs muted">Owner: {g.owner}</span>
+            </div>
+            <span className={`badge ${tone(g.status)}`}>{g.status}</span>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }
