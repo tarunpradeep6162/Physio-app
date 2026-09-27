@@ -3,17 +3,19 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { IconPlus } from '../../components/icons';
 import { CategoryBadge, DemoBadge, Notice, Segmented } from '../../components/ui';
-import type { Program } from '../../data/models';
+import { diffPlans, preparePublish, TRIGGER_LABELS } from '../../clinical/plan';
+import type { ReassessTrigger } from '../../data/models';
 import { activeProgram, fmtDate, programExercises } from '../../data/queries';
-import { insert, insertMany, update, useDb, uuid } from '../../data/store';
+import { getDb, insert, insertMany, update, useDb, uuid } from '../../data/store';
 import { defaultPrescription, EXERCISE_LIST, getDefinition, validatePrescription } from '../../engine/exercises/definitions';
 import type { ExerciseId, ExercisePrescription } from '../../engine/exercises/types';
 import { useT } from '../../i18n';
 
 /**
  * Rehabilitation Program Builder. Every parameter the patient app executes is set here by the
- * clinician. Publishing archives the previous active program (it stays in history) and pins
- * each exercise to its definition version.
+ * clinician. Publishing creates the next numbered plan version (Phase 9): the previous version is
+ * archived (still readable), changes are listed field by field, an intensification needs a
+ * reason, and each exercise — and its approved alternative — is pinned to its definition version.
  */
 
 const ERR_TEXT: Record<string, string> = {
@@ -24,7 +26,11 @@ const ERR_TEXT: Record<string, string> = {
   sets_range: 'Sets must be 1–10.',
   hold_range: 'Hold must be 0–60 s.',
   rest_range: 'Rest must be 0–600 s.',
+  alternative_when_required: 'Say when the patient may use the alternative.',
+  intensify_needs_reason: 'This version increases load, range, volume, frequency or loosens a pain limit — record the reason.',
+  reassess_days_range: 'Reassessment interval must be 1–365 days.',
 };
+const errText = (e: string) => ERR_TEXT[e] ?? (e.startsWith('alternative_') ? `Alternative: ${ERR_TEXT[e.slice(12)] ?? e}` : e);
 
 interface Row {
   key: string;
@@ -40,42 +46,89 @@ export function ProgramBuilder() {
   const qp = new URLSearchParams(location.search).get('patient');
   const [patientId, setPatientId] = useState(qp ?? '');
   const existing = patientId ? activeProgram(db, patientId) : undefined;
-  const [title, setTitle] = useState('Phase 1 — range of motion');
+  const [title, setTitle] = useState(existing?.title ?? 'Phase 1 — range of motion');
   const today = new Date().toISOString().slice(0, 10);
   const [start, setStart] = useState(today);
   const [end, setEnd] = useState(new Date(Date.now() + 42 * 86_400_000).toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
+  const [changeReason, setChangeReason] = useState('');
+  const [reassessDays, setReassessDays] = useState<string>(existing?.reassessAfterDays ? String(existing.reassessAfterDays) : '28');
+  const [triggers, setTriggers] = useState<ReassessTrigger[]>(existing?.reassessTriggers ?? ['pain_stop', 'patient_pause']);
+  const [pauseOnPainStop, setPauseOnPainStop] = useState(existing?.pauseOnPainStop ?? true);
+  const [publishError, setPublishError] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>(() =>
-    existing ? programExercises(db, existing.id).map((e) => ({ key: uuid(), rx: { ...e.prescription } })) : [{ key: uuid(), rx: defaultPrescription('knee_flexion', 'left') }],
+    existing
+      ? programExercises(db, existing.id).map((e) => ({
+          key: uuid(),
+          rx: { ...e.prescription },
+        }))
+      : [{ key: uuid(), rx: defaultPrescription('knee_flexion', 'left') }],
   );
   const [published, setPublished] = useState(false);
 
   if (!user || !clinician) return null;
   const patient = db.patients.find((p) => p.id === patientId);
-  const errors = rows.map((r) => validatePrescription(r.rx));
-  const valid = patient && rows.length > 0 && errors.every((e) => e.length === 0) && start <= end && title.trim();
+  const errors = rows.map((r) => [
+    ...validatePrescription(r.rx),
+    ...(r.rx.alternative ? [...validatePrescription(r.rx.alternative).map((e) => `alternative_${e}`), ...(r.rx.alternative.when.trim() ? [] : ['alternative_when_required'])] : []),
+  ]);
+  const changes = existing
+    ? diffPlans(
+        programExercises(db, existing.id).map((e) => e.prescription),
+        rows.map((r) => r.rx),
+      )
+    : [];
+  const intensifies = changes.some((c) => c.direction === 'intensify');
+  const valid = patient && rows.length > 0 && errors.every((e) => e.length === 0) && start <= end && title.trim() && (!intensifies || changeReason.trim());
 
   const setRx = (key: string, patch: Partial<ExercisePrescription>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, rx: { ...r.rx, ...patch } } : r)));
 
   const publish = () => {
     if (!valid || !patient) return;
-    if (existing) update('programs', existing.id, { status: 'archived' }, user.id, 'superseded');
-    const program: Program = {
-      id: uuid(),
-      patientId: patient.id,
-      clinicianId: clinician.id,
-      title: title.trim(),
-      status: 'active',
-      startDate: start,
-      endDate: end,
-      approvedAt: new Date().toISOString(),
-      approvedBy: clinician.id,
-      notes: notes || undefined,
-      createdAt: new Date().toISOString(),
-      isDemo: patient.isDemo,
-    };
-    insert('programs', program, user.id, 'approve_publish');
-    insertMany('programExercises', rows.map((r, i) => ({ id: uuid(), programId: program.id, order: i, prescription: { ...r.rx, definitionVersion: getDefinition(r.rx.definitionId).version } })), user.id);
+    const plan = preparePublish(
+      getDb(),
+      {
+        patientId: patient.id,
+        clinicianId: clinician.id,
+        title,
+        startDate: start,
+        endDate: end,
+        notes,
+        changeReason,
+        reassessAfterDays: reassessDays === '' ? undefined : Number(reassessDays),
+        reassessTriggers: triggers,
+        pauseOnPainStop,
+        exercises: rows.map((r) => r.rx),
+        isDemo: patient.isDemo,
+      },
+      new Date().toISOString(),
+      uuid,
+      (rx) => getDefinition(rx.definitionId).version,
+    );
+    if (plan.errors.length || !plan.program) {
+      setPublishError(plan.errors);
+      return;
+    }
+    if (plan.previous) update('programs', plan.previous.id, { status: 'archived' }, user.id, `superseded by v${plan.program.version}`);
+    insert('programs', plan.program, user.id, `approve_publish v${plan.program.version}`);
+    insertMany('programExercises', plan.programExercises!, user.id);
+    // A reviewed new version answers any pause on the one it replaces.
+    for (const pause of plan.closesPauses)
+      insert(
+        'planResumes',
+        {
+          id: uuid(),
+          pauseId: pause.id,
+          programId: pause.programId,
+          patientId: patient.id,
+          note: `Reviewed and replaced by plan v${plan.program.version}`,
+          by: user.id,
+          at: plan.program.approvedAt!,
+          isDemo: patient.isDemo,
+        },
+        user.id,
+        'plan_resume',
+      );
     setPublished(true);
   };
 
@@ -129,7 +182,12 @@ export function ProgramBuilder() {
         </label>
       </section>
       {patient?.isDemo && <DemoBadge />}
-      {existing && <Notice tone="warn">Publishing will replace the active program “{existing.title}” (approved {existing.approvedAt ? fmtDate(existing.approvedAt) : '—'}). The old program stays in history.</Notice>}
+      {existing && (
+        <Notice tone="warn">
+          Publishing creates plan version {(existing.version ?? 1) + 1} and replaces v{existing.version ?? 1} “{existing.title}” (approved {existing.approvedAt ? fmtDate(existing.approvedAt) : '—'}).
+          Earlier versions stay readable in the patient record.
+        </Notice>
+      )}
 
       {rows.map((r, i) => {
         const def = getDefinition(r.rx.definitionId);
@@ -144,7 +202,18 @@ export function ProgramBuilder() {
                   className="input"
                   style={{ width: 'auto' }}
                   value={r.rx.definitionId}
-                  onChange={(e) => setRows((rs) => rs.map((x) => (x.key === r.key ? { ...x, rx: defaultPrescription(e.target.value as ExerciseId, x.rx.side) } : x)))}
+                  onChange={(e) =>
+                    setRows((rs) =>
+                      rs.map((x) =>
+                        x.key === r.key
+                          ? {
+                              ...x,
+                              rx: defaultPrescription(e.target.value as ExerciseId, x.rx.side),
+                            }
+                          : x,
+                      ),
+                    )
+                  }
                   aria-label="Exercise"
                 >
                   {EXERCISE_LIST.map((d) => (
@@ -153,14 +222,23 @@ export function ProgramBuilder() {
                     </option>
                   ))}
                 </select>
-                <Segmented label="Side" value={r.rx.side} onChange={(side) => setRx(r.key, { side })} options={[{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }]} />
+                <Segmented
+                  label="Side"
+                  value={r.rx.side}
+                  onChange={(side) => setRx(r.key, { side })}
+                  options={[
+                    { id: 'left', label: 'Left' },
+                    { id: 'right', label: 'Right' },
+                  ]}
+                />
               </div>
               <button className="btn ghost sm" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))}>
                 {t('common.remove')}
               </button>
             </div>
             <p className="small muted">
-              {t(def.summaryKey)} Measures {t(`measure.${def.primary}`).toLowerCase()} (camera-estimated, lateral view). Supported target range {def.allowedTargetRange.min}–{def.allowedTargetRange.max}°.
+              {t(def.summaryKey)} Measures {t(`measure.${def.primary}`).toLowerCase()} (camera-estimated, lateral view). Supported target range {def.allowedTargetRange.min}–
+              {def.allowedTargetRange.max}°.
             </p>
             <div className="grid cols-4">
               <NumField label="Sets" value={r.rx.sets} onChange={(v) => setRx(r.key, { sets: num(v) })} />
@@ -169,7 +247,16 @@ export function ProgramBuilder() {
               <NumField label="ROM target max (°)" value={r.rx.target.max} onChange={(v) => setRx(r.key, { target: { ...r.rx.target, max: num(v) } })} />
               <NumField label="Hold (s)" value={r.rx.holdSeconds} onChange={(v) => setRx(r.key, { holdSeconds: num(v) })} />
               <NumField label="Rest between sets (s)" value={r.rx.restSeconds} onChange={(v) => setRx(r.key, { restSeconds: num(v) })} />
-              <NumField label="Min. rep duration (s) — tempo" value={r.rx.tempo.minRepMs / 1000} step={0.5} onChange={(v) => setRx(r.key, { tempo: { ...r.rx.tempo, minRepMs: num(v) * 1000 } })} />
+              <NumField
+                label="Min. rep duration (s) — tempo"
+                value={r.rx.tempo.minRepMs / 1000}
+                step={0.5}
+                onChange={(v) =>
+                  setRx(r.key, {
+                    tempo: { ...r.rx.tempo, minRepMs: num(v) * 1000 },
+                  })
+                }
+              />
               <NumField label="Frequency (per week)" value={r.rx.frequencyPerWeek} onChange={(v) => setRx(r.key, { frequencyPerWeek: num(v) })} />
             </div>
             <label className="field">
@@ -178,33 +265,201 @@ export function ProgramBuilder() {
             </label>
             <label className="field">
               <span>Progression plan / criteria (clinician-applied — never automatic)</span>
-              <input className="input" value={r.rx.progression ?? ''} placeholder="e.g. If pain ≤ 3/10 and target met 2 sessions running, raise target by 10° at review" onChange={(e) => setRx(r.key, { progression: e.target.value || undefined })} />
+              <input
+                className="input"
+                value={r.rx.progression ?? ''}
+                placeholder="e.g. If pain ≤ 3/10 and target met 2 sessions running, raise target by 10° at review"
+                onChange={(e) => setRx(r.key, { progression: e.target.value || undefined })}
+              />
             </label>
             <div className="grid cols-2">
-              <NumField label="Pause session if patient-reported pain ≥ (0–10, blank = off)" value={r.rx.painStopAt ?? NaN} onChange={(v) => setRx(r.key, { painStopAt: v === '' ? undefined : Math.max(0, Math.min(10, Number(v))) })} />
-              <NumField label="…or if pain rises by ≥ (points above pre-session)" value={r.rx.painRiseStop ?? NaN} onChange={(v) => setRx(r.key, { painRiseStop: v === '' ? undefined : Math.max(1, Math.min(10, Number(v))) })} />
+              <NumField
+                label="Pause session if patient-reported pain ≥ (0–10, blank = off)"
+                value={r.rx.painStopAt ?? NaN}
+                onChange={(v) =>
+                  setRx(r.key, {
+                    painStopAt: v === '' ? undefined : Math.max(0, Math.min(10, Number(v))),
+                  })
+                }
+              />
+              <NumField
+                label="…or if pain rises by ≥ (points above pre-session)"
+                value={r.rx.painRiseStop ?? NaN}
+                onChange={(v) =>
+                  setRx(r.key, {
+                    painRiseStop: v === '' ? undefined : Math.max(1, Math.min(10, Number(v))),
+                  })
+                }
+              />
             </div>
+            <AlternativeEditor rx={r.rx} onChange={(alternative) => setRx(r.key, { alternative })} />
             {errs.length > 0 && (
               <Notice tone="danger">
                 {errs.map((e) => (
-                  <div key={e}>{ERR_TEXT[e] ?? e}</div>
+                  <div key={e}>{errText(e)}</div>
                 ))}
               </Notice>
             )}
           </section>
         );
       })}
-      <button className="btn secondary" onClick={() => setRows((rs) => [...rs, { key: uuid(), rx: defaultPrescription('shoulder_flexion', 'right') }])}>
+      <button
+        className="btn secondary"
+        onClick={() =>
+          setRows((rs) => [
+            ...rs,
+            {
+              key: uuid(),
+              rx: defaultPrescription('shoulder_flexion', 'right'),
+            },
+          ])
+        }
+      >
         <IconPlus width={18} /> Add exercise
       </button>
       <label className="field">
         <span>Program notes (clinician only)</span>
         <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
-      <Notice>The patient app executes these parameters exactly. The engine never changes targets on its own; progressions require a new approved program.</Notice>
+      <section className="panel stack">
+        <h2>Reassessment and pauses</h2>
+        <div className="grid cols-2">
+          <label className="field">
+            <span>Reassess after (days, blank = no interval)</span>
+            <input className="input num" type="number" min={1} max={365} value={reassessDays} onChange={(e) => setReassessDays(e.target.value)} />
+          </label>
+          <label className="row" style={{ gap: '0.5rem', alignSelf: 'end' }}>
+            <input type="checkbox" checked={pauseOnPainStop} onChange={(e) => setPauseOnPainStop(e.target.checked)} />
+            <span>Pause the whole plan when a session is stopped by the pain rule (you resume it)</span>
+          </label>
+        </div>
+        <fieldset className="stack tight" style={{ border: 0, padding: 0 }}>
+          <legend className="small">Also mark reassessment due when:</legend>
+          {(Object.keys(TRIGGER_LABELS) as ReassessTrigger[]).map((tr) => (
+            <label key={tr} className="row small" style={{ gap: '0.5rem' }}>
+              <input type="checkbox" checked={triggers.includes(tr)} onChange={(e) => setTriggers((ts) => (e.target.checked ? [...ts, tr] : ts.filter((x) => x !== tr)))} />
+              {TRIGGER_LABELS[tr]}
+            </label>
+          ))}
+        </fieldset>
+        <p className="xs muted">These are reminders you choose. The patient app can pause a plan; it can never change or intensify it.</p>
+      </section>
+      {existing && (
+        <section className="panel stack tight">
+          <h2>Changes from v{existing.version ?? 1}</h2>
+          {changes.length === 0 ? (
+            <p className="small muted">No exercise parameters changed.</p>
+          ) : (
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Plan changes (scrolls sideways on small screens)">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Exercise</th>
+                    <th>Field</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Direction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((c, i) => (
+                    <tr key={i}>
+                      <td>{c.exercise.replace(':', ' · ')}</td>
+                      <td>{c.field}</td>
+                      <td className="num">{c.from}</td>
+                      <td className="num">{c.to}</td>
+                      <td>{c.direction === 'intensify' ? <span className="badge warn">intensifies</span> : c.direction === 'reduce' ? 'reduces' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <label className="field">
+            <span>
+              Reason for this version
+              {intensifies ? ' (required — this version intensifies the plan)' : ''}
+            </span>
+            <input
+              className="input"
+              value={changeReason}
+              onChange={(e) => setChangeReason(e.target.value)}
+              placeholder="e.g. Reviewed at reassessment: target met with pain ≤ 3/10"
+              aria-invalid={intensifies && !changeReason.trim()}
+            />
+          </label>
+        </section>
+      )}
+      <Notice>The patient app executes these parameters exactly. The engine never changes targets on its own; progressions require a new approved plan version.</Notice>
+      {publishError.length > 0 && <Notice tone="danger">{publishError.map(errText).join(' ')}</Notice>}
       <button className="btn primary lg" disabled={!valid} onClick={publish}>
         Approve & send to patient
       </button>
+    </div>
+  );
+}
+
+function AlternativeEditor({ rx, onChange }: { rx: ExercisePrescription; onChange: (alt: ExercisePrescription['alternative']) => void }) {
+  const { t } = useT();
+  const alt = rx.alternative;
+  if (!alt)
+    return (
+      <button
+        className="btn ghost sm"
+        style={{ alignSelf: 'flex-start' }}
+        onClick={() =>
+          onChange({
+            ...defaultPrescription(rx.definitionId === 'knee_flexion' ? 'straight_leg_raise' : 'knee_flexion', rx.side),
+            painStopAt: rx.painStopAt,
+            painRiseStop: rx.painRiseStop,
+            when: '',
+          })
+        }
+      >
+        + Approved alternative
+      </button>
+    );
+  const set = (patch: Partial<NonNullable<ExercisePrescription['alternative']>>) => onChange({ ...alt, ...patch });
+  const num = (v: string) => (v === '' ? 0 : Number(v));
+  return (
+    <div className="stack tight" style={{ borderLeft: '3px solid var(--line)', paddingLeft: '0.75rem' }}>
+      <div className="row between wrap">
+        <strong className="small">Approved alternative</strong>
+        <button className="btn ghost sm" onClick={() => onChange(undefined)}>
+          {t('common.remove')}
+        </button>
+      </div>
+      <div className="grid cols-4">
+        <label className="field">
+          <span>Exercise</span>
+          <select
+            className="input"
+            value={alt.definitionId}
+            onChange={(e) =>
+              onChange({
+                ...defaultPrescription(e.target.value as ExerciseId, alt.side),
+                painStopAt: alt.painStopAt,
+                painRiseStop: alt.painRiseStop,
+                when: alt.when,
+              })
+            }
+          >
+            {EXERCISE_LIST.map((d) => (
+              <option key={d.id} value={d.id}>
+                {t(d.nameKey)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <NumField label="Sets" value={alt.sets} onChange={(v) => set({ sets: num(v) })} />
+        <NumField label="Repetitions" value={alt.reps} onChange={(v) => set({ reps: num(v) })} />
+        <NumField label="Target min (°)" value={alt.target.min} onChange={(v) => set({ target: { ...alt.target, min: num(v) } })} />
+        <NumField label="Target max (°)" value={alt.target.max} onChange={(v) => set({ target: { ...alt.target, max: num(v) } })} />
+      </div>
+      <label className="field">
+        <span>When the patient may choose it (shown to patient)</span>
+        <input className="input" value={alt.when} onChange={(e) => set({ when: e.target.value })} placeholder="e.g. If standing is not comfortable today" />
+      </label>
     </div>
   );
 }

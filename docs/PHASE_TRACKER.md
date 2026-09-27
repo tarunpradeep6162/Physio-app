@@ -33,13 +33,13 @@ A phase is never marked **done** on a clean build alone.
 |---|---|---|---|---|
 | 1 | Shoulder assessment pathway | — | **engineering done – gate pending** | Clinical review of the draft shoulder content (on hold); real-device captures (Phase 2). Details: `docs/SHOULDER_PROTOCOL.md` |
 | 2 | Real-phone tracking benchmark | 1 | **engineering done – gate pending** | Harness, device matrix, sustained/thermal telemetry and shoulder scenarios delivered (`docs/tracking/PHONE_RUN.md`). **Device results pending:** no real phone available. |
-| 3 | Robust validity and person lock | 1 | not started | — |
-| 4 | Movement-specific setup and calibration | 1 | not started | — |
-| 5 | Low-latency coaching engine | 3, 4 | not started | Cue latency on supported devices |
-| 6 | Secure clinical records foundation | — | not started | Hosting, IdP and DPA decisions by the owner |
-| 7 | Structured AI consultation draft | 6 | not started | Model/provider choice and approved clinical content |
-| 8 | Clinician review and sign-off workflow | 7 | not started | — |
-| 9 | Prescription and plan versioning | 8 | not started | — |
+| 3 | Robust validity and person lock | 1 | **in progress – owner decision needed** | Arm limb-swap guard and adversarial tests done. The coverage check caught none of the lab's unsafe occlusion frames and raised refusals (`docs/tracking/RESULTS.md`). Elbow/object occlusion stay **release blockers** for affected metrics. |
+| 4 | Movement-specific setup and calibration | 1 | **engineering done – gate pending** | Arm-room check for overhead / side-reach protocols. Real-phone framing checks pending. |
+| 5 | Low-latency coaching engine | 3, 4 | **engineering done – gate pending** | Deterministic `pcue.*` cue engine; frame→paint latency stored per capture. Latency on real phones not measured. |
+| 6 | Secure clinical records foundation | — | **engineering done – gate pending** | Migration 002 (tenancy) and backup/restore drill pass on local PG16; client read scope; store authorization boundary. **Not deployed:** hosting, IdP and DPA are owner decisions. |
+| 7 | Structured AI consultation draft | 6 | **engineering done – gate pending** | Rule-based draft + validator live; language-model contract inactive (needs a server, provider and DPA). Clinical content approval on hold. |
+| 8 | Clinician review and sign-off workflow | 7 | **engineering done – gate pending** | Accept/edit/reject/defer, exam findings, stale sign-off notice; clinician-only writes enforced. Usability with a real clinician pending. |
+| 9 | Prescription and plan versioning | 8 | **engineering done – gate pending** | Versions, change diff, reason for intensification, alternatives, pauses (patient/pain rule) with clinician-only resume, reassessment triggers, migration 003 with RLS. Clinical review of pause wording and triggers (on hold). |
 | 10 | Daily companion foundation | 9 | not started | Cross-device sync needs the Phase 6 server |
 | 11 | Wearable and phone activity integration | 6, 10 | not started | Native app capability (Health Connect / HealthKit) |
 | 12 | Hip pathway | 1–4 | not started | Validation evidence |
@@ -61,7 +61,12 @@ A phase is never marked **done** on a clean build alone.
 7. **Found in Phase 1 and fixed:** `levelFromResponses` re-evaluated every stored safety response against the knee screen. It now uses each response's own questionnaire.
 8. **Found in Phase 1 and fixed:** the safety evidence item was always labelled `knee-safety`.
 9. **Found in Phase 1 and fixed:** the report's Progress chart appeared after a single assessment (it counted left and right points rather than assessments).
-10. **Open → Phase 4:** calibration checks the *extent* of the framed region but not headroom above the shoulder. An overhead arm can leave the frame, and that capture is then refused as out of frame; it is never mis-measured.
+10. ~~Calibration ignored headroom for an overhead arm.~~ **Fixed in Phase 4** by the arm-room check.
 11. **Open:** demo data is seeded once per browser. Browsers that already hold the earlier demo will not see demo patient DP-04 until site data is cleared.
 5. There is no server, so real-patient use is impossible. → Phase 6.
 6. There is no real-device data. → Phase 2 (hardware needed).
+12. **Open (Phase 3):** self-occlusion of the elbow and object occlusion still yield unsafe values in the lab; the coverage check did not catch them. Owner decision recorded in `docs/tracking/RESULTS.md`.
+13. **Found in Phase 9 and fixed:** a patient session could call `remove()` on clinician-only tables, and history tables (impressions, decisions) could be edited. Store `remove` now applies the clinician guard, and history tables are append-only.
+14. **Found in Phase 9 and fixed:** on the server, a patient could read an unapproved draft program. `programs_read` now shows patients approved versions only.
+
+Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE_REPORTS.md`.

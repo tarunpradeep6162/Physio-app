@@ -165,4 +165,9 @@ export const ta: Partial<Record<MessageKey, string>> = {
   'profile.title': 'சுயவிவரம்',
   'profile.language': 'மொழி',
   'profile.ta_notice': 'தமிழ் மொழிபெயர்ப்பு மருத்துவப் பரிசீலனைக்காகக் காத்திருக்கும் வரைவு.',
+  // Phase 9 plan pause — DRAFT translations, pending review by a Tamil-speaking physiotherapist.
+  'plan.paused_title': 'உங்கள் திட்டம் இடைநிறுத்தப்பட்டுள்ளது',
+  'plan.paused_body': 'உங்கள் இயன்முறை சிகிச்சையாளர் மதிப்பாய்வு செய்யும் வரை உங்கள் திட்டம் இடைநிறுத்தப்பட்டுள்ளது. நிறுத்தியது சரியானதே — அவருக்குத் தெரிவிக்கப்பட்டுள்ளது. அறிகுறிகள் கடுமையாக இருந்தால் அல்லது வேகமாக மோசமடைந்தால், உங்கள் மருத்துவமனையை அல்லது அவசர சிகிச்சையைத் தொடர்பு கொள்ளுங்கள்.',
+  'plan.pause_button': 'நான் என் திட்டத்தை இடைநிறுத்த வேண்டும்',
+  'plan.pause_confirm': 'என் திட்டத்தை இடைநிறுத்து',
 };

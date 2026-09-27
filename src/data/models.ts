@@ -377,6 +377,47 @@ export interface Program {
   approvedBy?: ID;
   notes?: string;
   createdAt: ISODate;
+  /** Plan version per patient (1, 2, …) and the version it replaced (Phase 9). */
+  version?: number;
+  supersedes?: ID;
+  /** Clinician's reason for this version; required when it intensifies the previous one. */
+  changeReason?: string;
+  /** Reassessment due this many days after approval (clinician-set; blank = none). */
+  reassessAfterDays?: number;
+  /** Events that make a reassessment due before then. */
+  reassessTriggers?: ReassessTrigger[];
+  /** A session stopped by the pain rule pauses the whole plan until a clinician resumes it. */
+  pauseOnPainStop?: boolean;
+  isDemo?: boolean;
+}
+
+export type ReassessTrigger = 'pain_stop' | 'pain_increase' | 'patient_pause';
+
+/**
+ * A plan pause (Phase 9). The patient, or the clinician's pain rule acting for them, may pause a
+ * plan; neither may change or intensify it. Pauses are append-only: they are lifted by a separate
+ * clinician-only PlanResume row, so the history of who paused and who resumed is never rewritten.
+ */
+export interface PlanPause {
+  id: ID;
+  programId: ID;
+  patientId: ID;
+  reason: 'pain_rule' | 'patient_report' | 'safety';
+  detail?: string;
+  sessionId?: ID;
+  by: ID;
+  at: ISODate;
+  isDemo?: boolean;
+}
+
+export interface PlanResume {
+  id: ID;
+  pauseId: ID;
+  programId: ID;
+  patientId: ID;
+  note: string;
+  by: ID;
+  at: ISODate;
   isDemo?: boolean;
 }
 
@@ -399,7 +440,7 @@ export interface TrainingSession {
   rpe?: number;
   /** In-session pain reports and the configured rule's outcome. */
   painEvents?: { at: ISODate; nprs: number; paused: boolean; rule: string }[];
-  results: (ExerciseResult & { programExerciseId: ID })[];
+  results: (ExerciseResult & { programExerciseId: ID; usedAlternative?: boolean })[];
   provenance: Provenance;
   isDemo?: boolean;
 }
@@ -414,7 +455,7 @@ export interface ClinicalNote {
   isDemo?: boolean;
 }
 
-export type AlertType = 'red_flag_urgent' | 'red_flag_review' | 'pain_increase' | 'low_adherence' | 'assessment_submitted' | 'tracking_quality';
+export type AlertType = 'red_flag_urgent' | 'red_flag_review' | 'pain_increase' | 'low_adherence' | 'assessment_submitted' | 'tracking_quality' | 'plan_paused' | 'reassess_due';
 
 export interface Alert {
   id: ID;
@@ -509,6 +550,8 @@ export interface DB {
   reports: Report[];
   draftDecisions: DraftDecision[];
   examFindings: ExamFinding[];
+  planPauses: PlanPause[];
+  planResumes: PlanResume[];
   settings: ClinicSettings;
 }
 

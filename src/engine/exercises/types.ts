@@ -103,7 +103,14 @@ export interface ExercisePrescription {
   /** Session pauses when patient-reported pain reaches this (0–10), or rises by `painRiseStop`. */
   painStopAt?: number;
   painRiseStop?: number;
+  /**
+   * Clinician-approved alternative the patient may choose instead (Phase 9), e.g. when the main
+   * exercise is not possible that day. Part of the same approved plan version; never automatic.
+   */
+  alternative?: AlternativePrescription;
 }
+
+export type AlternativePrescription = Omit<ExercisePrescription, 'alternative'> & { when: string };
 
 export function requiredView(def: ExerciseDefinition, side: Side): ViewOrientation[] {
   return def.view === 'same_side_lateral' ? [side === 'left' ? 'lateral_left' : 'lateral_right'] : ['anterior'];

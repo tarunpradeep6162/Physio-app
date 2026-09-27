@@ -1,3 +1,4 @@
+import { latestApprovedPlan } from '../clinical/plan';
 import type { DB, ID, Measurement, Patient, Program, TrainingSession } from './models';
 
 /** Read-side helpers shared by the patient and clinician experiences. */
@@ -10,10 +11,9 @@ export function clinicianForUser(db: DB, userId: ID | null) {
   return userId ? db.clinicians.find((c) => c.userId === userId) : undefined;
 }
 
+/** The latest approved, active plan version (Phase 9) — unapproved drafts never reach the patient. */
 export function activeProgram(db: DB, patientId: ID): Program | undefined {
-  return db.programs
-    .filter((p) => p.patientId === patientId && p.status === 'active')
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return latestApprovedPlan(db, patientId);
 }
 
 export function programExercises(db: DB, programId: ID) {

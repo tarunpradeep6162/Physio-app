@@ -7,6 +7,7 @@ import { CategoryBadge, DemoBadge, Notice, Stat, fmtDeg } from '../../components
 import { signOut } from '../../data/auth';
 import type { ConsentType } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
+import { openPauses } from '../../clinical/plan';
 import { activeProgram, adherence, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../../data/queries';
 import { getDb, insert, replaceDb, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
@@ -38,6 +39,7 @@ export function PatientHome() {
         <DemoBadge show={!!patient.isDemo} />
       </div>
       {alerts.length > 0 && <Notice tone="warn">{t('safety.review_body')}</Notice>}
+      {program && openPauses(db, program.id).length > 0 && <Notice tone="warn">{t('plan.paused_body')}</Notice>}
 
       <section className="panel dark stack session-hero">
         <div className="row between wrap">
@@ -157,12 +159,15 @@ export function PatientTrain() {
   return (
     <div className="content stack loose">
       <h1>{t('train.title')}</h1>
+      {program && openPauses(db, program.id).length > 0 && <Notice tone="warn">{t('plan.paused_body')}</Notice>}
       {program ? (
         <section className="stack">
           <div className="row between wrap">
             <div>
               <h2>{program.title}</h2>
-              <p className="small muted">{t('train.program_period', { start: fmtDate(program.startDate), end: fmtDate(program.endDate) })}</p>
+              <p className="small muted">
+                {t('train.program_period', { start: fmtDate(program.startDate), end: fmtDate(program.endDate) })} · {t('plan.version', { v: program.version ?? 1 })}
+              </p>
             </div>
             <span className="badge clinical">✓ {t('train.approved_by', { name: clinician?.name ?? '' })}</span>
           </div>

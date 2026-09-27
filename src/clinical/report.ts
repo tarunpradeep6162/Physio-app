@@ -1,4 +1,5 @@
 import type { Assessment, DB, ID, Report } from '../data/models';
+import { openPauses } from './plan';
 import { activeProgram, age, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../data/queries';
 import { getDefinition } from '../engine/exercises/definitions';
 import { getProtocol } from '../engine/protocols/registry';
@@ -281,7 +282,8 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
     'Rehabilitation',
     prog
       ? [
-          { kind: 'para', text: `${prog.title} — approved ${prog.approvedAt ? fmtDate(prog.approvedAt) : '—'}; ${fmtDate(prog.startDate)} to ${fmtDate(prog.endDate)}.` },
+          { kind: 'para', text: `${prog.title} (plan v${prog.version ?? 1}) — approved ${prog.approvedAt ? fmtDate(prog.approvedAt) : '—'}; ${fmtDate(prog.startDate)} to ${fmtDate(prog.endDate)}.${prog.changeReason ? ` Reason for this version: ${prog.changeReason}.` : ''}` },
+          ...(openPauses(db, prog.id).length ? [{ kind: 'para' as const, text: `Plan paused since ${fmtDate(openPauses(db, prog.id)[0].at)} — awaiting clinician review.`, tone: 'warn' as const }] : []),
           {
             kind: 'table',
             head: ['Exercise', 'Side', 'Sets × reps', 'Target', 'Hold', 'Frequency', 'Progression'],

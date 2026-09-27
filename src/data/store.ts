@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import type { AuditEvent, ClinicSettings, DB, ID, Table } from './models';
+import type { AuditEvent, ClinicSettings, DB, ID, Program, Table } from './models';
 import { applyScope, scopeFor } from './scope';
 
 /**
@@ -12,7 +12,7 @@ import { applyScope, scopeFor } from './scope';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -80,6 +80,8 @@ export function emptyDb(): DB {
     impressions: [],
     draftDecisions: [],
     examFindings: [],
+    planPauses: [],
+    planResumes: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -113,6 +115,15 @@ export function migrate(parsed: DB): DB {
     out.assessments = parsed.assessments.map((a) => ({ region: 'general', type: 'initial', ...a }));
   }
   // v2 → v3: draftDecisions and examFindings start empty (added by the base spread above).
+  if (v < 4) {
+    // v3 → v4: plan versions. Existing programs are numbered per patient in creation order and
+    // linked to the version they replaced; their content is unchanged. planPauses / planResumes start empty.
+    const byPatient = new Map<ID, Program[]>();
+    for (const p of [...out.programs].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) byPatient.set(p.patientId, [...(byPatient.get(p.patientId) ?? []), p]);
+    const numbered = new Map<ID, Program>();
+    for (const list of byPatient.values()) list.forEach((p, i) => numbered.set(p.id, { ...p, version: p.version ?? i + 1, supersedes: p.supersedes ?? (i > 0 ? list[i - 1].id : undefined) }));
+    out.programs = out.programs.map((p) => numbered.get(p.id) ?? p);
+  }
   return out;
 }
 
@@ -200,6 +211,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   amendments: () => true,
   programs: () => true,
   programExercises: () => true,
+  planResumes: () => true,
   notes: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',
@@ -207,6 +219,12 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
 };
 
 export class AuthorizationError extends Error {}
+
+/** History tables: rows are never edited or deleted through the app (Phase 9 append-only history). */
+const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
+function assertAppendOnly(table: Table, op: string) {
+  if (APPEND_ONLY.has(table)) throw new AuthorizationError(`${table} is append-only history; ${op} is not allowed.`);
+}
 
 function assertMayWrite(table: Table, row: Record<string, unknown>, actorId: ID, isUpdate = false) {
   const guard = CLINICIAN_ONLY[table];
@@ -237,6 +255,7 @@ export function insertMany<T extends Table>(table: T, rows: Row<T>[], actorId: I
 }
 
 export function update<T extends Table>(table: T, id: ID, patch: Partial<Row<T>>, actorId: ID, detail?: string) {
+  assertAppendOnly(table, 'update');
   const rows = db[table] as (Row<T> & { id: ID })[];
   const cur = rows.find((r) => r.id === id);
   if (cur) assertMayWrite(table, { ...cur, ...patch } as unknown as Record<string, unknown>, actorId, true);
@@ -246,7 +265,10 @@ export function update<T extends Table>(table: T, id: ID, patch: Partial<Row<T>>
 }
 
 export function remove<T extends Table>(table: T, id: ID, actorId: ID, detail?: string) {
+  assertAppendOnly(table, 'delete');
   const rows = db[table] as (Row<T> & { id: ID })[];
+  const cur = rows.find((r) => r.id === id);
+  if (cur && CLINICIAN_ONLY[table]) assertMayWrite(table, cur as unknown as Record<string, unknown>, actorId, true);
   const next = { ...db, [table]: rows.filter((r) => r.id !== id) } as DB;
   next.audit = [...next.audit, auditEvent(actorId, 'delete', table, id, detail)];
   commit(next);

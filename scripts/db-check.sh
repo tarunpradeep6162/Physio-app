@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Dheepika Lab — database checks on a throwaway local PostgreSQL 16 cluster (Phase 6).
 #   1. schema.sql + security.sql, then security_test.sql
-#   2. tenancy.sql (migration 002), then tenancy_test.sql
+#   2. tenancy.sql (migration 002), then tenancy_test.sql; plans.sql (003), then plans_test.sql
 #   3. backup/restore drill: seed fixture rows, pg_dump -Fc, restore into a fresh database,
 #      compare row counts table by table and verify the audit hash chain on the restored copy.
 # Nothing here touches a real database. Requires the postgresql-16 binaries and a 'postgres' user.
@@ -25,6 +25,8 @@ psql_ -d dl -f schema.sql -f security.sql >/dev/null
 psql_ -d dl -f security_test.sql
 psql_ -d dl -f tenancy.sql >/dev/null
 psql_ -d dl -f tenancy_test.sql
+psql_ -d dl -f plans.sql >/dev/null
+psql_ -d dl -f plans_test.sql
 
 echo '--- backup / restore drill'
 psql_ -d dl <<'SQL'

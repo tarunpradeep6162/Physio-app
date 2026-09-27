@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { IconChevron, IconPlus } from '../../components/icons';
 import { CategoryBadge, ConfidenceBadge, DemoBadge, fmtDeg, initials, Notice, Segmented, Stat } from '../../components/ui';
+import { diffPlans, openPauses, planHistory, reassessmentDue } from '../../clinical/plan';
 import type { Alert, DB, Patient } from '../../data/models';
 import { activeProgram, adherence, age, fmtDate, fmtDateTime, latestAssessment, openAlerts, programExercises, sessionsFor } from '../../data/queries';
 import { insert, update, useDb, uuid } from '../../data/store';
@@ -26,6 +27,8 @@ function alertText(a: Alert, t: (k: string, p?: Record<string, string | number>)
     low_adherence: 'Low adherence',
     assessment_submitted: t('assess.submitted'),
     tracking_quality: 'Low tracking quality',
+    plan_paused: 'Plan paused — clinician review needed',
+    reassess_due: 'Reassessment due',
   };
   return map[a.type] + (a.detail ? ` · ${a.detail}` : '');
 }
@@ -331,7 +334,7 @@ export function PatientDetail() {
       {tab === 'assessment' && <AssessmentTab db={db} patient={patient} />}
       {tab === 'measurements' && <MeasurementsTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'pros' && <ProsTab db={db} patient={patient} />}
-      {tab === 'programs' && <ProgramsTab db={db} patient={patient} />}
+      {tab === 'programs' && <ProgramsTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'sessions' && (
         <div className="stack">
           <div className="panel list">
@@ -564,33 +567,117 @@ function formatPro(v: unknown): string {
   return String(v);
 }
 
-function ProgramsTab({ db, patient }: { db: DB; patient: Patient }) {
+function ProgramsTab({ db, patient, actorId }: { db: DB; patient: Patient; actorId: string }) {
   const { t } = useT();
-  const programs = db.programs.filter((p) => p.patientId === patient.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const programs = planHistory(db, patient.id);
+  const [note, setNote] = useState('');
   if (programs.length === 0) return <p className="muted">No programs.</p>;
+  const now = new Date().toISOString();
+  const rxOf = (id: string) => programExercises(db, id).map((e) => e.prescription);
   return (
     <div className="stack">
-      {programs.map((p) => (
-        <div key={p.id} className="panel stack tight">
-          <div className="row between wrap">
-            <strong>{p.title}</strong>
-            <span className={`badge ${p.status === 'active' ? 'clinical' : ''}`}>{p.status}</span>
-          </div>
-          <p className="small muted">
-            {fmtDate(p.startDate)} – {fmtDate(p.endDate)} · approved {p.approvedAt ? fmtDate(p.approvedAt) : '–'}
-          </p>
-          {programExercises(db, p.id).map((e) => (
-            <div key={e.id} className="row between small">
-              <span>
-                {t(getDefinition(e.prescription.definitionId).nameKey)} ({e.prescription.side}) · v{e.prescription.definitionVersion}
-              </span>
-              <span className="num muted">
-                {e.prescription.sets}×{e.prescription.reps} · {e.prescription.target.min}–{e.prescription.target.max}° · hold {e.prescription.holdSeconds}s · {e.prescription.frequencyPerWeek}/wk
+      {programs.map((p) => {
+        const pauses = (db.planPauses ?? []).filter((x) => x.programId === p.id).sort((a, b) => a.at.localeCompare(b.at));
+        const open = openPauses(db, p.id);
+        const resumes = (db.planResumes ?? []).filter((r) => r.programId === p.id);
+        const due = p.status === 'active' ? reassessmentDue(db, p, now) : [];
+        const prev = p.supersedes ? db.programs.find((x) => x.id === p.supersedes) : undefined;
+        const changes = prev ? diffPlans(rxOf(prev.id), rxOf(p.id)) : [];
+        return (
+          <div key={p.id} className="panel stack tight">
+            <div className="row between wrap">
+              <strong>
+                v{p.version ?? '?'} · {p.title}
+              </strong>
+              <span className="row" style={{ gap: '0.3rem' }}>
+                {open.length > 0 && <span className="badge danger">paused</span>}
+                <span className={`badge ${p.status === 'active' ? 'clinical' : ''}`}>{p.status}</span>
               </span>
             </div>
-          ))}
-        </div>
-      ))}
+            <p className="small muted">
+              {fmtDate(p.startDate)} – {fmtDate(p.endDate)} · approved {p.approvedAt ? fmtDateTime(p.approvedAt) : '–'}
+              {prev ? ` · replaces v${prev.version ?? '?'}` : ''}
+              {p.reassessAfterDays ? ` · reassess every ${p.reassessAfterDays} d` : ''}
+              {p.pauseOnPainStop === false ? ' · pain-rule stop does not pause the plan' : ''}
+            </p>
+            {p.changeReason && <p className="small">Reason for this version: {p.changeReason}</p>}
+            {changes.length > 0 && (
+              <details className="small">
+                <summary>
+                  {changes.length} change(s) from v{prev?.version ?? '?'}
+                  {changes.some((c) => c.direction === 'intensify') ? ' — includes intensification' : ''}
+                </summary>
+                <ul>
+                  {changes.map((c, i) => (
+                    <li key={i}>
+                      {c.exercise.replace(':', ' · ')} — {c.field}: {c.from} → {c.to}
+                      {c.direction === 'intensify' ? ' (intensifies)' : c.direction === 'reduce' ? ' (reduces)' : ''}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {programExercises(db, p.id).map((e) => (
+              <div key={e.id} className="stack tight">
+                <div className="row between small">
+                  <span>
+                    {t(getDefinition(e.prescription.definitionId).nameKey)} ({e.prescription.side}) · v{e.prescription.definitionVersion}
+                  </span>
+                  <span className="num muted">
+                    {e.prescription.sets}×{e.prescription.reps} · {e.prescription.target.min}–{e.prescription.target.max}° · hold {e.prescription.holdSeconds}s · {e.prescription.frequencyPerWeek}/wk
+                  </span>
+                </div>
+                {e.prescription.alternative && (
+                  <span className="xs muted">
+                    Approved alternative: {t(getDefinition(e.prescription.alternative.definitionId).nameKey)} {e.prescription.alternative.sets}×{e.prescription.alternative.reps} · {e.prescription.alternative.target.min}–{e.prescription.alternative.target.max}° — when: {e.prescription.alternative.when}
+                  </span>
+                )}
+              </div>
+            ))}
+            {due.length > 0 && <Notice tone="warn">Reassessment due: {due.map((d) => `${d.reason} (${fmtDate(d.since)})`).join('; ')}.</Notice>}
+            {pauses.map((x) => {
+              const r = resumes.find((y) => y.pauseId === x.id);
+              return (
+                <div key={x.id} className="small">
+                  <span className={`badge ${r ? '' : 'danger'}`}>{r ? 'resolved pause' : 'open pause'}</span> {fmtDateTime(x.at)} ·{' '}
+                  {x.reason === 'pain_rule' ? 'session stopped by the pain rule' : x.reason === 'patient_report' ? 'paused by the patient' : 'safety'}
+                  {x.detail ? ` — “${x.detail}”` : ''}
+                  {r && (
+                    <span className="muted">
+                      {' '}
+                      · resumed {fmtDateTime(r.at)}: {r.note}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+            {open.length > 0 && p.status === 'active' && (
+              <div className="stack tight">
+                <label className="field">
+                  <span>Review note (required to resume the same plan)</span>
+                  <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Phoned patient; pain settled within 2 h; continue unchanged" />
+                </label>
+                <div className="row wrap">
+                  <button
+                    className="btn primary sm"
+                    disabled={!note.trim()}
+                    onClick={() => {
+                      const at = new Date().toISOString();
+                      for (const x of open) insert('planResumes', { id: uuid(), pauseId: x.id, programId: p.id, patientId: patient.id, note: note.trim(), by: actorId, at, isDemo: patient.isDemo }, actorId, 'plan_resume');
+                      setNote('');
+                    }}
+                  >
+                    Resume unchanged
+                  </button>
+                  <Link className="btn secondary sm" to={`/c/programs/new?patient=${patient.id}`}>
+                    Publish a revised version
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

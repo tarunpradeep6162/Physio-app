@@ -161,3 +161,26 @@ Automated journey at 360×780, 390×844 and 412×915 (patient: welcome → sign-
 | Body-map wrists/ankles 13×10 px | Added an equivalent **"Choose areas from a list"** control (WCAG 2.5.8 equivalent-control exception); zoom remains | list chips 44 px |
 
 Result: **no axe violations on any audited screen**, no horizontal overflow except 2 px on the 360 px history screen, sign-up disabled until the pilot acknowledgement is ticked, and no page errors. Remaining: body-map shapes are still small by themselves; not tested with a real screen reader (VoiceOver/TalkBack) or on a real phone. **Language:** the new strings from these phases are English only; Tamil falls back to English for them and needs a clinical translation review before use.
+
+## Dheepika Lab Phase 3: motion–appearance coverage check (lab, BlazePose Lite, CPU)
+
+Raw report: `dl-phase3-coverage-lite.json`. Baseline: `phase20-lite.json` (knee scenarios) and `dl-phase2-shoulder-lite.json` (shoulder). The lab is a single emulated Chromium with synthetic scenes, **not a phone**. Segmentation was off in both runs, so every `not_on_body` refusal in the new run comes from the coverage check.
+
+| Scenario | Invalid frames, before → after | Unsafe values, before → after | Coverage refusals (`not_on_body`) |
+|---|---|---|---|
+| sit_to_stand | 8% → 92% | 0 → 0 | 400 |
+| squat_front | 4% → 29% | 0 → 0 | — (97 withheld) |
+| rest_standing | 72% → 99% | 0 → 0 | 56 |
+| heel_slide | 48% → 78% | 0 → 0 | 188 |
+| knee_occlusion | 60% → 85% | 0 → 0 | 91 |
+| leave_frame | 43% → 68% | 0 → 0 | 31 |
+| object_occlusion | — | **35 → 35** | 0 |
+| shoulder_elbow_occlusion | 10% → 10% | **179 → 179** | 2 of 209 hidden frames flagged |
+| shoulder_abduction / shoulder_flexion | 4% → 4% / 70% → 72% | 0 → 0 | 0 |
+| second_person | 33% → 33% | 7 → 7 | 0 |
+
+**Finding (negative result).** In this lab the check caught **none** of the unsafe occlusion frames it was built for, and it refused many frames of ordinary visible movement. The likely cause is that the synthetic figures' limbs have uniform texture, so a visible moving joint can look "unchanged" at its new position. Real clothing and skin may behave differently, but that is unmeasured.
+
+**Decision pending with the owner.** The check still gates measurements. It errs toward refusing a number, never toward showing a wrong one. Removing or weakening it is a safety-relevant change, so it was **not** made autonomously. Options: (a) keep it gating and accept the availability cost; (b) record it as a diagnostic only, pending real-phone data; (c) retune it against real-phone captures (Phase 2 device runs).
+
+**Still open, whichever option is chosen:** self-occlusion of the elbow (shoulder protocols) and object occlusion still produce unsafe values in the lab. These are **release blockers for the affected metrics**. Replay review by the clinician remains the mitigation.

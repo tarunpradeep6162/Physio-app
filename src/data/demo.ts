@@ -127,7 +127,7 @@ export function buildDemoDb(): DB {
   db.reports.push({ id: uuid(), assessmentId: base.id, version: 1, status: 'clinician_reviewed', generatedAt: iso(29 * DAY - 60_000), generatedBy: clinUser.id, approvedBy: clin.id, approvedAt: iso(29 * DAY - 60_000), templateVersion: REPORT_TEMPLATE_VERSION, isDemo: true });
 
   // Program + engine-derived sessions.
-  const program = { id: uuid(), patientId: p1.id, clinicianId: clin.id, title: 'Phase 1 — knee range and control', status: 'active' as const, startDate: iso(28 * DAY).slice(0, 10), endDate: iso(-14 * DAY).slice(0, 10), approvedAt: iso(28 * DAY), approvedBy: clin.id, notes: 'Demo program', createdAt: iso(28 * DAY), isDemo: true };
+  const program = { id: uuid(), patientId: p1.id, clinicianId: clin.id, title: 'Phase 1 — knee range and control', status: 'active' as const, startDate: iso(28 * DAY).slice(0, 10), endDate: iso(-14 * DAY).slice(0, 10), approvedAt: iso(28 * DAY), approvedBy: clin.id, notes: 'Demo program', createdAt: iso(28 * DAY), version: 1, reassessAfterDays: 28, reassessTriggers: ['pain_stop' as const, 'patient_pause' as const], pauseOnPainStop: true, isDemo: true };
   db.programs.push(program);
   const rxs: ExercisePrescription[] = [
     { ...defaultPrescription('knee_flexion', 'left'), target: { min: 90, max: 110 }, sets: 1, reps: 6, holdSeconds: 2, painStopAt: 7, painRiseStop: 3, progression: 'Raise target 10° when pain ≤ 3/10 and target met in 2 consecutive sessions (clinician decision at review).' },

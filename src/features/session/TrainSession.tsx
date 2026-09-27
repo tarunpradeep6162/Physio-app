@@ -2,8 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { NprsInput, Notice } from '../../components/ui';
+import { painRuleStopped, planState } from '../../clinical/plan';
 import type { Measurement, TrainingSession } from '../../data/models';
-import { activeProgram, programExercises } from '../../data/queries';
+import { fmtDateTime, programExercises } from '../../data/queries';
 import { insert, insertMany, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { cameraProvenance } from '../../engine/provenance';
@@ -14,6 +15,11 @@ import { SessionSummary } from './SessionSummary';
 /**
  * Guided training session: pre-session pain → each prescribed exercise in the Motion Mirror →
  * post-session pain and exertion → results. Partial sessions are saved as "interrupted".
+ *
+ * Phase 9: only the latest approved plan version runs. A paused plan cannot be started. The
+ * patient may pause it, and a session stopped by the clinician's pain rule pauses it (when the
+ * plan says so); only a clinician resumes. The patient may pick a clinician-approved alternative
+ * for an exercise — never a harder variant of their own.
  */
 
 type Step = { kind: 'pre' } | { kind: 'exercise'; index: number } | { kind: 'between'; index: number } | { kind: 'post' } | { kind: 'summary'; sessionId: string };
@@ -23,13 +29,18 @@ export function TrainSession() {
   const nav = useNavigate();
   const user = useCurrentUser();
   const patient = useCurrentPatient();
-  const program = useDb((d) => (patient ? activeProgram(d, patient.id) : undefined), [patient?.id]);
-  const exercises = useDb((d) => (program ? programExercises(d, program.id) : []), [program?.id]);
+  const state = useDb((d) => (patient ? planState(d, patient.id) : ({ kind: 'none' } as const)), [patient?.id]);
+  const program = state.kind === 'none' ? undefined : state.program;
+  const planExercises = useDb((d) => (program ? programExercises(d, program.id) : []), [program?.id]);
+  const [useAlt, setUseAlt] = useState<Record<string, boolean>>({});
+  const exercises = planExercises.map((e) => (useAlt[e.id] && e.prescription.alternative ? { ...e, prescription: e.prescription.alternative, usedAlternative: true } : { ...e, usedAlternative: false }));
+  const [pausing, setPausing] = useState(false);
+  const [pauseNote, setPauseNote] = useState('');
   const [step, setStep] = useState<Step>({ kind: 'pre' });
   const [painBefore, setPainBefore] = useState<number | null>(null);
   const [painAfter, setPainAfter] = useState<number | null>(null);
   const [rpe, setRpe] = useState<number | null>(null);
-  const outcomes = useRef<(MirrorOutcome & { programExerciseId: string })[]>([]);
+  const outcomes = useRef<(MirrorOutcome & { programExerciseId: string; usedAlternative: boolean })[]>([]);
   const startedAt = useMemo(() => new Date().toISOString(), []);
   const saved = useDb((d) => (step.kind === 'summary' ? d.sessions.find((s) => s.id === step.sessionId) : undefined), [step]);
 
@@ -44,6 +55,26 @@ export function TrainSession() {
       </div>
     );
   }
+  // A paused plan cannot be started (the summary of a session that just caused the pause still shows).
+  if (state.kind === 'paused' && step.kind !== 'summary') {
+    return (
+      <div className="content narrow stack">
+        <h1>{t('plan.paused_title')}</h1>
+        <Notice tone="warn">{t('plan.paused_body')}</Notice>
+        <p className="small muted">
+          {t('plan.paused_since', { at: fmtDateTime(state.pauses[0].at) })} · {t(`plan.pause_reason.${state.pauses[0].reason}`)}
+        </p>
+        <Link className="btn secondary" to="/p/home">
+          {t('session.back_home')}
+        </Link>
+      </div>
+    );
+  }
+
+  const pausePlan = (reason: 'pain_rule' | 'patient_report', detail: string, sessionId?: string) => {
+    insert('planPauses', { id: uuid(), programId: program.id, patientId: patient.id, reason, detail: detail || undefined, sessionId, by: user.id, at: new Date().toISOString(), isDemo: patient.isDemo }, user.id, `plan_pause:${reason}`);
+    insert('alerts', { id: uuid(), patientId: patient.id, type: 'plan_paused', severity: 'warning', detail: `${program.title} v${program.version ?? 1} — ${reason === 'pain_rule' ? 'session stopped by the pain rule' : 'paused by the patient'}${detail ? `: ${detail}` : ''}`, createdAt: new Date().toISOString(), isDemo: patient.isDemo }, user.id);
+  };
 
   const save = (status: TrainingSession['status']) => {
     const first = outcomes.current[0];
@@ -62,7 +93,7 @@ export function TrainSession() {
       painAfter: painAfter ?? undefined,
       rpe: rpe ?? undefined,
       painEvents: outcomes.current.flatMap((o) => o.painEvents),
-      results: outcomes.current.map((o) => ({ ...o.result, programExerciseId: o.programExerciseId })),
+      results: outcomes.current.map((o) => ({ ...o.result, programExerciseId: o.programExerciseId, usedAlternative: o.usedAlternative || undefined })),
       provenance,
       isDemo: patient.isDemo,
     };
@@ -92,6 +123,10 @@ export function TrainSession() {
     if (painBefore !== null && painAfter !== null && painAfter - painBefore >= 2) {
       insert('alerts', { id: uuid(), patientId: patient.id, type: 'pain_increase', severity: 'warning', detail: `Session pain ${painBefore} → ${painAfter}`, createdAt: new Date().toISOString(), isDemo: patient.isDemo }, user.id);
     }
+    if (painRuleStopped(session.painEvents) && program.pauseOnPainStop !== false) {
+      const ev = session.painEvents!.find((e) => e.paused)!;
+      pausePlan('pain_rule', `${ev.nprs}/10 (${ev.rule})`, sessionId);
+    }
     const lowTracking = outcomes.current.some((o) => o.result.repsAttempted > 0 && o.result.trackingCoverage < 0.6);
     if (lowTracking) {
       insert('alerts', { id: uuid(), patientId: patient.id, type: 'tracking_quality', severity: 'info', detail: 'Tracking coverage below 60% in a session', createdAt: new Date().toISOString(), isDemo: patient.isDemo }, user.id);
@@ -115,7 +150,7 @@ export function TrainSession() {
         painBefore={painBefore}
         onCancel={exitEarly}
         onDone={(o) => {
-          outcomes.current.push({ ...o, programExerciseId: pe.id });
+          outcomes.current.push({ ...o, programExerciseId: pe.id, usedAlternative: pe.usedAlternative });
           if (o.result.endedEarly) {
             setStep({ kind: 'between', index: step.index });
             return;
@@ -136,21 +171,56 @@ export function TrainSession() {
             <NprsInput label={t('session.pre_pain')} value={painBefore} onChange={setPainBefore} />
           </div>
           <div className="panel stack tight">
-            {exercises.map((e, i) => (
-              <div key={e.id} className="row between small">
-                <span>
-                  {i + 1}. {t(getDefinition(e.prescription.definitionId, e.prescription.definitionVersion).nameKey)} · {e.prescription.side === 'left' ? t('mirror.side_left') : t('mirror.side_right')}
-                </span>
-                <span className="muted num">
-                  {e.prescription.sets}×{e.prescription.reps} · {e.prescription.target.min}–{e.prescription.target.max}°
-                </span>
-              </div>
-            ))}
+            {exercises.map((e, i) => {
+              const alt = planExercises[i].prescription.alternative;
+              return (
+                <div key={e.id} className="stack tight">
+                  <div className="row between small">
+                    <span>
+                      {i + 1}. {t(getDefinition(e.prescription.definitionId, e.prescription.definitionVersion).nameKey)} · {e.prescription.side === 'left' ? t('mirror.side_left') : t('mirror.side_right')}
+                      {e.usedAlternative && <span className="badge"> {t('plan.alternative')}</span>}
+                    </span>
+                    <span className="muted num">
+                      {e.prescription.sets}×{e.prescription.reps} · {e.prescription.target.min}–{e.prescription.target.max}°
+                    </span>
+                  </div>
+                  {alt && (
+                    <label className="row xs" style={{ gap: '0.4rem' }}>
+                      <input type="checkbox" checked={!!useAlt[e.id]} onChange={(ev) => setUseAlt((u) => ({ ...u, [e.id]: ev.target.checked }))} />
+                      <span>
+                        {t('plan.use_alternative', { name: t(getDefinition(alt.definitionId, alt.definitionVersion).nameKey) })} — {alt.when}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              );
+            })}
           </div>
           {painBefore !== null && painBefore >= 8 && <Notice tone="warn">{t('safety.review_body')}</Notice>}
           <button className="btn primary lg block" disabled={painBefore === null} onClick={() => setStep({ kind: 'exercise', index: 0 })}>
             {t('session.start')}
           </button>
+          {pausing ? (
+            <div className="panel stack tight">
+              <label className="field">
+                <span>{t('plan.pause_note')}</span>
+                <input className="input" value={pauseNote} onChange={(e) => setPauseNote(e.target.value)} />
+              </label>
+              <p className="xs muted">{t('plan.pause_explain')}</p>
+              <div className="row">
+                <button className="btn primary" onClick={() => pausePlan('patient_report', pauseNote.trim())}>
+                  {t('plan.pause_confirm')}
+                </button>
+                <button className="btn secondary" onClick={() => setPausing(false)}>
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn ghost block" onClick={() => setPausing(true)}>
+              {t('plan.pause_button')}
+            </button>
+          )}
         </>
       )}
 
@@ -199,6 +269,7 @@ export function TrainSession() {
         <>
           <h1>{t('session.complete')}</h1>
           {saved.status === 'interrupted' && <Notice tone="warn">{t('session.interrupted')}</Notice>}
+          {state.kind === 'paused' && <Notice tone="warn">{t('plan.paused_body')}</Notice>}
           <SessionSummary session={saved} />
           <Link to="/p/home" className="btn primary lg block">
             {t('session.back_home')}
