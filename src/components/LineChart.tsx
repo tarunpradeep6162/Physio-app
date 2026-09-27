@@ -124,7 +124,7 @@ export function LineChart({ series, title, yUnit = '', yDomain, band, formatX, h
         </div>
       )}
       {table ? (
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>

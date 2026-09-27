@@ -1,4 +1,4 @@
-import type { CaptureSession, DB, ID } from '../data/models';
+import type { CaptureSession, DB, ID, ReviewStatus } from '../data/models';
 import { age } from '../data/queries';
 import { getProtocol } from '../engine/protocols/knee';
 import { parseRegion, regionLabel } from '../features/bodymap/regions';
@@ -40,6 +40,17 @@ export interface EvidenceItem {
 /** Parameters of the algorithmic observation rules (versioned with the reasoning rule set). */
 export const OBSERVATION_RULES_VERSION = 'knee-observations-1.0.0';
 const EXTENSION_DEFICIT_DEG = 5;
+
+/**
+ * Clinician review of a capture metric (from its linked camera-estimate measurement row), if any.
+ * A rejected or repeat-requested metric is never used as a finding, in evidence or in the report.
+ */
+export function metricReview(db: DB, captureId: ID, metricId: string): ReviewStatus | null {
+  const rows = db.measurements.filter((m) => m.captureId === captureId && m.metricId === metricId && m.category === 'camera_estimate');
+  return rows.length ? rows[rows.length - 1].reviewStatus : null;
+}
+
+export const reviewBlocks = (r: ReviewStatus | null) => r === 'rejected' || r === 'repeat_requested';
 
 export function capturesFor(db: DB, assessmentId: ID): CaptureSession[] {
   // Latest capture per protocol+side (earlier attempts stay in history).
@@ -138,19 +149,20 @@ export function buildEvidence(db: DB, assessmentId: ID): EvidenceItem[] {
     const simulated = c.provenance.source === 'simulated_demo';
     for (const m of c.result.metrics) {
       const id = `cap:${c.id}:${m.id}`;
-      const valid = m.validity === 'valid' && c.result.quality.verdict === 'valid';
+      const review = metricReview(db, c.id, m.id);
+      const valid = m.validity === 'valid' && c.result.quality.verdict === 'valid' && !reviewBlocks(review);
       const side = m.side ?? c.side;
       out.push({
         id,
         category: 'camera_estimated',
         label: `${m.label}${side && !m.side ? ` — ${side}` : ''}`,
-        value: valid && m.value !== null ? `${m.value}${m.unit === 'deg' ? '°' : m.unit === 's' ? ' s' : m.unit === 'pct_leg' ? '% leg length' : ''}` : `Not reported — ${m.reason ?? c.result.quality.reasons.join('; ')}`,
+        value: valid && m.value !== null ? `${m.value}${m.unit === 'deg' ? '°' : m.unit === 's' ? ' s' : m.unit === 'pct_leg' ? '% leg length' : ''}` : reviewBlocks(review) ? `Not used — ${review === 'rejected' ? 'rejected' : 'repeat requested'} by clinician` : `Not reported — ${m.reason ?? c.result.quality.reasons.join('; ')}`,
         facts: [],
         source: { kind: 'capture_metric', captureId: c.id, metricId: m.id, protocol: `${def.id}@${def.version}` },
         method: m.method,
         version: `${c.result.algorithmVersion} · ${c.provenance.poseModel ?? ''} ${c.provenance.poseModelVersion ?? ''}`.trim(),
         validity: valid ? 'valid' : 'invalid',
-        validityNote: `Coverage ${Math.round(c.result.quality.coverage * 100)}%, ${c.result.quality.validCycles} valid reps${simulated ? ' · SIMULATED demo data' : ''}`,
+        validityNote: `Coverage ${Math.round(c.result.quality.coverage * 100)}%, ${c.result.quality.validCycles} valid reps · clinician review: ${review ?? 'not reviewed'}${simulated ? ' · SIMULATED demo data' : ''}`,
         limitations: def.limitations,
       });
       if (!valid || m.value === null) continue;

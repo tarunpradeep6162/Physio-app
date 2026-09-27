@@ -12,10 +12,14 @@ import { age, fmtDate, fmtDateTime } from '../../data/queries';
 import { insert, update, useDb, uuid } from '../../data/store';
 import { getProtocol, PROTOCOLS } from '../../engine/protocols/knee';
 import type { Side } from '../../engine/types';
+import { jointList } from '../../engine/landmarks';
+import { POSTURE_METRICS, type PostureMetricId } from '../../engine/posture';
+import type { ViewOrientation } from '../../engine/types';
 import { BodyMap } from '../bodymap/BodyMap';
 import { regionLabel } from '../bodymap/regions';
 import { currentPlan, itemKey, savePlan } from './persist';
 import { Replay } from './Replay';
+import { ReferenceMeasure } from './ReferenceMeasure';
 import { BilateralTable, CaptureCard, ComparisonTable } from './Results';
 
 const ReportPanel = lazy(() => import('../report/ReportPanel').then((m) => ({ default: m.ReportPanel })));
@@ -208,7 +212,7 @@ function SummaryTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string
       </div>
       <section className="panel stack tight">
         <h2>Original answers (verbatim, including superseded)</h2>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -238,7 +242,7 @@ function SummaryTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string
             {SAFETY_QUESTIONNAIRE.id}@{SAFETY_QUESTIONNAIRE.version} · {db.settings.ruleApprovals[`${SAFETY_QUESTIONNAIRE.id}@${SAFETY_QUESTIONNAIRE.version}`] ? 'approved' : 'DRAFT'}
           </span>
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -297,7 +301,7 @@ function PlanTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string })
           })}
         </div>
         <div className="row wrap">
-          <select className="input" style={{ width: 'auto' }} value={add.protocolId} onChange={(e) => setAdd({ protocolId: e.target.value, side: getProtocol(e.target.value).sided ? 'left' : null })} aria-label="Protocol">
+          <select className="input" style={{ width: 'auto', maxWidth: '100%' }} value={add.protocolId} onChange={(e) => setAdd({ protocolId: e.target.value, side: getProtocol(e.target.value).sided ? 'left' : null })} aria-label="Protocol">
             {Object.values(PROTOCOLS).map((p) => (
               <option key={p.id} value={p.id}>
                 {p.title} (v{p.version})
@@ -334,6 +338,7 @@ function PlanTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string })
 function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: string }) {
   const caps = capturesFor(db, a.id);
   const all = db.captures.filter((c) => c.assessmentId === a.id);
+  const patient = db.patients.find((p) => p.id === a.patientId);
   const decide = (m: Measurement, status: ReviewStatus) => update('measurements', m.id, { reviewStatus: status, reviewedBy: actorId, reviewedAt: new Date().toISOString() }, actorId, `review:${status}`);
   const scansByView = new Map<string, (typeof db.scans)[number]>();
   for (const scan of db.scans.filter((s) => s.assessmentId === a.id && s.kind === 'static_posture').sort((x, y) => x.createdAt.localeCompare(y.createdAt))) scansByView.set(scan.view, scan);
@@ -344,10 +349,11 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
         Showing the latest capture per test ({all.length} captures in total, earlier attempts retained). Accepting a camera estimate records that you reviewed it; it remains labelled camera-estimated.
       </p>}
       {caps.map((c) => {
-        const ms = db.measurements.filter((m) => m.captureId === c.id);
+        const ms = db.measurements.filter((m) => m.captureId === c.id && m.category === 'camera_estimate');
         return (
           <div key={c.id} className="stack tight">
             <CaptureCard cap={c} />
+            {patient && <ReferenceMeasure cap={c} patient={patient} db={db} actorId={actorId} />}
             {ms.length > 0 && (
               <div className="panel row wrap" style={{ padding: '0.6rem' }}>
                 {ms.map((m) => (
@@ -387,9 +393,19 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
                 <h3>{scan.view.replace(/_/g, ' ')} · {fmtDateTime(scan.createdAt)}</h3>
                 <p className="xs muted mono">{scan.provenance.poseModel} {scan.provenance.poseModelVersion} · {scan.provenance.algorithmVersion} · {scan.provenance.source}</p>
                 {!ms.length && <Notice tone="warn">No reliable measures were recorded for this view. Recapture is needed.</Notice>}
-                {ms.map((m) => (
+                {ms.map((m) => {
+                  const metricId = m.type.slice(8) as PostureMetricId;
+                  const def = POSTURE_METRICS.find((d) => d.id === metricId);
+                  const obs = db.observations.filter((o) => o.measurementId === m.id);
+                  return (
                   <div key={m.id} className="row between wrap" style={{ gap: '0.6rem' }}>
-                    <span className="small grow">{m.type.slice(8).replace(/_/g, ' ')}{m.direction ? ` · ${m.direction.replace(/_/g, ' ')}` : ''}</span>
+                    <span className="small grow">
+                      {metricId.replace(/_/g, ' ')} estimated in this capture{m.direction ? ` · ${m.direction.replace(/_/g, ' ')}` : ''}
+                      <span className="xs muted" style={{ display: 'block' }}>
+                        from {def ? jointList(def.landmarks((scan.view as ViewOrientation) ?? 'anterior')) : 'landmarks'} · 2D image-plane estimate
+                        {obs.map((o) => ` · observation: crossed configured threshold ${o.threshold}° (rule ${o.rule}, ${o.status})`).join('')}
+                      </span>
+                    </span>
                     <strong className="num">{m.value}{m.unit === 'deg' ? '°' : '% body height'}</strong>
                     <span className="xs muted">confidence {m.confidence.toFixed(2)} · ±{m.sd ?? '—'} · {m.reviewStatus}</span>
                     <div className="row wrap">
@@ -398,7 +414,8 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
                       <button className="btn sm secondary" onClick={() => decide(m, 'repeat_requested')}>Repeat</button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             );
           })}
@@ -615,6 +632,57 @@ function ReasoningTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: stri
   );
 }
 
+/** Views in which a sagittal/frontal 2D angle is meaningful, in plain words. */
+const VIEW_TEXT: Record<string, string> = { anterior: 'front view', posterior: 'back view', lateral_left: 'left side toward camera', lateral_right: 'right side toward camera', unknown: 'view not determined' };
+
+/**
+ * Exactly how a capture number was produced: which landmarks, which view, what processing — and
+ * when the view makes the measure invalid, say "not measurable in this view" rather than a number.
+ */
+function CaptureCalculation({ cap, metricId }: { cap: DB['captures'][number]; metricId: string }) {
+  const def = getProtocol(cap.protocolId, cap.protocolVersion);
+  const m = cap.result.metrics.find((x) => x.id === metricId);
+  const required = def.requiredLandmarks(cap.side);
+  const views = def.views(cap.side);
+  const issues = cap.result.quality.issues ?? {};
+  const wrongView = (issues.wrong_orientation ?? 0) + (issues.orientation_uncertain ?? 0);
+  const total = Object.values(issues).reduce((a, b) => a + b, 0);
+  const viewBlocked = !views.includes(cap.result.view) || (total > 0 && wrongView / total > 0.5 && m?.validity !== 'valid');
+  const proc = cap.result.processing;
+  return (
+    <section className="stack tight">
+      <h3>Calculation</h3>
+      {viewBlocked && m?.validity !== 'valid' && <Notice tone="warn">Not measurable in this view: this test needs the {views.map((v) => VIEW_TEXT[v]).join(' or ')}; the capture was mostly {VIEW_TEXT[cap.result.view] ?? cap.result.view}.</Notice>}
+      <dl className="small calc-list">
+        <dt>Landmarks used</dt>
+        <dd>{jointList(required)} (BlazePose indices {required.join(', ')})</dd>
+        <dt>Required view</dt>
+        <dd>
+          {views.map((v) => VIEW_TEXT[v]).join(' or ')} · recorded: {VIEW_TEXT[cap.result.view] ?? cap.result.view}
+        </dd>
+        {m && (
+          <>
+            <dt>Formula</dt>
+            <dd>{m.method}</dd>
+          </>
+        )}
+        <dt>Geometry</dt>
+        <dd>2D image-plane estimate in pixel coordinates (aspect-corrected). It is not a 3D joint rotation or a force.</dd>
+        <dt>Signal processing</dt>
+        <dd>
+          {proc
+            ? `No landmark smoothing; plausibility guard ≤ ${proc.guard.maxRatePerSec}/s with ${proc.guard.recoverMs} ms recovery; stored values: ${proc.stored}; live display: ${proc.liveAngleFilter}.`
+            : 'Recorded with pv-knee-1.0.0 processing (landmark and angle One Euro filters; live values stored).'}
+        </dd>
+        <dt>Algorithm</dt>
+        <dd className="mono">
+          {cap.result.algorithmVersion} · protocol {def.id}@{def.version}
+        </dd>
+      </dl>
+    </section>
+  );
+}
+
 function WhyPanel({ item, evidence, results, db, onClose, onOpen }: { item: EvidenceItem; evidence: EvidenceItem[]; results: EvaluatedConsideration[]; db: DB; onClose: () => void; onOpen: (id: string) => void }) {
   const supports = results.filter((r) => r.supporting.some((s) => s.evidence.some((e) => e.id === item.id)));
   const conflicts = results.filter((r) => r.conflicting.some((s) => s.evidence.some((e) => e.id === item.id)));
@@ -672,6 +740,7 @@ function WhyPanel({ item, evidence, results, db, onClose, onOpen }: { item: Evid
           </>
         )}
       </section>
+      {cap && src.kind === 'capture_metric' && <CaptureCalculation cap={cap} metricId={src.metricId} />}
       {(item.method || item.version) && (
         <section className="stack tight">
           <h3>Method & version</h3>

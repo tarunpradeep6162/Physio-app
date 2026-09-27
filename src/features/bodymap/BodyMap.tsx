@@ -241,6 +241,18 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
           </div>
         )}
       </div>
+      {!readOnly && !drawing && (
+        <details className="bodymap-list">
+          <summary>{t('body.list_toggle')}</summary>
+          <div className="chips" role="group" aria-label={`${t('body.list_toggle')} — ${viewLabels[view]}`}>
+            {regions.map((r) => (
+              <button key={r.id} type="button" className="chip" aria-pressed={sel.has(r.id)} onClick={() => onToggle(r.id)}>
+                {regionLabel(r.id)}
+              </button>
+            ))}
+          </div>
+        </details>
+      )}
       <p className="xs muted">{t('body.interim')}</p>
     </div>
   );

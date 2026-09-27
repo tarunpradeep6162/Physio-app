@@ -1,6 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { CameraErrorCode } from '../../camera/camera';
 import type { RuntimeStatus } from '../../camera/useMotionRuntime';
+import { jointLabel } from '../../engine/landmarks';
+import type { JointState } from '../../engine/measurements';
 import type { CalibrationCheck } from '../../engine/calibration';
 import { useT } from '../../i18n';
 
@@ -54,12 +57,13 @@ export function RuntimeOverlay({ status, error, onRetry, onUseDemo }: { status: 
   );
 }
 
-const ORDER: CalibrationCheck['id'][] = ['person', 'single_person', 'framing', 'distance', 'centering', 'orientation', 'camera_level', 'lighting', 'confidence'];
+const ORDER: CalibrationCheck['id'][] = ['person', 'single_person', 'stable', 'framing', 'distance', 'centering', 'orientation', 'hands_clear', 'camera_level', 'lighting', 'confidence'];
 
 export function CalibrationChecklist({ checks, compact }: { checks: CalibrationCheck[]; compact?: boolean }) {
   const { t } = useT();
   const byId = new Map(checks.map((c) => [c.id, c]));
-  const shown = ORDER.filter((id) => byId.has(id)).filter((id) => !compact || ['person', 'framing', 'orientation', 'camera_level', 'lighting'].includes(id));
+  // Compact: the key checks plus ANY failing check (an occluded joint must never be hidden from view).
+  const shown = ORDER.filter((id) => byId.has(id)).filter((id) => !compact || ['person', 'framing', 'orientation', 'camera_level', 'lighting'].includes(id) || byId.get(id)!.status === 'fail');
   return (
     <div className="checklist">
       <ul>
@@ -93,4 +97,52 @@ export function CuePill({ tone, children, live = true }: { tone: 'info' | 'succe
       <span>{children}</span>
     </div>
   );
+}
+
+const JOINT_STATE_TEXT: Record<JointState, string> = { ok: 'visible', out_of_frame: 'out of frame', not_on_body: 'covered', occluded: 'hidden', no_person: 'not found' };
+
+/** Required joints, each with its live status (never colour alone: icon + text). */
+export function JointStatusBar({ joints }: { joints: { index: number; state: JointState }[] }) {
+  if (!joints.length) return null;
+  return (
+    <ul className="joint-status" aria-label="Required joints">
+      {joints.map((j) => (
+        <li key={j.index} className={`joint-chip ${j.state === 'ok' ? 'ok' : 'bad'}`}>
+          <span aria-hidden="true">{j.state === 'ok' ? '✓' : '✕'}</span> {jointLabel(j.index)}
+          {j.state !== 'ok' && <span className="joint-chip-state"> · {JOINT_STATE_TEXT[j.state]}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * Holds an instruction on screen for at least `minMs` before another replaces it, so the text never
+ * flickers at a threshold. A pause/warning is shown IMMEDIATELY (safety first).
+ */
+export function useStableCue<T extends { key: string; tone: string; text?: string }>(cue: T | null, minMs = 700): T | null {
+  const [shown, setShown] = useState<T | null>(cue);
+  const since = useRef(0);
+  const latest = useRef(cue);
+  latest.current = cue;
+  const sig = cue ? `${cue.key}|${cue.tone}|${cue.text ?? ''}` : null;
+  const shownSig = shown ? `${shown.key}|${shown.tone}|${shown.text ?? ''}` : null;
+  useEffect(() => {
+    if (sig === null || sig === shownSig) return;
+    const next = latest.current!;
+    const now = performance.now();
+    const sameKey = shown && next.key === shown.key;
+    if (!shown || sameKey || next.tone === 'warning' || now - since.current >= minMs) {
+      if (!sameKey) since.current = now;
+      setShown(next);
+      return;
+    }
+    const id = setTimeout(() => {
+      since.current = performance.now();
+      setShown(latest.current);
+    }, minMs - (now - since.current));
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig, shownSig, minMs]);
+  return shown;
 }

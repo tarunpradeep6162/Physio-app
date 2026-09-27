@@ -3,8 +3,8 @@
   --graphite: #071012;
   --graphite-2: #0d1a1d;
   --graphite-3: #16272b;
-  --teal: #0d9488;
-  --teal-strong: #0b7a70;
+  --teal: #0b7a70; /* 5.2:1 with white text (was #0d9488, 3.74:1) */
+  --teal-strong: #08625a;
   --cyan: #22d3c5;
   --green: #31c48d;
   --green-ink: #1c7f58;
@@ -121,6 +121,7 @@ textarea {
   outline-offset: 2px;
   border-radius: 6px;
 }
+.skip-link:not(:focus):not(:active),
 .sr-only {
   position: absolute;
   width: 1px;
@@ -215,7 +216,11 @@ textarea {
   cursor: pointer;
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
-  white-space: nowrap;
+  /* Labels may wrap: an unbreakable label (long text, Tamil, large-text mode) must never widen the page. */
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 .btn:active {
   transform: translateY(1px);
@@ -534,7 +539,8 @@ textarea.input {
   font-weight: 600;
   color: var(--ink-2);
 }
-.segmented button[aria-pressed='true'] {
+.segmented button[aria-pressed='true'],
+.segmented button[role='radio'][aria-checked='true'] {
   background: var(--panel);
   color: var(--ink);
   box-shadow: 0 1px 3px rgba(7, 16, 18, 0.12);
@@ -1377,4 +1383,166 @@ table.data tr:hover td {
   body { background: #fff; }
   .report-page { padding: 0; max-width: none; }
   .report-section { break-inside: avoid; }
+}
+
+/* Per-test setup guide (capture screen) */
+.setup-guide summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.setup-guide-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.6rem;
+}
+@media (min-width: 640px) {
+  .setup-guide-body {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+}
+.setup-guide-canvas {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  background: #b9b1a4;
+}
+.setup-guide-canvas.portrait {
+  max-width: 150px;
+  margin: 0 auto;
+}
+.setup-guide-canvas.landscape {
+  max-width: 320px;
+  margin: 0 auto;
+}
+.setup-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  margin: 0;
+}
+.setup-facts dt {
+  color: #8fb0aa;
+  font-weight: 600;
+}
+.setup-facts dd {
+  margin: 0;
+  color: #e6f5f2;
+}
+.calc-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+}
+.calc-list dt {
+  color: var(--muted, #5a6b68);
+  font-weight: 600;
+}
+.calc-list dd {
+  margin: 0;
+}
+
+/* Live required-joint status (camera screens) */
+.joint-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.joint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  border: 1px solid rgba(236, 253, 250, 0.25);
+  color: #e6f5f2;
+  background: rgba(7, 16, 18, 0.55);
+}
+.joint-chip.bad {
+  border-color: #f5b83d;
+  color: #ffe2a6;
+  background: rgba(80, 52, 0, 0.55);
+}
+.joint-chip-state {
+  font-weight: 600;
+}
+/* Measurement paused: unmistakable, without motion. */
+.stage.measure-paused .stage-media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 4px #f5b83d;
+  background: rgba(7, 16, 18, 0.28);
+}
+.stage-media {
+  position: relative;
+}
+.hud.paused .hud-value {
+  opacity: 0.45;
+}
+.paused-tag {
+  display: inline-block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ffe2a6;
+}
+
+/* Phase 19 accessibility fixes */
+.skip-link:focus,
+.skip-link:active {
+  position: fixed;
+  top: calc(var(--safe-top) + 0.5rem);
+  left: 0.5rem;
+  z-index: 1000;
+  min-height: var(--touch);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1rem;
+  border-radius: var(--radius-sm);
+  background: var(--graphite);
+  color: #fff;
+  font-weight: 700;
+}
+.table-wrap:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.bodymap-list > summary {
+  min-height: var(--touch);
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--teal-strong);
+}
+.bodymap-list .chips {
+  padding-top: 0.25rem;
+}
+input[type='range'] {
+  min-height: 32px;
+}
+input[type='checkbox'],
+input[type='radio'] {
+  min-width: 24px;
+  min-height: 24px;
+}
+.section-title > a {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.25rem;
+}
+select.input {
+  max-width: 100%;
+  text-overflow: ellipsis;
 }

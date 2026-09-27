@@ -125,3 +125,20 @@ describe('data migration', () => {
     expect(m.captures).toEqual([]);
   });
 });
+
+describe('Phase 16 — static-scan observations cannot on their own make a consideration supportive', () => {
+  it('a posture threshold crossing is an evidence item with no reasoning facts', () => {
+    const db = dbWith({}, [{ regionId: 'knee_left' }]);
+    const prov = { source: 'camera_estimation' as const, createdBy: 'u', createdAt: '2026-01-02', engineVersion: 'x', algorithmVersion: 'y', view: 'anterior', poseModel: 'blazepose-ghum-lite' };
+    db.scans.push({ id: 's1', patientId: 'p', assessmentId: 'a', kind: 'static_posture', view: 'anterior', frameWidth: 720, frameHeight: 1280, landmarks: [], provenance: prov, createdAt: '2026-01-02' } as never);
+    db.measurements.push({ id: 'm1', patientId: 'p', assessmentId: 'a', scanId: 's1', type: 'posture.knee_frontal_left', value: 12, unit: 'deg', direction: 'medial', confidence: 0.9, category: 'camera_estimate', provenance: prov, reviewStatus: 'accepted', createdAt: '2026-01-02' });
+    db.observations.push({ id: 'o1', patientId: 'p', assessmentId: 'a', measurementId: 'm1', rule: 'knee_frontal', threshold: 8, value: 12, status: 'accepted', createdAt: '2026-01-02' });
+    const ev = buildEvidence(db, 'a');
+    const scanItems = ev.filter((e) => e.id.startsWith('scan'));
+    expect(scanItems.length).toBeGreaterThan(0);
+    expect(scanItems.every((e) => e.facts.length === 0)).toBe(true);
+    const res = evaluate(ev, 'clear');
+    expect(res.every((r) => r.supporting.every((s) => s.evidence.every((e) => !e.id.startsWith('scan'))))).toBe(true);
+    expect(res.some((r) => r.state === 'supportive')).toBe(false);
+  });
+});

@@ -45,7 +45,7 @@ export function CaptureCard({ cap, showReplay = false }: { cap: CaptureSession; 
         </div>
       </div>
       {q.verdict === 'invalid' && <Notice tone="warn">{q.reasons.join('. ')}. Values are withheld; recapture required.</Notice>}
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <tbody>
             {cap.result.metrics.map((m) => (
@@ -107,7 +107,7 @@ export function BilateralTable({ db, assessmentId }: { db: DB; assessmentId: str
         <h2>Left / right comparison</h2>
         <CategoryBadge kind="camera" />
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>
@@ -172,7 +172,7 @@ export function ComparisonTable({ db, current }: { db: DB; current: Assessment }
           Baseline {fmtDate(baseline.createdAt)} · current {fmtDate(current.createdAt)}
         </span>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>
@@ -204,7 +204,7 @@ export function ComparisonTable({ db, current }: { db: DB; current: Assessment }
             <strong>Symptoms & function</strong>
             <CategoryBadge kind="pro" />
           </div>
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
             <table className="data">
               <thead>
                 <tr>

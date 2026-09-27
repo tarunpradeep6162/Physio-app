@@ -19,7 +19,7 @@ export function ProgramsIndex() {
           <IconPlus width={18} /> New program
         </Link>
       </div>
-      <div className="panel table-wrap">
+      <div className="panel table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>

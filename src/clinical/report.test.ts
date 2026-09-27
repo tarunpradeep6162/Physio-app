@@ -38,6 +38,25 @@ describe('report', () => {
     expect(buildReport(copy, base.id, 'clinician').state).toBe('preliminary');
   });
 
+  it('a clinician-rejected capture metric is not reported as a finding, and the approval reverts', () => {
+    const copy = structuredClone(db);
+    const cap = copy.captures.find((c) => c.assessmentId === base.id && c.protocolId === 'knee_supported_flexion')!;
+    let row = copy.measurements.find((m) => m.captureId === cap.id && m.metricId === 'knee_flexion_peak' && m.category === 'camera_estimate');
+    if (!row) {
+      row = { id: 'mrow', patientId: cap.patientId, assessmentId: base.id, type: 'knee_flexion_peak', value: 1, unit: 'deg', confidence: 0.9, category: 'camera_estimate', captureId: cap.id, metricId: 'knee_flexion_peak', provenance: cap.provenance, reviewStatus: 'pending', createdAt: cap.createdAt } as never;
+      copy.measurements.push(row!);
+    }
+    const before = JSON.stringify(buildReport(copy, base.id, 'clinician').sections.find((x) => x.n === 5));
+    const peak = cap.result.metrics.find((m) => m.id === 'knee_flexion_peak')!.value!;
+    expect(before).toContain(`${peak}`);
+    row!.reviewStatus = 'rejected';
+    row!.reviewedAt = new Date(Date.now() + 60_000).toISOString();
+    const m = buildReport(copy, base.id, 'clinician');
+    expect(m.state).toBe('preliminary');
+    const rom = JSON.stringify(m.sections.find((x) => x.n === 5));
+    expect(rom).not.toContain(`${peak}°`);
+  });
+
   it('renders a real multi-page PDF', () => {
     const doc = renderPdf(buildReport(db, re.id, 'clinician'));
     const bytes = doc.output('arraybuffer');

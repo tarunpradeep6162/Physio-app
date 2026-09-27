@@ -217,7 +217,7 @@ export function App() {
   const prefs = useDocumentPrefs();
   return (
     <I18nProvider locale={prefs.locale}>
-      <a href="#main" className="sr-only">
+      <a href="#main" className="skip-link">
         Skip to content
       </a>
       <BrowserRouter>

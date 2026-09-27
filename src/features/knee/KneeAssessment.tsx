@@ -346,10 +346,10 @@ function SafetyStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: st
           <div key={it.id} className="row between" style={{ padding: '0.75rem 0', gap: '1rem' }}>
             <span className="grow">{it.text}</span>
             <div className="segmented" role="radiogroup" aria-label={it.text}>
-              <button type="button" role="radio" aria-checked={ans[it.id] === false} aria-pressed={ans[it.id] === false} onClick={() => setAns((x) => ({ ...x, [it.id]: false }))}>
+              <button type="button" role="radio" aria-checked={ans[it.id] === false} onClick={() => setAns((x) => ({ ...x, [it.id]: false }))}>
                 No
               </button>
-              <button type="button" role="radio" aria-checked={ans[it.id] === true} aria-pressed={ans[it.id] === true} onClick={() => setAns((x) => ({ ...x, [it.id]: true }))}>
+              <button type="button" role="radio" aria-checked={ans[it.id] === true} onClick={() => setAns((x) => ({ ...x, [it.id]: true }))}>
                 Yes
               </button>
             </div>

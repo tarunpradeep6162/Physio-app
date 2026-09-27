@@ -51,7 +51,7 @@ function BlockView({ b }: { b: Block }) {
       );
     case 'table':
       return (
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>

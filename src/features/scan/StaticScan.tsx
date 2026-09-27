@@ -95,7 +95,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
       }
       const calib = evaluateCalibration({
         frame: f,
-        req: { landmarks: FULL_BODY_LANDMARKS, views: [view], heightRange: [0.5, 0.97], minConfidence: 0.7, maxRollDeg: 3 },
+        req: { landmarks: FULL_BODY_LANDMARKS, views: [view], heightRange: [0.5, 0.97], minConfidence: 0.7, maxRollDeg: 3, handsFree: view === 'anterior' || view === 'posterior' },
         lighting: lighting.current,
         cameraRollDeg: simulated ? 0 : rollRef.current,
         facing,
@@ -116,11 +116,12 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
           const ankleX = lateral ? lms[near === 'left' ? LM.leftAnkle : LM.rightAnkle].x : (lms[LM.leftAnkle].x + lms[LM.rightAnkle].x) / 2;
           drawPlumbLine(c2d, ankleX, f.width, f.height);
           if (!lateral) {
-            const m = computePostureMetrics(lms, f.width, f.height, view);
+            const m = computePostureMetrics(lms, f.width, f.height, view, 0.6, f.support);
             const sh = m.find((x) => x.id === 'shoulder_level');
             const pv = m.find((x) => x.id === 'pelvic_level');
-            drawLevelLine(c2d, lms[LM.rightShoulder], lms[LM.leftShoulder], f.width, f.height, sh ? `${sh.value.toFixed(1)}°` : null, mirrored);
-            drawLevelLine(c2d, lms[LM.rightHip], lms[LM.leftHip], f.width, f.height, pv ? `${pv.value.toFixed(1)}°` : null, mirrored);
+            // Reference lines only for metrics that passed validation — never through hidden joints.
+            if (sh) drawLevelLine(c2d, lms[LM.rightShoulder], lms[LM.leftShoulder], f.width, f.height, `${sh.value.toFixed(1)}°`, mirrored);
+            if (pv) drawLevelLine(c2d, lms[LM.rightHip], lms[LM.leftHip], f.width, f.height, `${pv.value.toFixed(1)}°`, mirrored);
           }
         }
       }
@@ -140,7 +141,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
           phaseRef.current = 'calibrating';
           setPhase('calibrating');
         } else {
-          capture.current!.add(computePostureMetrics(lms, f.width, f.height, view));
+          capture.current!.add(computePostureMetrics(lms, f.width, f.height, view, 0.6, f.support));
           lastLm.current = { lm: lms, w: f.width, h: f.height };
           const prog = (ctx.now - captureStart.current) / CAPTURE_MS;
           label(c2d, `${Math.round(prog * 100)}%`, f.width / 2, f.height * 0.08, f.height, mirrored, { size: 16 });
@@ -187,7 +188,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
       if (ctx.now - lastUi.current > 150) {
         lastUi.current = ctx.now;
         setUi({ calib, gate: g.progress, capture: phaseRef.current === 'capturing' ? (ctx.now - captureStart.current) / CAPTURE_MS : 0 });
-        if (phaseRef.current === 'calibrating' && calib.instruction !== 'ready') voice.current?.say(t(`calib.${calib.instruction}`), calib.instruction, 2, 5000);
+        if (phaseRef.current === 'calibrating' && calib.instruction !== 'ready') voice.current?.say(t(`calib.${calib.instruction}`, calib.instructionParams), calib.instruction, 2, 5000);
       }
     },
     [view, facing, simulated, storeImages, t],
@@ -218,7 +219,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
             {phase === 'capturing' ? (
               <CuePill tone="success">{t('scan.capturing')}</CuePill>
             ) : (
-              <CuePill tone={instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${instruction}`)}</CuePill>
+              <CuePill tone={instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${instruction}`, ui.calib?.instructionParams)}</CuePill>
             )}
           </div>
         )}

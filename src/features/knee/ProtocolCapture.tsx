@@ -8,7 +8,7 @@ import { Notice } from '../../components/ui';
 import type { CaptureSession } from '../../data/models';
 import { usePrefs } from '../../data/prefs';
 import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
-import { pauseKey } from '../../engine/feedback';
+import { pauseText } from '../../engine/feedback';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
 import { getProtocol } from '../../engine/protocols/knee';
@@ -18,8 +18,10 @@ import type { DeviceContext } from '../../engine/provenance';
 import type { PoseProviderInfo, Side } from '../../engine/types';
 import { speechLang, useT } from '../../i18n';
 import { VoiceCoach } from '../../voice/voiceCoach';
-import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from '../scan/StageParts';
+import { CalibrationChecklist, CuePill, JointStatusBar, RuntimeOverlay, StageMedia, useStableCue } from '../scan/StageParts';
+import { jointStates, type JointState } from '../../engine/measurements';
 import { Replay } from './Replay';
+import { SetupGuide } from './SetupGuide';
 
 /**
  * Protocol capture workspace (dark camera screen): setup & calibration (with the baseline
@@ -58,10 +60,16 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   const [calib, setCalib] = useState<CalibrationResult | null>(null);
   const [match, setMatch] = useState<ConditionMatch | null>(null);
   const [live, setLive] = useState<ProtocolRecorder['state'] | null>(null);
+  const [joints, setJoints] = useState<{ index: number; state: JointState }[]>([]);
   const [outcome, setOutcome] = useState<CaptureOutcome | null>(null);
   const [notes, setNotes] = useState('');
   const [voiceOn, setVoiceOn] = useState(prefs.voice);
   const [attempt, setAttempt] = useState(0);
+  // Front camera (patient alone, preview mirrored) or rear camera (a helper holds the phone).
+  const [facing, setFacing] = useState<'user' | 'environment'>('user');
+  const facingRef = useRef(facing);
+  facingRef.current = facing;
+  const engineKey = useRef<string | null>(null);
   const { roll } = useDeviceRoll();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -96,6 +104,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
     if (countdown <= 0) {
       recorder.current = new ProtocolRecorder(def, side);
       config.current = null;
+      engineKey.current = null;
       simRef.current?.startProtocol();
       setPhase('recording');
       voice.current?.say(def.cueStart, 'cue_start', 4, 0);
@@ -132,13 +141,27 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         simRef.current = sim;
         sim.scenario = { ...sim.scenario, exercise: def.id, side: side ?? 'left' };
       }
+      const fac = facingRef.current;
+      const track = (ctx.video.srcObject as MediaStream | null)?.getVideoTracks?.()[0];
       ctxInfo.current = {
         provider: ctx.provider.info,
-        device: { userAgent: navigator.userAgent, platform: navigator.platform, videoWidth: f.width, videoHeight: f.height, facingMode: 'user', cameraRollDeg: rollRef.current, meanFps: Math.round(ctx.stats.fps), meanInferenceMs: Math.round(ctx.stats.inferenceMs * 10) / 10 },
+        device: {
+          userAgent: navigator.userAgent,
+          platform: navigator.platform,
+          videoWidth: f.width,
+          videoHeight: f.height,
+          facingMode: fac,
+          cameraRollDeg: rollRef.current,
+          meanFps: Math.round(ctx.stats.fps),
+          meanInferenceMs: Math.round(ctx.stats.inferenceMs * 10) / 10,
+          displayMirrored: fac === 'user' && !simulated,
+          inferenceThread: ctx.stats.thread,
+          cameraFrameRate: track?.getSettings().frameRate ?? null,
+        },
       };
       const c2d = prepareCanvas(canvas, f.width, f.height);
       if (!c2d) return;
-      const mirrored = !simulated;
+      const mirrored = !simulated && facingRef.current === 'user';
       const p = phaseRef.current;
       if (p === 'review') return;
 
@@ -152,14 +175,19 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
             lighting.current = px ? lightingFromPixels(px) : null;
           }
         }
+        const fr = def.framing;
         const c = evaluateCalibration({
           frame: f,
-          req: { landmarks: focus, views, heightRange: def.position === 'supine' ? [0.45, 0.98] : [0.4, 0.98], extentAxis: def.position === 'supine' ? 'horizontal' : 'vertical', minConfidence: 0.65, maxRollDeg: 4 },
+          req: fr
+            ? { landmarks: focus, views, heightRange: fr.range, extentAxis: fr.axis, extentLandmarks: fr.extentLandmarks(side), minConfidence: fr.minConfidence, maxRollDeg: fr.maxRollDeg }
+            : { landmarks: focus, views, heightRange: def.position === 'supine' ? [0.45, 0.98] : [0.4, 0.98], extentAxis: def.position === 'supine' ? 'horizontal' : 'vertical', minConfidence: 0.65, maxRollDeg: 4 },
           lighting: lighting.current,
           cameraRollDeg: simulated ? 0 : rollRef.current,
-          facing: 'user',
+          facing: facingRef.current,
         });
-        const g = gate.current.update(c, ctx.now);
+        // While the runtime is still timing delegates on this device, do not start: the engine may change.
+        if (ctx.stats.probing) gate.current.reset();
+        const g = ctx.stats.probing ? { ready: false, progress: 0 } : gate.current.update(c, ctx.now);
         // Baseline alignment guide: ghost skeleton + body box from the baseline capture.
         if (baseGhost) drawSkeleton(c2d, baseGhost, f.width, f.height, { mirrored, color: 'rgba(124,92,214,0.55)', thin: true, jointRadius: 2, minVisibility: 0 });
         if (baseCfg) {
@@ -178,21 +206,30 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         if (p === 'setup' && g.ready) {
           setCountdown(3);
           setPhase('countdown');
-          config.current = captureConfig(f, 'user', rollRef.current);
+          config.current = captureConfig(f, facingRef.current, rollRef.current);
         }
         if (ctx.now - lastUi.current > 200) {
           lastUi.current = ctx.now;
           setCalib(c);
-          const cfg = captureConfig(f, 'user', rollRef.current);
+          setJoints(jointStates(f.status === 'no_person' || f.status === 'multiple_people' ? null : f.smoothed, focus, def.framing?.minConfidence ?? 0.65, f.support));
+          const cfg = captureConfig(f, facingRef.current, rollRef.current);
           if (baseCfg && cfg) setMatch(compareConfig(baseCfg, cfg));
-          if (p === 'setup' && c.instruction !== 'ready') voice.current?.say(t(`calib.${c.instruction}`), c.instruction, 2, 5000);
+          if (p === 'setup' && c.instruction !== 'ready') voice.current?.say(t(`calib.${c.instruction}`, c.instructionParams), c.instruction, 2, 5000);
         }
         return;
       }
 
       // Recording
       const r = recorder.current!;
-      if (!config.current) config.current = captureConfig(f, 'user', rollRef.current);
+      if (!config.current) config.current = captureConfig(f, facingRef.current, rollRef.current);
+      // Never mix two tracking engines in one attempt: a model / delegate / thread change ends it.
+      const key = JSON.stringify(ctx.provider.info);
+      engineKey.current ??= key;
+      if (key !== engineKey.current) {
+        r.invalidate(`Tracking engine changed during capture (${ctx.provider.info.id} ${ctx.provider.info.config?.delegate ?? ''} ${ctx.provider.info.config?.thread ?? ''})`);
+        finish();
+        return;
+      }
       const events = r.update(f, ctx.now, ctx.stats.fps);
       for (const e of events) {
         if (e.type === 'complete') voice.current?.say(`${r.state.validCycles}`, `rep${r.state.validCycles}`, 4, 0);
@@ -203,13 +240,14 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
       if (ctx.now - lastUi.current > 100) {
         lastUi.current = ctx.now;
         setLive({ ...r.state });
+        setJoints(jointStates(f.status === 'no_person' || f.status === 'multiple_people' ? null : f.smoothed, focus, 0.6, f.support));
       }
       if (r.state.complete) finish();
     },
     [simulated, def, side, focus, views, baseCfg, baseGhost, t, finish],
   );
 
-  const runtime = useMotionRuntime({ providerId, facing: 'user', filter: prefs.filter, onFrame, enabled: phase !== 'review', onInterrupted: () => phaseRef.current === 'recording' && finish() });
+  const runtime = useMotionRuntime({ providerId, facing, filter: prefs.filter, onFrame, enabled: phase !== 'review', thread: prefs.inferenceThread, onInterrupted: () => phaseRef.current === 'recording' && finish() });
 
   const recapture = () => {
     setOutcome(null);
@@ -219,16 +257,24 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
     setAttempt((a) => a + 1);
   };
 
+  const liveCue = useStableCue(
+    phase === 'recording' && live
+      ? live.value === null
+        ? { key: `p:${live.reason}:${(live.missing ?? []).join(',')}`, tone: 'warning' as const, text: pauseText(t, live.reason, live.missing) }
+        : { key: `m:${live.phase}`, tone: (live.phase === 'engaged' ? 'success' : 'info') as 'success' | 'info', text: PHASE_TEXT[live.phase] ?? def.cueStart }
+      : null,
+  );
+  const measurePaused = phase === 'recording' && !!live && live.value === null;
   const unit = def.signalUnit === 'deg' ? '°' : '%';
   const title = `${def.title}${side && def.sided ? ` — ${side}` : ''}`;
 
   return (
-    <div className="stage" key={attempt}>
+    <div className={`stage${measurePaused ? ' measure-paused' : ''}`} key={attempt}>
       {phase !== 'review' && (
-        <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored simulated={simulated}>
-          {phase === 'recording' && live && (
+        <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored={facing === 'user'} simulated={simulated}>
+          {phase === 'recording' && liveCue && (
             <div className="stage-overlay-top">
-              <CuePill tone={live.value === null ? 'warning' : live.phase === 'engaged' ? 'success' : 'info'}>{live.value === null ? t(pauseKey(live.reason)) : PHASE_TEXT[live.phase] ?? def.cueStart}</CuePill>
+              <CuePill tone={liveCue.tone}>{liveCue.text}</CuePill>
             </div>
           )}
         </StageMedia>
@@ -243,6 +289,11 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
             Protocol v{def.version} {baseline && '· reassessment (baseline guide on)'} {simulated && <span className="badge demo">{t('common.simulated')}</span>}
           </div>
         </div>
+        {phase === 'setup' && !simulated && (
+          <button className="stage-btn" onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))} aria-label={facing === 'user' ? 'Switch to the rear camera (someone else holds the phone)' : 'Switch to the front camera'}>
+            {facing === 'user' ? 'Rear camera' : 'Front camera'}
+          </button>
+        )}
         <button className="stage-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)} aria-label={voiceOn ? t('mirror.voice_on') : t('mirror.voice_off')}>
           {voiceOn ? <IconVolume width={20} /> : <IconMute width={20} />}
         </button>
@@ -261,14 +312,15 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
       <div className="stage-bottom stack tight" style={phase === 'review' ? { maxHeight: 'none', flex: 1 } : undefined}>
         {phase === 'setup' && runtime.status === 'running' && (
           <div className="glass stack tight" style={{ padding: '1rem' }}>
-            <ol className="small" style={{ margin: 0, paddingLeft: '1.1rem' }}>
-              {def.setup.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ol>
+            <SetupGuide def={def} side={side} mirrored={facing === 'user'} />
             <div style={{ textAlign: 'center' }}>
-              <CuePill tone={calib?.instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${calib?.instruction ?? 'no_person'}`)}</CuePill>
+              {runtime.stats.probing ? (
+                <CuePill tone="info">Optimising tracking for this device…</CuePill>
+              ) : (
+                <CuePill tone={calib?.instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${calib?.instruction ?? 'no_person'}`, calib?.instructionParams)}</CuePill>
+              )}
             </div>
+            <JointStatusBar joints={joints} />
             {calib && <CalibrationChecklist checks={calib.checks} compact />}
             {match && (
               <div className="small" aria-live="polite">
@@ -288,22 +340,23 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
                 <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. 45 cm, trainers" style={{ background: 'rgba(255,255,255,0.08)', color: '#ecfdfa' }} />
               </label>
             )}
-            <button className="btn primary block" disabled={!calib?.frameReady} onClick={() => setPhase('countdown')}>
+            <button className="btn primary block" disabled={!calib?.frameReady || runtime.stats.probing} onClick={() => setPhase('countdown')}>
               I am in position — start
             </button>
           </div>
         )}
 
         {phase === 'recording' && live && (
-          <div className="glass" style={{ padding: '0.85rem 1rem' }}>
-            <div className="hud">
+          <div className="glass stack tight" style={{ padding: '0.85rem 1rem' }}>
+            <JointStatusBar joints={joints} />
+            <div className={`hud${measurePaused ? ' paused' : ''}`}>
               <div className="hud-cell grow">
                 <div className="hud-label">{def.signalLabel}</div>
                 <div className="hud-value hud-hero num">
                   {live.value === null ? '—' : Math.round(live.value)}
                   <small>{unit}</small>
                 </div>
-                <div className="estimate-tag">◎ camera-estimated</div>
+                {measurePaused ? <div className="paused-tag">⏸ MEASUREMENT PAUSED</div> : <div className="estimate-tag">◎ camera-estimated</div>}
               </div>
               <div className="hud-cell">
                 <div className="hud-label">Valid reps</div>

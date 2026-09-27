@@ -18,7 +18,8 @@ import type { DeviceContext } from '../../engine/provenance';
 import type { PoseProviderInfo } from '../../engine/types';
 import { speechLang, useT } from '../../i18n';
 import { vibrate, VoiceCoach } from '../../voice/voiceCoach';
-import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from '../scan/StageParts';
+import { CalibrationChecklist, CuePill, JointStatusBar, RuntimeOverlay, StageMedia, useStableCue } from '../scan/StageParts';
+import { jointStates, type JointState } from '../../engine/measurements';
 
 /**
  * AI Motion Mirror — immersive guided exercise.
@@ -67,6 +68,7 @@ export function MotionMirror({
   const [countdown, setCountdown] = useState(3);
   const [snap, setSnap] = useState<RunnerSnapshot | null>(null);
   const [cue, setCue] = useState<Cue | null>(null);
+  const [joints, setJoints] = useState<{ index: number; state: JointState }[]>([]);
   const [calib, setCalib] = useState<CalibrationResult | null>(null);
   const [voiceOn, setVoiceOn] = useState(prefs.voice);
   const [captionsOn, setCaptionsOn] = useState(prefs.captions);
@@ -195,7 +197,7 @@ export function MotionMirror({
         if (ctx.now - lastUi.current > 150) {
           lastUi.current = ctx.now;
           setCalib(c);
-          if (p === 'setup' && c.instruction !== 'ready') voice.current?.say(t(`calib.${c.instruction}`), c.instruction, 2, 5000);
+          if (p === 'setup' && c.instruction !== 'ready') voice.current?.say(t(`calib.${c.instruction}`, c.instructionParams), c.instruction, 2, 5000);
         }
         return;
       }
@@ -223,6 +225,7 @@ export function MotionMirror({
         lastUi.current = ctx.now;
         setSnap(s);
         setCue(fb.display);
+        setJoints(jointStates(f.status === 'no_person' || f.status === 'multiple_people' ? null : f.smoothed, focus, 0.6, f.support));
       }
       const testDone = mode === 'test' && s.attempts >= 3 && s.state === 'ready';
       if (s.phase === 'complete' || testDone) finish(false);
@@ -252,14 +255,15 @@ export function MotionMirror({
   const rangeMax = Math.max(rx.target.max + 30, 120);
   const pct = (v: number) => `${Math.max(0, Math.min(100, (v / rangeMax) * 100))}%`;
   const cur = snap?.estimate.value ?? null;
+  const stableCue = useStableCue(cue ? { ...cue, text: JSON.stringify(cue.params ?? {}) } : null);
 
   return (
-    <div className="stage">
+    <div className={`stage${phase === 'active' && snap && snap.phase !== 'rest' && cur === null && !paused ? ' measure-paused' : ''}`}>
       <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored simulated={simulated}>
         {/* Cue: one short instruction at the top of the camera area, never over the measured joint. */}
-        {runtime.status === 'running' && phase === 'active' && cue && !paused && (
+        {runtime.status === 'running' && phase === 'active' && stableCue && !paused && (
           <div className="stage-overlay-top">
-            <CuePill tone={cue.tone}>{t(cue.key, cue.params)}</CuePill>
+            <CuePill tone={stableCue!.tone}>{t(stableCue!.key, stableCue!.params)}</CuePill>
           </div>
         )}
         {captionsOn && caption && (
@@ -382,7 +386,7 @@ export function MotionMirror({
               ))}
             </ol>
             <div style={{ textAlign: 'center' }}>
-              <CuePill tone={calib?.instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${calib?.instruction ?? 'no_person'}`)}</CuePill>
+              <CuePill tone={calib?.instruction === 'ready' ? 'success' : 'attention'}>{t(`calib.${calib?.instruction ?? 'no_person'}`, calib?.instructionParams)}</CuePill>
             </div>
             {calib && <CalibrationChecklist checks={calib.checks} compact />}
             <button
@@ -415,14 +419,15 @@ export function MotionMirror({
               </div>
             ) : (
               <>
-                <div className="hud">
+                <JointStatusBar joints={joints} />
+                <div className={`hud${cur === null ? ' paused' : ''}`}>
                   <div className="hud-cell grow">
                     <div className="hud-label">{t('mirror.current')}</div>
                     <div className="hud-value hud-hero num" aria-live="off">
                       {cur === null ? '—' : Math.round(cur)}
                       <small>°</small>
                     </div>
-                    <div className="estimate-tag">◎ {t('mirror.estimate_label')}</div>
+                    {cur === null ? <div className="paused-tag">{t('mirror.paused_tag')}</div> : <div className="estimate-tag">◎ {t('mirror.estimate_label')}</div>}
                   </div>
                   <div className="hud-cell">
                     <div className="hud-label">{t('mirror.rep')}</div>

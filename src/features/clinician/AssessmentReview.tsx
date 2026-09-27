@@ -237,7 +237,7 @@ export function AssessmentReview() {
 
       <section className="panel stack tight">
         <h2>Audit trail</h2>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>

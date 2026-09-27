@@ -207,7 +207,7 @@ export function PatientList() {
           ]}
         />
       </div>
-      <div className="panel table-wrap">
+      <div className="panel table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>
@@ -470,7 +470,7 @@ function MeasurementsTab({ db, patient, actorId }: { db: DB; patient: Patient; a
           </button>
         </div>
       </section>
-      <div className="panel table-wrap">
+      <div className="panel table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>
@@ -522,7 +522,7 @@ function ProsTab({ db, patient }: { db: DB; patient: Patient }) {
         <CategoryBadge kind="pro" />
         <span className="small muted">Stored verbatim; never interpreted by the engine.</span>
       </div>
-      <div className="panel table-wrap">
+      <div className="panel table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>

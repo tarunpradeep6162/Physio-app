@@ -5,7 +5,7 @@ import { getProtocol } from '../engine/protocols/knee';
 import type { Keyframe } from '../engine/protocols/types';
 import type { Landmark } from '../engine/types';
 import { regionLabel } from '../features/bodymap/regions';
-import { buildEvidence, capturesFor } from './evidence';
+import { buildEvidence, capturesFor, metricReview, reviewBlocks } from './evidence';
 import { currentAnswers, formatAnswer, HISTORY_QUESTIONNAIRE, organiseHistory } from './intake';
 import { evaluate, RULE_SET, STATE_LABEL } from './reasoning';
 import { levelFromResponses, SAFETY_QUESTIONNAIRE } from './safety';
@@ -61,6 +61,7 @@ export function lastDataChange(db: DB, id: ID): string {
     ...db.impressions.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.amendments.filter((x) => x.assessmentId === id).map((x) => x.at),
     ...db.safetyResponses.filter((x) => x.assessmentId === id).map((x) => x.at),
+    ...db.testPlans.filter((x) => x.assessmentId === id).map((x) => x.createdAt),
   ];
   return ts.sort().at(-1) ?? '';
 }
@@ -94,7 +95,8 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
   const add = (n: number, title: string, blocks: Block[], label?: string) => S.push({ n, title, blocks, label });
   const valid = (c: (typeof caps)[number] | undefined, id: string) => {
     const m = c?.result.metrics.find((x) => x.id === id);
-    return c && c.result.quality.verdict === 'valid' && m?.validity === 'valid' ? m.value : null;
+    // Quality gate AND clinician review: a rejected / repeat-requested metric is never reported as a finding.
+    return c && c.result.quality.verdict === 'valid' && m?.validity === 'valid' && !reviewBlocks(metricReview(db, c.id, id)) ? m.value : null;
   };
 
   // 1. Cover
