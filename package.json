@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "serve": "node scripts/serve-dist.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
