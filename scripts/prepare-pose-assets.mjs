@@ -27,7 +27,10 @@ async function exists(p) {
 try {
   if (await exists(wasmSrc)) {
     await mkdir(wasmDst, { recursive: true });
-    await cp(wasmSrc, wasmDst, { recursive: true });
+    // Only the classic-script SIMD and non-SIMD builds are loaded by FilesetResolver (useModule=false).
+    for (const f of ['vision_wasm_internal.js', 'vision_wasm_internal.wasm', 'vision_wasm_nosimd_internal.js', 'vision_wasm_nosimd_internal.wasm']) {
+      await cp(join(wasmSrc, f), join(wasmDst, f));
+    }
     console.log('[pose-assets] WASM runtime copied to public/pose/wasm');
   }
   await mkdir(modelDir, { recursive: true });

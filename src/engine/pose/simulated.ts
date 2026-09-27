@@ -10,7 +10,7 @@ import { synthesize, type SynthScene } from './synthetic';
  */
 
 export interface SimulationScenario {
-  exercise: ExerciseId | 'posture_anterior' | 'posture_lateral';
+  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral';
   side: Side;
   /** Peak angle the simulated patient reaches (can be set below target to show incomplete reps). */
   peak: number;
@@ -67,7 +67,11 @@ export class SimulatedPoseProvider implements PoseProvider {
       default:
         scene = { kind: 'standing_anterior', shoulderTiltDeg: 2.5, pelvicTiltDeg: 1.2 };
     }
-    const lm = synthesize(scene, { ...SIM_FRAME, noisePx: 1.5, seed: this.seed++ });
+    let lm = synthesize(scene, { ...SIM_FRAME, noisePx: 1.5, seed: this.seed++ });
+    if (s.exercise === 'posture_posterior') {
+      // Back view: mirror horizontally so the patient's left appears on the image left; face hidden.
+      lm = lm.map((l, i) => ({ ...l, x: 1 - l.x, visibility: i <= 10 && i !== 7 && i !== 8 ? 0.2 : l.visibility }));
+    }
     return { timestamp, ...SIM_FRAME, poses: [lm], inferenceMs: performance.now() - t0, provider: this.info };
   }
 
