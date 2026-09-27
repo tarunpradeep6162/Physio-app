@@ -73,11 +73,11 @@ export function Welcome() {
           <Link className="btn secondary lg" to="/auth?mode=signin">
             {t('welcome.have_account')}
           </Link>
-          <div className="row" style={{ marginTop: '0.5rem' }}>
-            <button className="btn ghost grow" style={{ color: '#bfd9d4' }} onClick={() => demo('patient')}>
+          <div className="row wrap" style={{ marginTop: '0.5rem' }}>
+            <button className="btn ghost grow" style={{ color: '#bfd9d4', minWidth: '10rem' }} onClick={() => demo('patient')}>
               {t('welcome.demo_patient')}
             </button>
-            <button className="btn ghost grow" style={{ color: '#bfd9d4' }} onClick={() => demo('clinician')}>
+            <button className="btn ghost grow" style={{ color: '#bfd9d4', minWidth: '10rem' }} onClick={() => demo('clinician')}>
               {t('welcome.demo_clinician')}
             </button>
           </div>
@@ -98,9 +98,13 @@ export function AuthScreen() {
   const [role, setRole] = useState<Role>('patient');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // While storage and sign-in are browser-local, real patient onboarding is not offered: every new
+  // account must acknowledge that it is a pilot/test account holding no real patient information.
+  const [ack, setAck] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === 'signup' && !ack) return;
     setErr(null);
     setBusy(true);
     try {
@@ -153,12 +157,22 @@ export function AuthScreen() {
           <input className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
           {mode === 'signup' && <small className="muted">{t('auth.password_hint')}</small>}
         </label>
+        {mode === 'signup' && (
+          <div className="notice warn stack tight" role="note">
+            <strong>{t('auth.pilot_title')}</strong>
+            <span className="small">{t('auth.pilot_body')}</span>
+            <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
+              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} style={{ marginTop: '0.25rem', minWidth: 24, minHeight: 24 }} />
+              <span className="small">{t('auth.pilot_ack')}</span>
+            </label>
+          </div>
+        )}
         {err && (
           <p role="alert" style={{ color: 'var(--red-ink)' }}>
             {err}
           </p>
         )}
-        <button className="btn primary lg" disabled={busy}>
+        <button className="btn primary lg" disabled={busy || (mode === 'signup' && !ack)}>
           {mode === 'signup' ? t('auth.create_account') : t('auth.sign_in')}
         </button>
       </form>

@@ -499,6 +499,13 @@ ALTER TABLE program_exercises ADD COLUMN progression text,
                               ADD COLUMN pain_stop_at smallint CHECK (pain_stop_at BETWEEN 0 AND 10),
                               ADD COLUMN pain_rise_stop smallint CHECK (pain_rise_stop BETWEEN 1 AND 10);
 
+-- Units used by knee protocols (seconds, % leg length, counts) — the original check only allowed deg/pct_height.
+ALTER TABLE measurements DROP CONSTRAINT measurements_unit_check,
+  ADD CONSTRAINT measurements_unit_check CHECK (unit IN ('deg', 'pct_height', 's', 'pct_leg', 'count'));
+-- Validation study (Phase 13): reference measurements and a per-participant split.
+ALTER TABLE measurements ADD COLUMN reference jsonb;   -- {instrument, blinded, note} when this is a reference for capture_id/metric_id
+ALTER TABLE patients ADD COLUMN validation_split text CHECK (validation_split IN ('tuning', 'evaluation'));
+
 -- Retention: landmark data older than the configured window can be purged by a scheduled job.
 CREATE TABLE retention_policies (
   clinic_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),

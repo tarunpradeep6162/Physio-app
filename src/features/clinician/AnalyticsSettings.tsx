@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../../app/hooks';
 import { CategoryBadge, Notice, Segmented, Stat } from '../../components/ui';
 import { signOut } from '../../data/auth';
+import { ValidationStudyPanel } from './ValidationStudy';
 import { useT } from '../../i18n';
 import { ensureDemoData } from '../../data/demo';
 import { OBSERVATION_RULES_VERSION } from '../../clinical/evidence';
@@ -13,7 +14,8 @@ import { PROTOCOLS } from '../../engine/protocols/knee';
 import type { ObservationThresholds } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
-import { purgeDemo, updateSettings, useDb } from '../../data/store';
+import { getDb, purgeDemo, recordAudit, updateSettings, useDb } from '../../data/store';
+import { buildMigrationBundle } from '../../data/migration';
 import type { FilterKind } from '../../engine/filters';
 import type { PoseProviderId } from '../../engine/pose/provider';
 
@@ -64,7 +66,7 @@ export function Analytics() {
           <h2>Mean change in camera-estimated ROM (first → latest session)</h2>
           <CategoryBadge kind="camera" />
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -188,7 +190,7 @@ export function ClinicSettingsPage() {
       <section className="panel stack">
         <h2>Clinical rule sets & protocols</h2>
         <p className="small muted">Safety criteria, reasoning rules, observation thresholds and test protocols are versioned. They show as DRAFT everywhere until a clinical lead records approval of that exact version here (audited).</p>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -292,9 +294,33 @@ export function ClinicSettingsPage() {
         )}
       </section>
 
+      <ValidationStudyPanel actorId={user.id} isDemo={!!users.find((u) => u.id === user.id)?.isDemo} />
+      <section className="panel stack tight">
+        <h2>Data boundary</h2>
+        <p className="small">
+          All records in this build are stored <strong>only in this browser</strong>. Real patient use requires the server boundary (see docs/BACKEND_ARCHITECTURE.md: authenticated roles, care-relationship access, consent enforcement, hash-chained audit, retention and protected report links — database policies tested on PostgreSQL 16).
+        </p>
+        <p className="xs muted">The export below is the only migration path: explicit, one-way, checksummed. Demo data, local password hashes and stored images are excluded.</p>
+        <div className="row">
+          <button
+            className="btn secondary sm"
+            onClick={async () => {
+              const b = await buildMigrationBundle(getDb());
+              recordAudit(user.id, 'export_migration_bundle', 'db', b.sha256.slice(0, 16), `${Object.values(b.counts).reduce((a, n) => a + n, 0)} rows; excluded ${b.excluded.demoRows} demo rows`);
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(new Blob([JSON.stringify(b)], { type: 'application/json' }));
+              a.download = `physiovision-migration-${b.sha256.slice(0, 12)}.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            }}
+          >
+            Export for server migration
+          </button>
+        </div>
+      </section>
       <section className="panel stack tight">
         <h2>Audit log (latest 40)</h2>
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>

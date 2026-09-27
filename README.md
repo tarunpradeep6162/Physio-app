@@ -38,9 +38,9 @@ On the welcome screen, **Explore demo — patient** or **Explore demo — physio
 | Camera calibration | Person / single person / framing / distance / centring / orientation / camera roll (sensor) / lighting / landmark confidence, with spoken and on-screen instructions, stable-for-N-ms gate |
 | Static posture scan | Anterior, lateral L/R and posterior views. 3 s hold-still capture; median ± SD and confidence per metric. Plumb line, level lines and live values drawn only after calibration passes |
 | Dynamic movement tests | Knee flexion, straight-leg raise, shoulder flexion (L/R), 3 attempts, peak ROM, asymmetry observation |
-| Pose engine | Provider abstraction. MediaPipe BlazePose (on-device WASM/GPU, self-hosted assets) plus a labelled simulator |
+| Pose engine | Provider abstraction. MediaPipe BlazePose Lite (on-device, self-hosted assets) running in a Web Worker with a main-thread fallback, CPU/GPU chosen by a measured probe, plus a labelled simulator. Identity guard, per-landmark in-frame/visibility checks and a plausibility guard withhold values rather than guess |
 | Biomechanics | Pixel-space vector maths, 3D world-landmark variant, confidence gating, orientation detection |
-| Filtering | One Euro (default), EMA and Kalman, switchable and comparable in Validation Mode |
+| Filtering | Landmarks unsmoothed by default (smoothing coordinates added lag without reducing angle jitter; see `docs/tracking/RESULTS.md`). Live angles use a One Euro filter; stored capture signals use zero-phase smoothing. One Euro, EMA and Kalman remain comparable in Validation Mode and the tracking lab |
 | Exercise engine | Versioned, data-driven definitions with safety guard-rails on clinician targets |
 | State machine | Rest → moving → approach → hold → return → rep complete. Hysteresis, hold timer, tracking-loss pause, discard on long gaps, over-target and tempo flags |
 | AI Motion Mirror | Full-screen camera, one short cue, current angle, target band, rep count, hold ring, voice (event-driven), captions, haptics, pause/resume, rest timer |
@@ -53,7 +53,7 @@ On the welcome screen, **Explore demo — patient** or **Explore demo — physio
 | Accessibility | Large text, high contrast, reduced motion, captions, ≥44–48 px targets, ARIA roles. Tracking state is never shown by colour alone (dashed/hollow = low confidence) |
 | i18n | English plus Tamil (**draft**, pending clinical translation review), with fallback. Adding Hindi, Malayalam, Telugu or Kannada means adding a dictionary |
 | PWA | Manifest, service worker (offline shell, cached pose runtime), safe-area insets, orientation-aware |
-| Data model | `db/schema.sql`: PostgreSQL schema with UUIDs, FKs, indexes, provenance, consent history, append-only audit and an RLS sketch |
+| Data model | `db/schema.sql` + `db/security.sql`: PostgreSQL schema with forced row-level security, consent triggers, a hash-chained append-only audit, retention purge and hashed report tokens, tested by `db/security_test.sql`. **Not deployed:** the live app still stores data in the browser, so it is not for real patients (see `docs/BACKEND_ARCHITECTURE.md`) |
 
 ## Architecture
 
