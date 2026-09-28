@@ -85,6 +85,26 @@ h2 { letter-spacing: -.032em; }
 .clinician-shell .table-wrap { border: 1px solid var(--dl-rule); }
 .clinician-shell table.data th { font-size: .75rem; letter-spacing: .055em; text-transform: uppercase; }
 .clinician-shell table.data td { font-variant-numeric: tabular-nums; }
+.release-readiness { padding: 0; overflow: hidden; }
+.release-head { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 1rem; padding: clamp(1.2rem, 2vw, 1.8rem); background: #102f32; color: #effbf5; }
+.release-head .eyebrow { color: #a9d9ca; margin-bottom: .35rem; }
+.release-head h2 { font-size: clamp(1.5rem, 2vw, 2rem); }
+.release-head p.small { color: #d1e5dc; margin-top: .55rem; }
+.release-head .badge.danger { background: #fff1ef; color: #8e252d; border-color: #e6a7a8; }
+.release-summary { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem clamp(1.2rem, 2vw, 1.8rem); background: #edf3ed; border-bottom: 1px solid var(--dl-rule); }
+.release-summary span { display: inline-flex; align-items: baseline; gap: .35rem; color: #415b58; font-size: .83rem; }
+.release-summary strong { color: var(--dl-ink); font-family: var(--font-metric); font-size: 1.5rem; line-height: 1; }
+.release-summary span:first-child strong { color: #a02d35; }
+.release-explain { padding: 1rem clamp(1.2rem, 2vw, 1.8rem) 0; max-width: 82ch; }
+.release-gates { list-style: none; counter-reset: release-gate; padding: .5rem clamp(1.2rem, 2vw, 1.8rem) 1.25rem; margin: 0; }
+.release-gate { counter-increment: release-gate; display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; align-items: start; gap: .85rem; padding: 1rem 0; border-bottom: 1px solid var(--dl-rule); }
+.release-gate:last-child { border-bottom: 0; }
+.release-gate::before { content: counter(release-gate, decimal-leading-zero); font-family: var(--font-metric); font-size: .75rem; color: #597371; padding-top: .2rem; }
+.release-gate-copy { min-width: 0; }
+.release-gate-copy strong { display: block; font-size: .95rem; line-height: 1.3; }
+.release-gate-copy p { margin: .3rem 0 .2rem; }
+.release-gate .badge { justify-self: end; text-transform: capitalize; }
+.release-gate-fail .release-gate-copy strong { color: #9c3038; }
 
 /* Camera: affordance and validity above embellishment. */
 .camera-lab, .stage { --focus: #b5f1db; }
@@ -130,6 +150,8 @@ h2 { letter-spacing: -.032em; }
   .patient-overview .metric-card { min-height: 0; }
   .bottom-nav a { min-height: calc(var(--nav-h) + 4px); }
   .bottom-nav a.active { background: #14393c; }
+  .release-gate { grid-template-columns: 1.6rem minmax(0, 1fr); }
+  .release-gate .badge { grid-column: 2; justify-self: start; }
 }
 
 @media (prefers-reduced-motion: reduce) {
