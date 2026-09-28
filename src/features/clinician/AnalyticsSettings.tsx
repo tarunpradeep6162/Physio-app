@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Link } from 'react-router-dom';
 import { useCurrentUser } from '../../app/hooks';
 import { CategoryBadge, Notice, Segmented, Stat } from '../../components/ui';
-import { signOut } from '../../data/auth';
+import { serverMode, signOut } from '../../data/auth';
+import { getSyncStatus, onSyncStatus } from '../../data/remote/status';
 import { ValidationStudyPanel } from './ValidationStudy';
 import { useT } from '../../i18n';
 import { ensureDemoData } from '../../data/demo';
@@ -210,6 +211,33 @@ const THRESHOLD_LABELS: Record<keyof ObservationThresholds, string> = {
   knee_flexion_limited: 'Knee flexion below (°) — valid captures only',
 };
 
+/** Clinic server (Supabase) connection: where records live and whether this device is up to date. */
+function ServerPanel() {
+  const { t } = useT();
+  const s = useSyncExternalStore(onSyncStatus, getSyncStatus);
+  const server = serverMode();
+  return (
+    <section className="panel stack">
+      <h2>{t('sync.title')}</h2>
+      {server ? (
+        <>
+          <p className="small">{t('sync.server_body')}</p>
+          <p className="small" role="status">
+            <strong>{t(`sync.state_${s.state}`)}</strong>
+            {s.pending > 0 && <> · {t('sync.pending', { n: s.pending })}</>}
+            {s.lastSyncAt && <> · {t('sync.last', { at: fmtDateTime(s.lastSyncAt) })}</>}
+          </p>
+          <button className="btn secondary" disabled={s.state === 'off'} onClick={() => void import('../../data/remote/sync').then((m) => m.syncNow())}>
+            {t('sync.now')}
+          </button>
+        </>
+      ) : (
+        <p className="small">{t('sync.local_body')}</p>
+      )}
+    </section>
+  );
+}
+
 export function ClinicSettingsPage() {
   const { t } = useT();
   const user = useCurrentUser();
@@ -225,6 +253,7 @@ export function ClinicSettingsPage() {
   return (
     <div className="content narrow stack loose">
       <h1>Settings</h1>
+      <ServerPanel />
       <section className="panel stack">
         <h2>Clinic</h2>
         <label className="field">

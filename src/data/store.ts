@@ -323,8 +323,10 @@ export function insert<T extends Table>(table: T, row: Row<T>, actorId: ID, deta
   assertMayWrite(table, row as unknown as Record<string, unknown>, actorId);
   const r = row as Row<T> & { id: ID };
   const next = { ...db, [table]: [...(db[table] as Row<T>[]), row] } as DB;
-  if (table !== 'audit') next.audit = [...next.audit, auditEvent(actorId, 'create', table, r.id, detail)];
+  const ev = table !== 'audit' ? auditEvent(actorId, 'create', table, r.id, detail) : null;
+  if (ev) next.audit = [...next.audit, ev];
   commit(next);
+  emit([{ kind: 'upsert', table, rows: [row as unknown as Rec] }, ...(ev ? [{ kind: 'upsert' as const, table: 'audit' as const, rows: [ev as unknown as Rec] }] : [])]);
   return row;
 }
 
@@ -332,8 +334,10 @@ export function insertMany<T extends Table>(table: T, rows: Row<T>[], actorId: I
   if (rows.length === 0) return;
   for (const r of rows) assertMayWrite(table, r as unknown as Record<string, unknown>, actorId);
   const next = { ...db, [table]: [...(db[table] as Row<T>[]), ...rows] } as DB;
-  next.audit = [...next.audit, ...rows.map((r) => auditEvent(actorId, 'create', table, (r as { id: ID }).id, detail))];
+  const evs = rows.map((r) => auditEvent(actorId, 'create', table, (r as { id: ID }).id, detail));
+  next.audit = [...next.audit, ...evs];
   commit(next);
+  emit([{ kind: 'upsert', table, rows: rows as unknown as Rec[] }, { kind: 'upsert', table: 'audit', rows: evs as unknown as Rec[] }]);
 }
 
 export function update<T extends Table>(table: T, id: ID, patch: Partial<Row<T>>, actorId: ID, detail?: string) {
@@ -342,8 +346,11 @@ export function update<T extends Table>(table: T, id: ID, patch: Partial<Row<T>>
   const cur = rows.find((r) => r.id === id);
   if (cur) assertMayWrite(table, { ...cur, ...patch } as unknown as Record<string, unknown>, actorId, true);
   const next = { ...db, [table]: rows.map((r) => (r.id === id ? { ...r, ...patch } : r)) } as DB;
-  next.audit = [...next.audit, auditEvent(actorId, 'update', table, id, detail ?? Object.keys(patch).join(','))];
+  const ev = auditEvent(actorId, 'update', table, id, detail ?? Object.keys(patch).join(','));
+  next.audit = [...next.audit, ev];
   commit(next);
+  const updated = (next[table] as unknown as Rec[]).find((r) => r.id === id);
+  emit([...(updated ? [{ kind: 'upsert' as const, table, rows: [updated] }] : []), { kind: 'upsert', table: 'audit', rows: [ev as unknown as Rec] }]);
 }
 
 export function remove<T extends Table>(table: T, id: ID, actorId: ID, detail?: string) {
@@ -352,12 +359,16 @@ export function remove<T extends Table>(table: T, id: ID, actorId: ID, detail?: 
   const cur = rows.find((r) => r.id === id);
   if (cur && CLINICIAN_ONLY[table]) assertMayWrite(table, cur as unknown as Record<string, unknown>, actorId, true);
   const next = { ...db, [table]: rows.filter((r) => r.id !== id) } as DB;
-  next.audit = [...next.audit, auditEvent(actorId, 'delete', table, id, detail)];
+  const ev = auditEvent(actorId, 'delete', table, id, detail);
+  next.audit = [...next.audit, ev];
   commit(next);
+  emit([{ kind: 'delete', table, rows: cur ? [cur as unknown as Rec] : [{ id }] }, { kind: 'upsert', table: 'audit', rows: [ev as unknown as Rec] }]);
 }
 
 export function recordAudit(actorId: ID, action: string, entity: string, entityId: ID, detail?: string) {
-  commit({ ...db, audit: [...db.audit, auditEvent(actorId, action, entity, entityId, detail)] });
+  const ev = auditEvent(actorId, action, entity, entityId, detail);
+  commit({ ...db, audit: [...db.audit, ev] });
+  emit([{ kind: 'upsert', table: 'audit', rows: [ev as unknown as Rec] }]);
 }
 
 export function updateSettings(patch: Partial<ClinicSettings>, actorId: ID) {
@@ -365,7 +376,45 @@ export function updateSettings(patch: Partial<ClinicSettings>, actorId: ID) {
   const actor = db.users.find((u) => u.id === actorId);
   if (!actor || actor.role === 'patient') throw new AuthorizationError(`Only a clinician can change clinic settings (actor ${actorId}).`);
   const next = { ...db, settings: { ...db.settings, ...patch } };
-  next.audit = [...next.audit, auditEvent(actorId, 'update', 'settings', 'clinic', Object.keys(patch).join(','))];
+  const ev = auditEvent(actorId, 'update', 'settings', 'clinic', Object.keys(patch).join(','));
+  next.audit = [...next.audit, ev];
+  commit(next);
+  emit([{ kind: 'upsert', table: 'settings', rows: [{ id: 'clinic', ...next.settings } as unknown as Rec] }, { kind: 'upsert', table: 'audit', rows: [ev as unknown as Rec] }]);
+}
+
+// ---- Write events (server sync) -----------------------------------------------------------------
+// Every local write is announced so the sync layer (data/remote) can queue it for the server.
+// Changes that ARRIVE from the server are applied with applyRemote(), which does not announce them.
+export type Rec = Record<string, unknown> & { id?: unknown };
+export type WriteEvent = { kind: 'upsert' | 'delete'; table: Table | 'settings'; rows: Rec[] };
+const writeListeners = new Set<(events: WriteEvent[]) => void>();
+export function onWrite(fn: (events: WriteEvent[]) => void): () => void {
+  writeListeners.add(fn);
+  return () => writeListeners.delete(fn);
+}
+function emit(events: WriteEvent[]) {
+  writeListeners.forEach((l) => l(events));
+}
+
+/** Applies rows received from the server (upserts and deletions) without re-announcing them. */
+export function applyRemote(changes: { table: string; id: string; data: Rec | null }[]) {
+  if (!changes.length) return;
+  const next = { ...db } as DB;
+  const tables = next as unknown as Record<string, unknown>;
+  for (const c of changes) {
+    if (c.table === 'settings') {
+      if (c.data) {
+        const { id: _i, ...rest } = c.data;
+        next.settings = { ...next.settings, ...(rest as Partial<ClinicSettings>) };
+      }
+      continue;
+    }
+    const cur = tables[c.table];
+    if (!Array.isArray(cur)) continue; // unknown table (newer app version on another device): ignore
+    const rows = cur as Rec[];
+    const without = rows.filter((r) => r.id !== c.id);
+    tables[c.table] = c.data ? [...without, c.data] : without;
+  }
   commit(next);
 }
 

@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { IconChevron, IconPlay, IconScan } from '../../components/icons';
 import { CategoryBadge, DemoBadge, Notice, Stat, fmtDeg } from '../../components/ui';
-import { signOut } from '../../data/auth';
+import { deleteMyAccount, serverMode, signOut } from '../../data/auth';
 import type { ConsentType } from '../../data/models';
 import { setPrefs, usePrefs } from '../../data/prefs';
 import { openPauses } from '../../clinical/plan';
@@ -340,10 +340,16 @@ export function PatientProfile() {
     URL.revokeObjectURL(a.href);
   };
 
-  const deleteAccount = () => {
-    replaceDb(erasePatient(getDb(), patient.id, new Date().toISOString()));
-    signOut();
-    nav('/');
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const deleteAccount = async () => {
+    setDeleteErr(null);
+    try {
+      // Server mode: the server erases every linked record and the sign-in; local mode: this device only.
+      await deleteMyAccount(() => replaceDb(erasePatient(getDb(), patient.id, new Date().toISOString())));
+      nav('/');
+    } catch {
+      setDeleteErr(t('profile.delete_failed'));
+    }
   };
 
   return (
@@ -452,11 +458,16 @@ export function PatientProfile() {
               {t('profile.delete')}
             </summary>
             <div className="stack tight" style={{ marginTop: '0.75rem' }}>
-              <p className="small">{t('profile.delete_confirm')}</p>
+              <p className="small">{serverMode() ? t('profile.delete_confirm_server') : t('profile.delete_confirm')}</p>
               <input className="input" value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="DELETE" />
-              <button className="btn danger" disabled={confirm !== 'DELETE'} onClick={deleteAccount}>
+              <button className="btn danger" disabled={confirm !== 'DELETE'} onClick={() => void deleteAccount()}>
                 {t('profile.delete')}
               </button>
+              {deleteErr && (
+                <p role="alert" className="small" style={{ color: 'var(--red-ink)' }}>
+                  {deleteErr}
+                </p>
+              )}
             </div>
           </details>
         )}

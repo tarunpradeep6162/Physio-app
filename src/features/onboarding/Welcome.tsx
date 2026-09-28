@@ -2,12 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { drawAngleArc, drawSkeleton, drawPlumbLine } from '../../camera/overlay';
 import { BrandMark } from '../../components/icons';
-import { AuthError, signIn, signInDemo, signUp } from '../../data/auth';
+import { AuthError, requestPasswordReset, serverMode, setNewPassword, signIn, signInDemo, signUp, useSessionUserId } from '../../data/auth';
 import { ensureDemoData } from '../../data/demo';
 import type { Role } from '../../data/models';
+import { getDb } from '../../data/store';
 import { idx } from '../../engine/landmarks';
 import { synthesize } from '../../engine/pose/synthetic';
 import { useT } from '../../i18n';
+
+type AuthMode = 'signin' | 'signup' | 'forgot' | 'reset';
 
 /** Animated synthetic skeleton for the welcome screen (labelled as illustration). */
 function HeroVisual() {
@@ -91,36 +94,54 @@ export function AuthScreen() {
   const { t } = useT();
   const nav = useNavigate();
   const params = new URLSearchParams(location.search);
-  const [mode, setMode] = useState<'signin' | 'signup'>(params.get('mode') === 'signin' ? 'signin' : 'signup');
+  const server = serverMode();
+  const initial = params.get('mode');
+  const [mode, setMode] = useState<AuthMode>(initial === 'signin' ? 'signin' : initial === 'reset' && server ? 'reset' : initial === 'forgot' && server ? 'forgot' : 'signup');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('patient');
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // While storage and sign-in are browser-local, real patient onboarding is not offered: every new
-  // account must acknowledge that it is a pilot/test account holding no real patient information.
+  // Every new account must acknowledge that this is a pilot build: it is not yet approved for real
+  // patient information (local mode additionally keeps everything in this browser only).
   const [ack, setAck] = useState(false);
+  const uid = useSessionUserId();
+
+  // Server mode: an email-confirmation link opens the app already signed in — continue to the app.
+  useEffect(() => {
+    if (!server || !uid || mode === 'reset') return;
+    const u = getDb().users.find((x) => x.id === uid);
+    if (u && !u.isDemo) nav(u.role === 'patient' ? '/p/home' : '/c/overview', { replace: true });
+  }, [server, uid, mode, nav]);
+
+  const go = (u: { role: Role }, fresh: boolean) => nav(u.role === 'patient' ? (fresh ? '/onboarding' : '/p/home') : '/c/overview');
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'signup' && !ack) return;
     setErr(null);
+    setInfo(null);
     setBusy(true);
     try {
-      if (mode === 'signup') {
-        const u = await signUp({ email, password, name, role });
-        nav(u.role === 'patient' ? '/onboarding' : '/c/overview');
-      } else {
-        const u = await signIn(email, password);
-        nav(u.role === 'patient' ? '/p/home' : '/c/overview');
-      }
+      if (mode === 'signup') go(await signUp({ email, password, name, role }), true);
+      else if (mode === 'signin') go(await signIn(email, password), false);
+      else if (mode === 'forgot') {
+        await requestPasswordReset(email);
+        setInfo(t('auth.reset_sent'));
+      } else go(await setNewPassword(password), false);
     } catch (x) {
-      setErr(x instanceof AuthError ? t(`auth.error_${x.code}`) : String(x));
+      if (x instanceof AuthError && x.code === 'confirm') setInfo(t('auth.error_confirm'));
+      else setErr(x instanceof AuthError ? t(`auth.error_${x.code}`) : String(x));
     } finally {
       setBusy(false);
     }
   };
+
+  const title = mode === 'signup' ? t('auth.create_account') : mode === 'signin' ? t('auth.sign_in') : mode === 'forgot' ? t('auth.forgot_title') : t('auth.reset_title');
+  const needsPassword = mode !== 'forgot';
+  const needsEmail = mode !== 'reset';
 
   return (
     <div className="content narrow stack loose" style={{ paddingTop: '2rem' }}>
@@ -128,7 +149,7 @@ export function AuthScreen() {
         <BrandMark />
         {t('app.name')}
       </Link>
-      <h1>{mode === 'signup' ? t('auth.create_account') : t('auth.sign_in')}</h1>
+      <h1>{title}</h1>
       <form className="stack" onSubmit={submit}>
         {mode === 'signup' && (
           <>
@@ -136,31 +157,43 @@ export function AuthScreen() {
               <span>{t('auth.name')}</span>
               <input className="input" required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
             </label>
-            <div className="field">
-              <span>{t('auth.role')}</span>
-              <div className="segmented" role="radiogroup">
-                {(['patient', 'clinician'] as Role[]).map((r) => (
-                  <button key={r} type="button" aria-pressed={role === r} onClick={() => setRole(r)}>
-                    {t(`auth.role_${r}`)}
-                  </button>
-                ))}
+            {server ? (
+              // The role is never chosen by the user on the server: physiotherapist accounts are
+              // enabled only by the clinic owner's allowlist.
+              <p className="small muted" role="note">
+                {t('auth.server_role_note')}
+              </p>
+            ) : (
+              <div className="field">
+                <span>{t('auth.role')}</span>
+                <div className="segmented" role="radiogroup">
+                  {(['patient', 'clinician'] as Role[]).map((r) => (
+                    <button key={r} type="button" aria-pressed={role === r} onClick={() => setRole(r)}>
+                      {t(`auth.role_${r}`)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </>
         )}
-        <label className="field">
-          <span>{t('auth.email')}</span>
-          <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-        </label>
-        <label className="field">
-          <span>{t('auth.password')}</span>
-          <input className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} />
-          {mode === 'signup' && <small className="muted">{t('auth.password_hint')}</small>}
-        </label>
+        {needsEmail && (
+          <label className="field">
+            <span>{t('auth.email')}</span>
+            <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          </label>
+        )}
+        {needsPassword && (
+          <label className="field">
+            <span>{mode === 'reset' ? t('auth.new_password') : t('auth.password')}</span>
+            <input className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} />
+            {mode !== 'signin' && <small className="muted">{t('auth.password_hint')}</small>}
+          </label>
+        )}
         {mode === 'signup' && (
           <div className="notice warn stack tight" role="note">
             <strong>{t('auth.pilot_title')}</strong>
-            <span className="small">{t('auth.pilot_body')}</span>
+            <span className="small">{server ? t('auth.pilot_body_server') : t('auth.pilot_body')}</span>
             <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
               <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} style={{ marginTop: '0.25rem', minWidth: 24, minHeight: 24 }} />
               <span className="small">{t('auth.pilot_ack')}</span>
@@ -172,14 +205,31 @@ export function AuthScreen() {
             {err}
           </p>
         )}
+        {info && (
+          <p role="status" className="notice">
+            {info}
+          </p>
+        )}
         <button className="btn primary lg" disabled={busy || (mode === 'signup' && !ack)}>
-          {mode === 'signup' ? t('auth.create_account') : t('auth.sign_in')}
+          {mode === 'forgot' ? t('auth.send_reset') : mode === 'reset' ? t('auth.save_password') : title}
         </button>
       </form>
-      <button className="btn ghost" onClick={() => setMode(mode === 'signup' ? 'signin' : 'signup')}>
+      <button
+        className="btn ghost"
+        onClick={() => {
+          setErr(null);
+          setInfo(null);
+          setMode(mode === 'signup' ? 'signin' : 'signup');
+        }}
+      >
         {mode === 'signup' ? t('welcome.have_account') : t('auth.create_account')}
       </button>
-      <p className="xs muted">{t('auth.local_notice')}</p>
+      {server && mode === 'signin' && (
+        <button className="btn ghost" onClick={() => setMode('forgot')}>
+          {t('auth.forgot')}
+        </button>
+      )}
+      <p className="xs muted">{server ? t('auth.server_notice') : t('auth.local_notice')}</p>
     </div>
   );
 }

@@ -1,9 +1,12 @@
 import { useSyncExternalStore } from 'react';
 import type { Clinician, Patient, Role, User } from './models';
+import { RemoteAuthError, remoteConfigured } from './remote/config';
 import { bindSession, getDb, insert, sessionChanged, uuid } from './store';
 
 /**
- * Local authentication for the MVP. Passwords are hashed with PBKDF2-SHA256 (210k iterations)
+ * Sign-in. With a clinic server configured (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY), accounts
+ * are Supabase Auth accounts and the role comes from the server (see data/remote/account.ts).
+ * Otherwise this is the local authentication for the MVP. Passwords are hashed with PBKDF2-SHA256 (210k iterations)
  * via WebCrypto and never stored in plain text. This protects only against casual inspection of
  * the device; production MUST use server-side auth (OIDC / secure HTTP-only sessions).
  */
@@ -66,12 +69,26 @@ export function useSessionUserId(): string | null {
 }
 
 export class AuthError extends Error {
-  constructor(public code: 'invalid' | 'exists' | 'password') {
+  constructor(public code: 'invalid' | 'exists' | 'password' | 'confirm' | 'offline' | 'server') {
     super(code);
   }
 }
 
+/** True when this build stores records on the clinic's Supabase server (shared across devices). */
+export const serverMode = remoteConfigured;
+
+const wrap = async <T>(f: () => Promise<T>): Promise<T> => {
+  try {
+    return await f();
+  } catch (e) {
+    if (e instanceof RemoteAuthError) throw new AuthError(e.code);
+    throw e;
+  }
+};
+
 export async function signUp(args: { email: string; password: string; name: string; role: Role }): Promise<User> {
+  // Server mode: the role is decided by the server (clinic owner's allowlist), never by the form.
+  if (serverMode()) return wrap(async () => (await import('./remote/account')).remoteSignUp(args, setSession));
   const email = args.email.trim().toLowerCase();
   if (args.password.length < 8) throw new AuthError('password');
   if (getDb().users.some((u) => u.email === email)) throw new AuthError('exists');
@@ -102,6 +119,7 @@ export async function signUp(args: { email: string; password: string; name: stri
 }
 
 export async function signIn(emailRaw: string, password: string): Promise<User> {
+  if (serverMode()) return wrap(async () => (await import('./remote/account')).remoteSignIn(emailRaw, password, setSession));
   const email = emailRaw.trim().toLowerCase();
   const user = getDb().users.find((u) => u.email === email && !u.isDemo);
   if (!user) throw new AuthError('invalid');
@@ -118,5 +136,30 @@ export function signInDemo(role: Role) {
 }
 
 export function signOut() {
+  const u = sessionUserId ? getDb().users.find((x) => x.id === sessionUserId) : undefined;
+  if (serverMode() && u && !u.isDemo) {
+    void import('./remote/account').then((m) => m.remoteSignOut(setSession));
+    return;
+  }
   setSession(null);
+}
+
+export async function requestPasswordReset(email: string) {
+  return wrap(async () => (await import('./remote/account')).requestPasswordReset(email));
+}
+
+export async function setNewPassword(password: string): Promise<User> {
+  return wrap(async () => (await import('./remote/account')).setNewPassword(password, setSession));
+}
+
+/** Patient deletes their own account (server mode: on the server; local mode: on this device). */
+export async function deleteMyAccount(localErase: () => void) {
+  if (serverMode()) return wrap(async () => (await import('./remote/account')).remoteDeleteMyAccount(setSession));
+  localErase();
+  setSession(null);
+}
+
+// Resume a saved server session when the app opens.
+if (typeof window !== 'undefined' && serverMode()) {
+  void import('./remote/account').then((m) => m.restoreRemoteSession(sessionUserId, setSession)).catch(() => undefined);
 }

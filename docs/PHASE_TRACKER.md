@@ -96,11 +96,14 @@ Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE
 8. **Library**: filter, the camera-guided subset with its QA label, submit → approve an item (demo).
 9. **Settings**: exception-rule review, **Release readiness** (no-go), redacted incident log, rule approvals, validation thresholds.
 
+## Clinic server (Supabase) — added 28 Sep 2026
+Cross-device records: a physiotherapist on the owner's allowlist sees every patient of the clinic, and patients see only their own records. Code, migration and tests are done (`supabase/migrations/`, `src/data/remote/`, `db/supabase_test.sql`). Setup is in `docs/SUPABASE_SETUP.md`. **Inactive until the owner creates the Supabase project and sets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in Vercel.** Local-mode accounts are not migrated.
+
 ## Pending human approval or real-device / clinical validation
 - **Dheepika's approval** of the claims, rules, content, validation plan, incident process and release: **pending (on hold)**. Nothing was recorded or simulated.
 - **Owner decisions:**
   - the Phase 3 coverage check (keep gating, diagnostic only, or retune);
-  - hosting, identity provider and data-processing agreements (server deployment);
+  - Supabase project, region, plan and data-processing agreement; the physiotherapist allowlist (`docs/SUPABASE_SETUP.md`);
   - LLM provider for the model draft (inactive);
   - native iOS and Android apps for HealthKit / Health Connect.
 - **Real-device work:**

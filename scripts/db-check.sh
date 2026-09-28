@@ -30,6 +30,13 @@ psql_ -d dl -f plans_test.sql
 psql_ -d dl -f activity.sql >/dev/null
 psql_ -d dl -f activity_test.sql
 
+echo '--- supabase migration (on a local auth stub)'
+psql_ -d postgres -c 'CREATE DATABASE sb'
+psql_ -d sb -f supabase_stub.sql >/dev/null
+cp "$ROOT"/supabase/migrations/*.sql "$WORK"/ && chown postgres "$WORK"/*.sql
+for m in "$WORK"/2*_*.sql; do psql_ -d sb -f "$m" >/dev/null; done
+psql_ -d sb -f supabase_test.sql
+
 echo '--- backup / restore drill'
 psql_ -d dl <<'SQL'
 INSERT INTO organizations (id, name) VALUES ('91000000-0000-0000-0000-000000000001', 'Drill clinic');

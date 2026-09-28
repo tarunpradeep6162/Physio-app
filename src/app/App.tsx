@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
 import { BrandMark, IconChart, IconClipboard, IconFlask, IconGrid, IconHome, IconList, IconProgress, IconScan, IconSettings, IconTrain, IconUser, IconUsers } from '../components/icons';
 import { Loader } from '../components/ui';
 import { signOut } from '../data/auth';
 import { usePrefs } from '../data/prefs';
+import { getSyncStatus, onSyncStatus } from '../data/remote/status';
 import { storageError, useDb } from '../data/store';
 import { I18nProvider, useT } from '../i18n';
 import { useCurrentUser } from './hooks';
@@ -62,12 +63,15 @@ function useOnline() {
   return online;
 }
 
+const useSyncStatus = () => useSyncExternalStore(onSyncStatus, getSyncStatus);
+
 function Banners() {
   const { t } = useT();
   const user = useCurrentUser();
   const online = useOnline();
   useDb((d) => d.audit.length); // re-render on writes so storage errors surface
   const err = storageError();
+  const sync = useSyncStatus();
   return (
     <>
       {user?.isDemo && (
@@ -83,6 +87,16 @@ function Banners() {
       {err && (
         <div className="demo-banner" style={{ background: '#fdf1f1', color: '#7c1f1f', borderColor: '#efb4b4' }} role="alert">
           Storage error: {err}
+        </div>
+      )}
+      {sync.state === 'error' && (
+        <div className="demo-banner" style={{ background: '#fff8ea', color: '#5f3f00', borderColor: '#f2cf8e' }} role="status">
+          {t('sync.error_banner', { n: sync.pending })}
+        </div>
+      )}
+      {!online && sync.pending > 0 && (
+        <div className="demo-banner" style={{ background: '#fff8ea', color: '#5f3f00', borderColor: '#f2cf8e' }} role="status">
+          {t('sync.pending_offline', { n: sync.pending })}
         </div>
       )}
     </>

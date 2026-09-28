@@ -1,5 +1,7 @@
 # Server data boundary for real patient use (Phase 18)
 
+**Update (28 Sep 2026):** a first hosted server is implemented on Supabase. It uses a generic `records` table with row-level security: allowlisted physiotherapists see every patient of the organisation, and patients see only their own records. It is enabled by build variables; see `docs/SUPABASE_SETUP.md`. The normalised schema below remains the long-term target.
+
 **Status (updated, Dheepika Lab Phase 6):** migrations 001 (schema + security) and 002 (organisation tenancy) are implemented and tested, with a backup/restore drill, all via `scripts/db-check.sh`. Earlier status: the database layer is implemented and tested (`db/schema.sql` + `db/security.sql`, verified by `db/security_test.sql` on PostgreSQL 16). **No server is deployed.** The live app still stores everything in the browser, so it is not suitable for real patients. Sign-up now requires every new account to acknowledge that.
 
 Provisioning a hosted database and an identity provider creates accounts, billing and data-processing obligations. The clinic owner must choose and authorise these. They were deliberately not created on your behalf.
