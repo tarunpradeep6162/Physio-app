@@ -8,7 +8,18 @@
 | **Patient** (everyone else) | only their own records | only their own records. Never plans, impressions, reviewed reports, clinic settings or other clinician-only records |
 | Demo sessions | demonstration data only (never sent to the server) | local only |
 
-The app stays in **local mode** (browser-only, the current behaviour) until the two build variables below are set. Nothing changes for the live demo until then.
+**Status (30 Sep 2026):** project `dheepika-lab` (free plan, region ap-south-1 Mumbai) is created. Both migrations are applied: the sync schema and the security-advisor hardening. The access rules were verified on the live database with throwaway users in a rolled-back transaction:
+- allowlist → physiotherapist;
+- patients isolated from each other;
+- no self-promotion, no plan writes by patients, no history edits and no hard deletes;
+- anonymous access blocked;
+- the physiotherapist sees every patient and writes plans that the patient can read.
+
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (the publishable key) are set in Vercel. **Still to do by the owner:**
+- add the physiotherapist email(s) to the allowlist (step 3);
+- set the Site URL and redirect URLs (step 4). These cannot be set through the connector.
+
+Without the environment variables the app stays in **local mode** (browser-only).
 
 > **Not approved for real patients yet.** A server makes cross-device care possible. It does not replace clinical approval (on hold), patient consent, a data-processing agreement with Supabase, or the validation studies. Use test accounts only until those are in place.
 
@@ -42,7 +53,7 @@ The app stays in **local mode** (browser-only, the current behaviour) until the 
 1. **Create the project** at supabase.com → New project. Choose a region close to the patients, for example *South Asia (Mumbai)*, and a strong database password.
    - Creating it needs your Supabase account.
    - The paid plan and the data-processing agreement are your decision.
-2. **Create the tables:** open *SQL Editor* → New query, paste the whole of `supabase/migrations/20260928000001_dheepika_lab_sync.sql`, then *Run*.
+2. **Create the tables:** open *SQL Editor* → New query, paste each file in `supabase/migrations/` in order (`…_sync.sql`, then `…_hardening.sql`), and *Run* each.
 3. **Add the physiotherapist(s)** in the SQL editor, using the email each will sign in with, in lower case:
    ```sql
    insert into public.clinician_allowlist (email) values ('physio@example.com');
