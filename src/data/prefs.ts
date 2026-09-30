@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { ImageTone } from '../camera/postureGrid';
 import type { FilterKind } from '../engine/filters';
 import type { PoseProviderId } from '../engine/pose/provider';
 import type { Locale } from '../i18n';
@@ -16,6 +17,8 @@ export interface Prefs {
   filter: FilterKind;
   /** Where pose inference runs: 'auto' = Web Worker when supported. 'main' is for fallback testing. */
   inferenceThread: 'auto' | 'main';
+  /** Posture scan camera image tone (display only). */
+  scanTone: ImageTone;
 }
 
 const KEY = 'physiovision.prefs';
@@ -31,6 +34,7 @@ const DEFAULT_PREFS: Prefs = {
   poseProvider: 'mediapipe-lite',
   filter: 'one_euro',
   inferenceThread: 'auto',
+  scanTone: 'colour',
 };
 
 function load(): Prefs {

@@ -233,8 +233,17 @@ export function drawPostureScene(ctx: CanvasRenderingContext2D, s: SceneInput) {
   }
 }
 
-/** Monochrome camera view (body surface only — an image filter, not an X-ray). */
-export const MONO_FILTER = 'grayscale(1) contrast(1.35) brightness(0.9)';
+/**
+ * Camera image tone (display only). "grey" = high-contrast blue-grey; "negative" = the same with
+ * light and dark swapped (the look of the reference screenshots). Both are filters on the camera
+ * picture of the body SURFACE — nothing inside the body is captured, so neither is an X-ray.
+ */
+export type ImageTone = 'colour' | 'grey' | 'negative';
+export const TONE_FILTER: Record<ImageTone, string> = {
+  colour: 'none',
+  grey: 'grayscale(1) sepia(0.35) hue-rotate(160deg) saturate(1.6) contrast(1.7) brightness(0.72)',
+  negative: 'grayscale(1) invert(1) sepia(0.25) hue-rotate(160deg) saturate(1.4) contrast(1.45) brightness(0.78)',
+};
 
 /**
  * Privacy: covers the face with an opaque disc centred on the nose, sized from the ear/eye spread.
@@ -286,7 +295,7 @@ export interface RegionPanelInput {
   width: number;
   height: number;
   mirrored: boolean;
-  mono?: boolean;
+  tone?: ImageTone;
   coverFace?: boolean;
   support?: number[] | null;
   labels: SceneLabels;
@@ -299,7 +308,7 @@ export function drawRegionPanel(ctx: CanvasRenderingContext2D, p: RegionPanelInp
   ctx.fillRect(0, 0, p.width, p.height);
   if (p.source && p.sourceW > 0) {
     ctx.save();
-    if (p.mono) ctx.filter = MONO_FILTER;
+    if (p.tone && p.tone !== 'colour') ctx.filter = TONE_FILTER[p.tone];
     ctx.globalAlpha = 0.85;
     ctx.drawImage(p.source, b.x * p.sourceW, b.y * p.sourceH, b.w * p.sourceW, b.h * p.sourceH, 0, 0, p.width, p.height);
     ctx.restore();

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { prepareCanvas } from '../../camera/overlay';
-import { drawRegionPanel, type SceneLabels } from '../../camera/postureGrid';
+import { drawRegionPanel, type ImageTone, type SceneLabels } from '../../camera/postureGrid';
+import { usePrefs } from '../../data/prefs';
 import { jointList } from '../../engine/landmarks';
 import type { PostureMetricStatus } from '../../engine/posture';
 import { POSTURE_REGIONS, regionBox, type PostureRegion } from '../../engine/postureGeometry';
@@ -91,7 +92,7 @@ interface BoardProps {
 }
 
 /** One panel: the full frame, or a region crop re-mapped into the panel. */
-function Panel({ p, region, labels }: { p: BoardProps; region: PostureRegion | null; labels: SceneLabels }) {
+function Panel({ p, region, labels, tone }: { p: BoardProps; region: PostureRegion | null; labels: SceneLabels; tone: ImageTone }) {
   const { t } = useT();
   const ref = useRef<HTMLCanvasElement>(null);
   const img = useImage(p.image);
@@ -119,9 +120,10 @@ function Panel({ p, region, labels }: { p: BoardProps; region: PostureRegion | n
       width: PW,
       height: PH,
       mirrored: false,
+      tone,
       labels,
     });
-  }, [box, img, p, PW, PH, labels, region]);
+  }, [box, img, p, PW, PH, labels, region, tone]);
   const title = region ? t(`grid.region.${region}`) : t(`scan.view.${p.view}`);
   return (
     <figure className={`posture-panel ${region ? 'region' : 'main'}`}>
@@ -140,16 +142,32 @@ function Panel({ p, region, labels }: { p: BoardProps; region: PostureRegion | n
 export function PostureBoard(p: BoardProps) {
   const { t } = useT();
   const labels = useSceneLabels();
+  const prefs = usePrefs();
+  const [tone, setTone] = useState<ImageTone>(prefs.scanTone ?? 'colour');
   return (
     <div className="posture-board">
+      {p.image && (
+        <div className="row wrap" style={{ gap: '0.5rem', alignItems: 'center' }}>
+          <div className="scan-tools">
+            <div className="seg" role="group" aria-label={t('grid.tone')}>
+              {(['colour', 'grey', 'negative'] as ImageTone[]).map((v) => (
+                <button key={v} type="button" aria-pressed={tone === v} onClick={() => setTone(v)}>
+                  {t(`grid.tone_${v}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+          {tone !== 'colour' && <span className="xs muted">{t(`grid.tone_note_${tone}`)}</span>}
+        </div>
+      )}
       <div className="posture-board-main">
-        <Panel p={p} region={null} labels={labels} />
+        <Panel p={p} region={null} labels={labels} tone={tone} />
         <PostureHud view={p.view} statuses={p.statuses} />
       </div>
       <p className="xs muted">{t('grid.regions_note')}</p>
       <div className="posture-regions">
         {POSTURE_REGIONS.map((r) => (
-          <Panel key={r} p={p} region={r} labels={labels} />
+          <Panel key={r} p={p} region={r} labels={labels} tone={tone} />
         ))}
       </div>
     </div>

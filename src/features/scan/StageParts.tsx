@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, RefObject } from 'react';
 import type { CameraErrorCode } from '../../camera/camera';
 import type { RuntimeStatus } from '../../camera/useMotionRuntime';
+import { TONE_FILTER, type ImageTone } from '../../camera/postureGrid';
 import { jointLabel } from '../../engine/landmarks';
 import type { JointState } from '../../engine/measurements';
 import type { CalibrationCheck } from '../../engine/calibration';
@@ -22,7 +23,7 @@ export interface StageZoom {
   frameH: number;
 }
 
-export function StageMedia({ videoRef, canvasRef, mirrored, simulated, zoom, mono, children }: { videoRef: RefObject<HTMLVideoElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; mirrored: boolean; simulated: boolean; zoom?: StageZoom | null; mono?: boolean; children?: ReactNode }) {
+export function StageMedia({ videoRef, canvasRef, mirrored, simulated, zoom, tone = 'colour', children }: { videoRef: RefObject<HTMLVideoElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; mirrored: boolean; simulated: boolean; zoom?: StageZoom | null; tone?: ImageTone; children?: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   // Digital zoom of what is displayed only — the pose model always analyses the full camera frame.
   let style: React.CSSProperties | undefined;
@@ -37,8 +38,8 @@ export function StageMedia({ videoRef, canvasRef, mirrored, simulated, zoom, mon
   return (
     <div className="stage-media" ref={box}>
       <div className="stage-media-zoom" style={style}>
-        <div className={`stage-media-inner ${mirrored && !simulated ? 'mirrored' : ''} ${mono ? 'mono' : ''}`}>
-          <video ref={videoRef} playsInline muted aria-hidden="true" style={{ display: simulated ? 'none' : undefined }} />
+        <div className={`stage-media-inner ${mirrored && !simulated ? 'mirrored' : ''}`}>
+          <video ref={videoRef} playsInline muted aria-hidden="true" style={{ display: simulated ? 'none' : undefined, filter: tone === 'colour' ? undefined : TONE_FILTER[tone] }} />
           <canvas ref={canvasRef} aria-hidden="true" />
         </div>
       </div>

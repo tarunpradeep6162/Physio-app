@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { captureStill, LightingSampler } from '../../camera/camera';
 import { useDeviceRoll } from '../../camera/deviceRoll';
 import { drawAlignmentFrame, drawSkeleton, label, prepareCanvas } from '../../camera/overlay';
-import { drawFaceCover, drawGrid, drawPostureScene, drawRegionPanel, drawReportedArea } from '../../camera/postureGrid';
+import { drawFaceCover, drawGrid, drawPostureScene, drawRegionPanel, drawReportedArea, type ImageTone } from '../../camera/postureGrid';
 import { POSTURE_REGIONS, regionBox, reportedAreaBox, zoomToBox } from '../../engine/postureGeometry';
 import { useMotionRuntime } from '../../camera/useMotionRuntime';
 import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
@@ -12,7 +12,7 @@ import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
 import { capturedStatuses, computePostureMetrics, gateStatuses, PostureCapture, postureMetricStatus, type PostureMetricResult, type PostureMetricStatus } from '../../engine/posture';
 import type { DeviceContext } from '../../engine/provenance';
 import type { Landmark, PoseProviderInfo, ViewOrientation } from '../../engine/types';
-import { usePrefs } from '../../data/prefs';
+import { setPrefs, usePrefs } from '../../data/prefs';
 import { IconClose, IconFlip, IconVolume, IconMute } from '../../components/icons';
 import { speechLang, useT } from '../../i18n';
 import { VoiceCoach } from '../../voice/voiceCoach';
@@ -73,11 +73,15 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   // Display tools: zoom (display only), region layout, monochrome, face cover (privacy).
   const [zoom, setZoom] = useState<{ scale: number; fx: number; fy: number; pain?: boolean } | null>(null);
   const [layout, setLayout] = useState<Layout>('single');
-  const [mono, setMono] = useState(false);
+  const [tone, setToneState] = useState<ImageTone>(prefs.scanTone ?? 'colour');
+  const setTone = (v: ImageTone) => {
+    setToneState(v);
+    setPrefs({ scanTone: v });
+  };
   const [coverFace, setCoverFace] = useState(false);
   const [toolMsg, setToolMsg] = useState<string | null>(null);
-  const display = useRef({ layout, mono, coverFace });
-  display.current = { layout, mono, coverFace };
+  const display = useRef({ layout, tone, coverFace });
+  display.current = { layout, tone, coverFace };
   const regionCanvases = useRef<(HTMLCanvasElement | null)[]>([]);
   const latestLms = useRef<{ lm: Landmark[]; w: number; h: number; support?: number[] | null } | null>(null);
   const reportedRef = useRef(reported);
@@ -145,7 +149,7 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
       const statuses = lms ? gateStatuses(postureMetricStatus(lms, f.width, f.height, view, 0.6, f.support), calib.frameReady) : [];
       latestStatuses.current = statuses;
       if (lms) latestLms.current = { lm: lms, w: f.width, h: f.height, support: f.support };
-      const { layout: lay, mono: mo, coverFace: cover } = display.current;
+      const { layout: lay, tone: tn, coverFace: cover } = display.current;
       // Privacy: the face cover sits on the overlay canvas above the video (and on the region crops).
       if (lms && cover && !simulated) drawFaceCover(c2d, lms, f.width, f.height);
       if (lms && calib.frameReady) {
@@ -172,10 +176,13 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
           if (!b.ok) {
             rctx.fillStyle = '#0b1a1f';
             rctx.fillRect(0, 0, 480, 360);
-            label(rctx, t('grid.region_withheld', { joints: jointList(b.missing) }), 240, 180, 360, mirrored, { size: 11 });
+            // Short enough for a small panel: two joints, then a count.
+            const joints = b.missing.length > 2 ? `${jointList(b.missing.slice(0, 2))} +${b.missing.length - 2}` : jointList(b.missing);
+            label(rctx, t('grid.region_not_in_view'), 240, 165, 360, mirrored, { size: 13 });
+            label(rctx, joints, 240, 195, 360, mirrored, { size: 10, color: '#8fb0aa' });
             return;
           }
-          drawRegionPanel(rctx, { source: simulated ? null : ctx.video, sourceW: ctx.video.videoWidth, sourceH: ctx.video.videoHeight, lms, view, statuses, box: b.value, region: r, width: 480, height: 360, mirrored, mono: mo, coverFace: cover, support: f.support, labels });
+          drawRegionPanel(rctx, { source: simulated ? null : ctx.video, sourceW: ctx.video.videoWidth, sourceH: ctx.video.videoHeight, lms, view, statuses, box: b.value, region: r, width: 480, height: 360, mirrored, tone: tn, coverFace: cover, support: f.support, labels });
         });
       }
 
@@ -297,9 +304,9 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   const instruction = ui.calib?.instruction ?? 'no_person';
   return (
     <div className="stage">
-      <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored={facing === 'user'} simulated={simulated} mono={mono} zoom={zoom && layout === 'single' ? { ...zoom, ...frameSize } : null}>
+      <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored={facing === 'user'} simulated={simulated} tone={tone} zoom={zoom && layout === 'single' ? { ...zoom, ...frameSize } : null}>
         {phase !== 'captured' && runtime.status === 'running' && layout === 'single' && <StageHud view={view} statuses={ui.statuses} />}
-        {mono && layout === 'single' && <div className="stage-mono-note">{t('grid.mono_note')}</div>}
+        {tone !== 'colour' && layout === 'single' && <div className="stage-mono-note">{t(`grid.tone_note_${tone}`)}</div>}
         {layout === 'regions' && phase !== 'captured' && (
           <div className="stage-regions" aria-label={t('grid.layout_regions')}>
             {POSTURE_REGIONS.map((r, i) => (
@@ -383,9 +390,13 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
             <button type="button" aria-pressed={layout === 'regions'} onClick={() => setLayout((l) => (l === 'regions' ? 'single' : 'regions'))}>
               {t('grid.layout_regions')}
             </button>
-            <button type="button" aria-pressed={mono} onClick={() => setMono((v) => !v)}>
-              {t('grid.mono')}
-            </button>
+            <div className="seg" role="group" aria-label={t('grid.tone')}>
+              {(['colour', 'grey', 'negative'] as ImageTone[]).map((v) => (
+                <button key={v} type="button" aria-pressed={tone === v} onClick={() => setTone(v)}>
+                  {t(`grid.tone_${v}`)}
+                </button>
+              ))}
+            </div>
             <button type="button" aria-pressed={coverFace} onClick={() => setCoverFace((v) => !v)}>
               {t('grid.cover_face')}
             </button>

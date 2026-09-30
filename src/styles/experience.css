@@ -234,7 +234,6 @@ html.large-text .hud-value:not(.hud-hero) { font-size: 2.5rem; }
 /* Posture scan: display zoom (display only) and monochrome camera view (image filter). */
 .stage-media-zoom { position: absolute; inset: 0; overflow: visible; transition: transform 0.25s ease; }
 .stage-media { overflow: hidden; }
-.stage-media-inner.mono video { filter: grayscale(1) contrast(1.35) brightness(0.9); }
 @media (prefers-reduced-motion: reduce) { .stage-media-zoom { transition: none; } }
 .scan-tools { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
 .scan-tools .seg { display: inline-flex; border: 1px solid rgba(236, 253, 250, 0.2); border-radius: 12px; overflow: hidden; }
