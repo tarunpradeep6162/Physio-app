@@ -15,9 +15,10 @@ import { insert, update, useDb, uuid } from '../../data/store';
 import { getProtocol, protocolsForRegion } from '../../engine/protocols/registry';
 import type { Side } from '../../engine/types';
 import { jointList } from '../../engine/landmarks';
-import { POSTURE_METRICS, type PostureMetricId } from '../../engine/posture';
+import { capturedStatuses, POSTURE_METRICS, type PostureMetricId } from '../../engine/posture';
 import type { ViewOrientation } from '../../engine/types';
 import { BodyMap } from '../bodymap/BodyMap';
+import { PostureBoard } from '../scan/PostureGrid';
 import { regionLabel } from '../bodymap/regions';
 import { currentPlan, itemKey, savePlan } from './persist';
 import { Replay } from './Replay';
@@ -401,6 +402,20 @@ function CapturesTab({ db, a, actorId }: { db: DB; a: Assessment; actorId: strin
                 <h3>{scan.view.replace(/_/g, ' ')} · {fmtDateTime(scan.createdAt)}</h3>
                 <p className="xs muted mono">{scan.provenance.poseModel} {scan.provenance.poseModelVersion} · {scan.provenance.algorithmVersion} · {scan.provenance.source}</p>
                 {!ms.length && <Notice tone="warn">No reliable measures were recorded for this view. Recapture is needed.</Notice>}
+                <PostureBoard
+                  view={scan.view as ViewOrientation}
+                  landmarks={scan.landmarks}
+                  frameWidth={scan.frameWidth}
+                  frameHeight={scan.frameHeight}
+                  image={scan.imageDataUrl}
+                  statuses={capturedStatuses(
+                    scan.view as ViewOrientation,
+                    ms.filter((m) => m.unit === 'deg' || m.unit === 'pct_height').map((m) => ({ id: m.type.slice(8) as PostureMetricId, value: m.value, unit: m.unit as 'deg' | 'pct_height', direction: m.direction, confidence: m.confidence, sd: m.sd })),
+                    scan.landmarks,
+                    scan.frameWidth,
+                    scan.frameHeight,
+                  )}
+                />
                 {ms.map((m) => {
                   const metricId = m.type.slice(8) as PostureMetricId;
                   const def = POSTURE_METRICS.find((d) => d.id === metricId);

@@ -1,27 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { captureStill, LightingSampler } from '../../camera/camera';
 import { useDeviceRoll } from '../../camera/deviceRoll';
-import { drawAlignmentFrame, drawLevelLine, drawPlumbLine, drawSkeleton, label, prepareCanvas } from '../../camera/overlay';
+import { drawAlignmentFrame, drawSkeleton, label, prepareCanvas } from '../../camera/overlay';
+import { drawGrid, drawPostureScene } from '../../camera/postureGrid';
 import { useMotionRuntime } from '../../camera/useMotionRuntime';
 import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
-import { FULL_BODY_LANDMARKS, LM } from '../../engine/landmarks';
+import { FULL_BODY_LANDMARKS } from '../../engine/landmarks';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
-import { computePostureMetrics, PostureCapture, type PostureMetricResult } from '../../engine/posture';
+import { capturedStatuses, computePostureMetrics, gateStatuses, PostureCapture, postureMetricStatus, type PostureMetricResult, type PostureMetricStatus } from '../../engine/posture';
 import type { DeviceContext } from '../../engine/provenance';
 import type { Landmark, PoseProviderInfo, ViewOrientation } from '../../engine/types';
 import { usePrefs } from '../../data/prefs';
 import { IconClose, IconFlip, IconVolume, IconMute } from '../../components/icons';
-import { ConfidenceBadge } from '../../components/ui';
 import { speechLang, useT } from '../../i18n';
 import { VoiceCoach } from '../../voice/voiceCoach';
+import { PostureBoard, PostureHud, useSceneLabels } from './PostureGrid';
 import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from './StageParts';
 
 /**
- * Static posture scan: calibration → hold-still capture per standard view → per-view results.
- * No number is drawn until calibration has passed and remained stable; every metric is the
- * median of a 3-second window with its variability and confidence.
+ * Static posture scan: calibration → hold-still capture per standard view → per-view results,
+ * shown on the clinical posture grid. No number is drawn until calibration has passed and remained
+ * stable; every saved metric is the median of a 3-second window with its variability and
+ * confidence. Two modes: self-scan (captures automatically once the checks hold, voice coaching)
+ * and therapist-guided (rear camera, the therapist taps Capture — still only once the checks pass).
  */
+
+export type ScanMode = 'self' | 'therapist';
 
 export interface ScanViewResult {
   view: ViewOrientation;
@@ -40,16 +45,21 @@ const CAPTURE_MS = 3000;
 
 type Phase = 'calibrating' | 'capturing' | 'captured';
 
-export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: (results: ScanViewResult[]) => void; onCancel: () => void; storeImages: boolean }) {
+export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 'self' }: { onComplete: (results: ScanViewResult[]) => void; onCancel: () => void; storeImages: boolean; defaultMode?: ScanMode }) {
   const { t, locale } = useT();
   const prefs = usePrefs();
+  const labels = useSceneLabels();
   const [providerId, setProviderId] = useState(prefs.poseProvider);
-  const [facing, setFacing] = useState<'user' | 'environment'>('user');
+  const [mode, setModeState] = useState<ScanMode>(defaultMode);
+  const [facing, setFacing] = useState<'user' | 'environment'>(defaultMode === 'therapist' ? 'environment' : 'user');
   const [viewIdx, setViewIdx] = useState(0);
   const [phase, setPhase] = useState<Phase>('calibrating');
-  const [ui, setUi] = useState<{ calib: CalibrationResult | null; gate: number; capture: number }>({ calib: null, gate: 0, capture: 0 });
+  const [ui, setUi] = useState<{ calib: CalibrationResult | null; gate: number; capture: number; ready: boolean; statuses: PostureMetricStatus[] }>({ calib: null, gate: 0, capture: 0, ready: false, statuses: [] });
   const [results, setResults] = useState<ScanViewResult[]>([]);
-  const [voiceOn, setVoiceOn] = useState(prefs.voice);
+  const [voiceOn, setVoiceOn] = useState(defaultMode === 'therapist' ? false : prefs.voice);
+  const modeRef = useRef<ScanMode>(mode);
+  modeRef.current = mode;
+  const manualStart = useRef(false);
   const { roll, needsPermission, request } = useDeviceRoll();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -65,6 +75,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
   const lightingT = useRef(0);
   const sampler = useRef<LightingSampler | null>(null);
   const lastUi = useRef(0);
+  const latestStatuses = useRef<PostureMetricStatus[]>([]);
   const voice = useRef<VoiceCoach | null>(null);
   const view = VIEWS[viewIdx];
   const simulated = providerId === 'simulated';
@@ -107,26 +118,20 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
       const mirrored = facing === 'user' && !simulated;
       drawAlignmentFrame(c2d, f.width, f.height, g.ready, g.progress);
       const lms = f.smoothed;
-      if (lms) {
-        drawSkeleton(c2d, lms, f.width, f.height, { mirrored, minVisibility: 0.5 });
-        if (calib.frameReady) {
-          // Reference geometry — only drawn once calibration holds, and numbers come straight from landmarks.
-          const lateral = view.startsWith('lateral');
-          const near = view === 'lateral_right' ? 'right' : 'left';
-          const ankleX = lateral ? lms[near === 'left' ? LM.leftAnkle : LM.rightAnkle].x : (lms[LM.leftAnkle].x + lms[LM.rightAnkle].x) / 2;
-          drawPlumbLine(c2d, ankleX, f.width, f.height);
-          if (!lateral) {
-            const m = computePostureMetrics(lms, f.width, f.height, view, 0.6, f.support);
-            const sh = m.find((x) => x.id === 'shoulder_level');
-            const pv = m.find((x) => x.id === 'pelvic_level');
-            // Reference lines only for metrics that passed validation — never through hidden joints.
-            if (sh) drawLevelLine(c2d, lms[LM.rightShoulder], lms[LM.leftShoulder], f.width, f.height, `${sh.value.toFixed(1)}°`, mirrored);
-            if (pv) drawLevelLine(c2d, lms[LM.rightHip], lms[LM.leftHip], f.width, f.height, `${pv.value.toFixed(1)}°`, mirrored);
-          }
-        }
+      // Every metric of this view: measured, or withheld with the reason. Numbers stay hidden until
+      // the setup checks pass; reference lines are drawn only through visible, validated joints.
+      const statuses = lms ? gateStatuses(postureMetricStatus(lms, f.width, f.height, view, 0.6, f.support), calib.frameReady) : [];
+      latestStatuses.current = statuses;
+      if (lms && calib.frameReady) {
+        drawPostureScene(c2d, { lms, width: f.width, height: f.height, view, statuses, mirrored, support: f.support, labels });
+      } else {
+        drawGrid(c2d, f.width, f.height);
+        if (lms) drawSkeleton(c2d, lms, f.width, f.height, { mirrored, minVisibility: 0.5 });
       }
 
-      if (phaseRef.current === 'calibrating' && g.ready) {
+      // Self-scan starts on its own; therapist-guided waits for the Capture tap (which needs the same checks).
+      if (phaseRef.current === 'calibrating' && g.ready && (modeRef.current === 'self' || manualStart.current)) {
+        manualStart.current = false;
         capture.current = new PostureCapture();
         captureStart.current = ctx.now;
         phaseRef.current = 'capturing';
@@ -144,7 +149,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
           capture.current!.add(computePostureMetrics(lms, f.width, f.height, view, 0.6, f.support));
           lastLm.current = { lm: lms, w: f.width, h: f.height };
           const prog = (ctx.now - captureStart.current) / CAPTURE_MS;
-          label(c2d, `${Math.round(prog * 100)}%`, f.width / 2, f.height * 0.08, f.height, mirrored, { size: 16 });
+          label(c2d, `${Math.min(100, Math.round(prog * 100))}%`, f.width / 2, f.height * 0.08, f.height, mirrored, { size: 16 });
           if (prog >= 1) {
             // Do not save a scan containing only unstable or insufficient-confidence readings.
             const metrics = capture.current!.result().filter((m) => m.level === 'high' || m.level === 'moderate');
@@ -153,7 +158,7 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
               gate.current.reset();
               phaseRef.current = 'calibrating';
               setPhase('calibrating');
-              setUi({ calib, gate: 0, capture: 0 });
+              setUi({ calib, gate: 0, capture: 0, ready: false, statuses: latestStatuses.current });
               return;
             }
             const conf = metrics.length ? metrics.reduce((a, m) => a + m.confidence, 0) / metrics.length : 0;
@@ -187,18 +192,25 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
 
       if (ctx.now - lastUi.current > 150) {
         lastUi.current = ctx.now;
-        setUi({ calib, gate: g.progress, capture: phaseRef.current === 'capturing' ? (ctx.now - captureStart.current) / CAPTURE_MS : 0 });
+        setUi({ calib, gate: g.progress, capture: phaseRef.current === 'capturing' ? (ctx.now - captureStart.current) / CAPTURE_MS : 0, ready: g.ready, statuses: latestStatuses.current });
         if (phaseRef.current === 'calibrating' && calib.instruction !== 'ready') voice.current?.say(t(`calib.${calib.instruction}`, calib.instructionParams), calib.instruction, 2, 5000);
       }
     },
-    [view, facing, simulated, storeImages, t],
+    [view, facing, simulated, storeImages, t, labels],
   );
 
   const runtime = useMotionRuntime({ providerId, facing, filter: prefs.filter, onFrame });
 
   const current = results.find((r) => r.view === view);
+  const goTo = (i: number) => {
+    gate.current.reset();
+    manualStart.current = false;
+    setViewIdx(i);
+    setPhase(results.some((r) => r.view === VIEWS[i]) ? 'captured' : 'calibrating');
+  };
   const next = () => {
     gate.current.reset();
+    manualStart.current = false;
     if (viewIdx < VIEWS.length - 1) {
       setViewIdx(viewIdx + 1);
       setPhase('calibrating');
@@ -206,9 +218,17 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
   };
   const retake = () => {
     gate.current.reset();
+    manualStart.current = false;
     setResults((r) => r.filter((x) => x.view !== view));
     setPhase('calibrating');
   };
+  const setMode = (m: ScanMode) => {
+    setModeState(m);
+    manualStart.current = false;
+    if (!simulated) setFacing(m === 'therapist' ? 'environment' : 'user');
+    if (m === 'therapist') setVoiceOn(false);
+  };
+  const currentStatuses = current ? capturedStatuses(view, current.metrics, current.landmarks, current.frameWidth, current.frameHeight) : [];
 
   const instruction = ui.calib?.instruction ?? 'no_person';
   return (
@@ -249,11 +269,28 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
       <RuntimeOverlay status={runtime.status} error={runtime.error} onRetry={runtime.retry} onUseDemo={() => setProviderId('simulated')} />
 
       <div className="stage-bottom stack">
+        <div className="row between wrap" style={{ gap: '0.5rem' }}>
+          <div className="scan-mode" role="group" aria-label={t('grid.mode_label')}>
+            {(['therapist', 'self'] as ScanMode[]).map((m) => (
+              <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+                {t(`grid.mode_${m}`)}
+              </button>
+            ))}
+          </div>
+          <nav className="scan-views" aria-label={t('grid.views_label')}>
+            {VIEWS.map((v, i) => (
+              <button key={v} type="button" aria-current={i === viewIdx ? 'step' : undefined} onClick={() => goTo(i)}>
+                {t(`scan.view.${v}`)}
+                {results.some((r) => r.view === v) && <span className="done" aria-label={t('scan.captured')}>✓</span>}
+              </button>
+            ))}
+          </nav>
+        </div>
         {phase !== 'captured' && runtime.status === 'running' && (
           <>
             <div className="glass" style={{ padding: '0.75rem 1rem' }}>
               <p className="small" style={{ marginBottom: '0.5rem' }}>
-                {t(`scan.instruction.${view}`)}
+                {mode === 'therapist' ? t('grid.mode_therapist_hint') : t(`scan.instruction.${view}`)}
               </p>
               {ui.calib && <CalibrationChecklist checks={ui.calib.checks} compact />}
               {needsPermission && !simulated && (
@@ -267,7 +304,19 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
                 </div>
               )}
             </div>
-            <div className="row" style={{ justifyContent: 'center' }}>
+            {ui.statuses.length > 0 && <PostureHud view={view} statuses={ui.statuses} live />}
+            <div className="row" style={{ justifyContent: 'center', gap: '0.5rem' }}>
+              {mode === 'therapist' && phase === 'calibrating' && (
+                <button
+                  className="btn primary"
+                  disabled={!ui.ready}
+                  onClick={() => {
+                    manualStart.current = true;
+                  }}
+                >
+                  {ui.ready ? t('grid.capture') : t('grid.capture_locked')}
+                </button>
+              )}
               <button className="stage-btn" onClick={next}>
                 {t('scan.skip_view')}
               </button>
@@ -275,30 +324,14 @@ export function StaticScan({ onComplete, onCancel, storeImages }: { onComplete: 
           </>
         )}
         {phase === 'captured' && current && (
-          <div className="glass stack tight" style={{ padding: '1rem', maxHeight: '55vh', overflowY: 'auto' }}>
+          <div className="glass stack tight" style={{ padding: '0.75rem' }}>
             <div className="row between">
               <strong>
                 {t('scan.results')} · {t(`scan.view.${view}`)}
               </strong>
               <span className="badge camera">◎ {t('cat.camera_estimate')}</span>
             </div>
-            {current.metrics.length === 0 && <p className="small">{t('progress.no_data')}</p>}
-            {current.metrics.map((m) => (
-              <div key={m.id} className="row between" style={{ gap: '0.5rem', padding: '0.2rem 0' }}>
-                <span className="small grow">
-                  {t(`posture.${m.id}`)}
-                  {m.direction && <span style={{ color: '#8fb0aa' }}> · {t(`posture.dir.${m.direction}`)}</span>}
-                </span>
-                <span className="num" style={{ fontWeight: 750, fontSize: '1.1rem' }}>
-                  {m.value.toFixed(1)}
-                  {m.unit === 'deg' ? '°' : '%'}
-                </span>
-                <span className="xs" style={{ color: '#8fb0aa', minWidth: 48 }}>
-                  ±{m.sd.toFixed(1)}
-                </span>
-                <ConfidenceBadge value={m.confidence} />
-              </div>
-            ))}
+            <PostureBoard view={view} landmarks={current.landmarks} frameWidth={current.frameWidth} frameHeight={current.frameHeight} image={current.image} statuses={currentStatuses} />
             <p className="xs" style={{ color: '#8fb0aa' }}>
               {t('scan.estimate_note')}
             </p>

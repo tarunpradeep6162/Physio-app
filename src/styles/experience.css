@@ -166,3 +166,50 @@ h2 { letter-spacing: -.032em; }
    viewport, so the root font size alone would not change them). */
 html.large-text .stage .hud-value.hud-hero { font-size: clamp(3.8rem, 9.5vmin, 6.8rem); }
 html.large-text .hud-value:not(.hud-hero) { font-size: 2.5rem; }
+
+/* Clinical posture grid (static scan): measurement HUD, captured board and zoomed region panels.
+   Dark "imaging" surface in every theme so the grid and level lines keep their contrast. */
+.posture-hud {
+  background: rgba(5, 22, 24, 0.9);
+  color: #ecfdfa;
+  border: 1px solid rgba(34, 211, 197, 0.35);
+  border-radius: 12px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  min-width: 0;
+}
+.posture-hud-head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.35rem; }
+.posture-hud-head strong { color: #22d3c5; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.75rem; }
+.posture-hud-head span { color: #8fb0aa; font-size: 0.75rem; }
+.posture-hud ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.posture-hud li { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; padding: 0.2rem 0; border-top: 1px solid rgba(236, 253, 250, 0.08); }
+.posture-hud li:first-child { border-top: 0; }
+.posture-hud .name { flex: 1; min-width: 0; }
+.posture-hud .val, .posture-hud .why { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.posture-hud .val b { color: #f5b84a; font-size: 1.05rem; }
+.posture-hud .why b { color: #8fb0aa; }
+.posture-hud small { color: #8fb0aa; font-size: 0.72rem; max-width: 16rem; }
+.posture-hud li.withheld .name { color: #b8cdc9; }
+.posture-hud-note { margin: 0.45rem 0 0; color: #8fb0aa; font-size: 0.72rem; }
+.stage .posture-hud { background: rgba(5, 22, 24, 0.84); }
+
+.posture-board { display: grid; gap: 0.75rem; }
+.posture-board-main { display: grid; gap: 0.75rem; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 760px) {
+  .posture-board-main { grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 1fr); align-items: start; }
+}
+.posture-regions { display: grid; gap: 0.6rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 900px) { .posture-regions { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.posture-panel { margin: 0; background: #0b1a1f; border: 1px solid rgba(34, 211, 197, 0.3); border-radius: 12px; overflow: hidden; }
+.posture-panel canvas { display: block; width: 100%; height: auto; }
+.posture-panel.main canvas { max-height: 70vh; width: auto; max-width: 100%; margin: 0 auto; }
+.posture-panel figcaption { color: #22d3c5; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; padding: 0.35rem 0.6rem; border-top: 1px solid rgba(34, 211, 197, 0.2); }
+.posture-panel-empty { display: flex; align-items: center; justify-content: center; padding: 0.75rem; color: #8fb0aa; font-size: 0.78rem; text-align: center; }
+
+.scan-mode { display: inline-flex; border: 1px solid rgba(236, 253, 250, 0.2); border-radius: 12px; overflow: hidden; }
+.scan-mode button { min-height: 40px; padding: 0 0.8rem; border: 0; background: transparent; color: #8fb0aa; font-weight: 650; cursor: pointer; }
+.scan-mode button[aria-pressed='true'] { background: #22d3c5; color: #05201f; }
+.scan-views { display: flex; gap: 0.35rem; overflow-x: auto; }
+.scan-views button { flex: 1 0 auto; min-height: 40px; padding: 0 0.7rem; border-radius: 10px; border: 1px solid rgba(236, 253, 250, 0.16); background: rgba(7, 16, 18, 0.55); color: #cfe3df; font-weight: 600; cursor: pointer; }
+.scan-views button[aria-current='step'] { background: rgba(34, 211, 197, 0.18); border-color: #22d3c5; color: #ecfdfa; }
+.scan-views button .done { color: #31c48d; margin-left: 0.3rem; }

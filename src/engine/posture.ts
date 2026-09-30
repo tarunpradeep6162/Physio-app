@@ -198,22 +198,74 @@ export function handsInFront(lms: Landmark[], width: number, height: number): bo
   return HAND.some((i) => lms[i].visibility >= 0.5 && p(i).y < lowest && inside(p(i)));
 }
 
-export function computePostureMetrics(lms: Landmark[], width: number, height: number, view: ViewOrientation, minConfidence = 0.6, support?: number[] | null): PostureMetricSample[] {
+/**
+ * Why a metric has no number. `unstable`: visible, but not reliable over the hold-still window.
+ * `setup_incomplete`: the camera setup checks (framing, light, level, orientation) have not passed.
+ */
+export type PostureWithheldReason = 'hands_in_front' | 'out_of_frame' | 'not_on_body' | 'occluded' | 'not_computable' | 'unstable' | 'setup_incomplete';
+
+/** Hides every live number until the setup checks pass; other withheld reasons are kept. */
+export function gateStatuses(statuses: PostureMetricStatus[], setupPassed: boolean): PostureMetricStatus[] {
+  if (setupPassed) return statuses;
+  return statuses.map((s) => (s.state === 'measured' ? { state: 'withheld', id: s.id, unit: s.unit, reason: 'setup_incomplete', missing: [] } : s));
+}
+
+/** Every metric valid for a view, either measured or withheld with the reason — never a guessed value. */
+export type PostureMetricStatus =
+  | ({ state: 'measured'; sd?: number } & PostureMetricSample)
+  | { state: 'withheld'; id: PostureMetricId; unit: 'deg' | 'pct_height'; reason: PostureWithheldReason; missing: number[] };
+
+export const metricsForView = (view: ViewOrientation) => POSTURE_METRICS.filter((d) => d.views.includes(view)).map((d) => d.id);
+
+export function postureMetricStatus(lms: Landmark[], width: number, height: number, view: ViewOrientation, minConfidence = 0.6, support?: number[] | null): PostureMetricStatus[] {
   const p = (i: number) => toPixels(lms[i], width, height);
-  const out: PostureMetricSample[] = [];
+  const out: PostureMetricStatus[] = [];
   const handsBlock = (view === 'anterior' || view === 'posterior') && handsInFront(lms, width, height);
   for (const def of POSTURE_METRICS) {
     if (!def.views.includes(view)) continue;
-    if (handsBlock && TORSO_METRICS.has(def.id)) continue; // something may be held in front of the torso
     // Every required landmark must be inside the frame, on the body (segmentation) and visible.
     const chk = checkRequired(lms, def.landmarks(view), minConfidence, support);
-    if (chk.issue) continue; // never compute from occluded, off-frame or covered landmarks
-    const conf = chk.confidence;
+    if (chk.issue) {
+      // Never compute from occluded, off-frame or covered landmarks.
+      out.push({ state: 'withheld', id: def.id, unit: def.unit, reason: chk.issue, missing: chk.missing });
+      continue;
+    }
+    if (handsBlock && TORSO_METRICS.has(def.id)) {
+      // Something (e.g. a phone) may be held in front of the torso.
+      out.push({ state: 'withheld', id: def.id, unit: def.unit, reason: 'hands_in_front', missing: [] });
+      continue;
+    }
     const r = def.compute(p, view, lms);
-    if (!r || !Number.isFinite(r.value)) continue;
-    out.push({ id: def.id, value: r.value, unit: def.unit, direction: r.direction, confidence: conf });
+    if (!r || !Number.isFinite(r.value)) {
+      out.push({ state: 'withheld', id: def.id, unit: def.unit, reason: 'not_computable', missing: [] });
+      continue;
+    }
+    out.push({ state: 'measured', id: def.id, value: r.value, unit: def.unit, direction: r.direction, confidence: chk.confidence });
   }
   return out;
+}
+
+/**
+ * Statuses for a finished capture: the recorded (window-median) values for metrics that were kept,
+ * and for every other metric of the view the reason it has no value — re-derived from the stored
+ * landmarks, or `unstable` when they were visible but failed the stability/confidence gate.
+ */
+export function capturedStatuses(view: ViewOrientation, kept: { id: PostureMetricId; value: number; unit: 'deg' | 'pct_height'; direction?: string; confidence: number; sd?: number }[], lms: Landmark[], width: number, height: number): PostureMetricStatus[] {
+  const byId = new Map(kept.map((k) => [k.id, k]));
+  const frame = lms.length ? new Map(postureMetricStatus(lms, width, height, view).map((s) => [s.id, s])) : new Map<PostureMetricId, PostureMetricStatus>();
+  return POSTURE_METRICS.filter((d) => d.views.includes(view)).map((d): PostureMetricStatus => {
+    const k = byId.get(d.id);
+    if (k) return { state: 'measured', id: d.id, value: k.value, unit: k.unit, direction: k.direction, confidence: k.confidence, sd: k.sd };
+    const f = frame.get(d.id);
+    if (f && f.state === 'withheld') return f;
+    return { state: 'withheld', id: d.id, unit: d.unit, reason: 'unstable', missing: [] };
+  });
+}
+
+export function computePostureMetrics(lms: Landmark[], width: number, height: number, view: ViewOrientation, minConfidence = 0.6, support?: number[] | null): PostureMetricSample[] {
+  return postureMetricStatus(lms, width, height, view, minConfidence, support)
+    .filter((s): s is Extract<PostureMetricStatus, { state: 'measured' }> => s.state === 'measured')
+    .map(({ state: _s, ...m }) => m);
 }
 
 export interface PostureMetricResult {

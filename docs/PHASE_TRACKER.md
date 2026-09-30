@@ -99,6 +99,29 @@ Per-phase reports (changes, migration impact, risks, test evidence): `docs/PHASE
 ## Clinic server (Supabase) — added 28 Sep 2026
 Cross-device records: a physiotherapist on the owner's allowlist sees every patient of the clinic, and patients see only their own records. Code, migration and tests are done (`supabase/migrations/`, `src/data/remote/`, `db/supabase_test.sql`). Setup is in `docs/SUPABASE_SETUP.md`. **Inactive until the owner creates the Supabase project and sets `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` in Vercel.** Local-mode accounts are not migrated.
 
+## Clinical posture grid — added 30 Sep 2026
+The static posture scan now uses a clinical grid layout:
+- reference grid;
+- relative height ruler (ankle = 0, nose = 100; never centimetres);
+- plumb line;
+- named level lines (head, shoulders, pelvis) in front and back views;
+- plumb-offset ticks in side views;
+- a measurement panel listing every metric of the view, either with its value or with the reason it was withheld.
+
+**Modes:**
+- *Self-scan* captures automatically and uses voice coaching.
+- *Therapist-guided* uses the rear camera. The therapist taps Capture, which stays locked until the same setup checks pass.
+
+Views (front, left and right side, back) can be selected directly. Results show zoomed panels for full body, head and neck, trunk and lower limb, and the same board appears in the clinician's *Captures* tab.
+
+**Deliberately not included** (compared with the reference screenshots):
+- no "X-ray" or radiograph styling, and no vertebral-level or injury-target markers;
+- no centimetre values from an uncalibrated camera;
+- no pelvis, trunk or full-body values when those landmarks are hidden, out of frame, or covered by hands or an object;
+- no numbers before the setup checks pass.
+
+The zoomed panels are crops of one camera, labelled as such. Tests: `src/engine/postureGrid.test.ts`, which covers the phone-in-front and head-and-shoulders webcam framing cases.
+
 ## Pending human approval or real-device / clinical validation
 - **Dheepika's approval** of the claims, rules, content, validation plan, incident process and release: **pending (on hold)**. Nothing was recorded or simulated.
 - **Owner decisions:**

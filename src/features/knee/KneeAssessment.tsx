@@ -405,6 +405,7 @@ function TestsStep({ a, actorId, cameraConsent, onBack, onNext }: { a: Assessmen
     return (
       <StaticScan
         storeImages={imageConsent}
+        defaultMode={db.users.find((u) => u.id === actorId)?.role === 'clinician' ? 'therapist' : 'self'}
         onCancel={() => setPosture(false)}
         onComplete={(res) => {
           if (res.length) saveScan(a.patientId, a.id, actorId, res, a.isDemo);
