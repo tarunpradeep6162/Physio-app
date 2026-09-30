@@ -82,3 +82,41 @@ describe('Posture grid — every metric is measured or withheld with a reason', 
     if (head.state === 'withheld') expect(head).toMatchObject({ reason: 'occluded', missing: [LM.rightEar] });
   });
 });
+
+describe('Posture grid — zoom to the patient-reported pain area', () => {
+  it('maps pain-map regions to scan regions', async () => {
+    const { postureRegionFor } = await import('./postureGeometry');
+    expect(postureRegionFor('neck_side_left')).toBe('head_neck');
+    expect(postureRegionFor('head')).toBe('head_neck');
+    expect(postureRegionFor('lower_back_center')).toBe('trunk');
+    expect(postureRegionFor('shoulder_right')).toBe('trunk');
+    expect(postureRegionFor('knee_left')).toBe('lower_limb');
+    expect(postureRegionFor('hip_left_lateral')).toBe('lower_limb');
+    expect(postureRegionFor('hand_right')).toBe('full_body');
+  });
+  it('zooms to fit the region, never below 1× or above the maximum', async () => {
+    const { zoomToBox } = await import('./postureGeometry');
+    expect(zoomToBox({ x: 0.4, y: 0.1, w: 0.2, h: 0.15 })).toEqual({ fx: 0.5, fy: 0.175, scale: 2.2 });
+    expect(zoomToBox({ x: 0, y: 0, w: 1, h: 1 }).scale).toBe(1);
+    expect(zoomToBox({ x: 0.2, y: 0.2, w: 0.5, h: 0.4 }).scale).toBeCloseTo(1.8, 5);
+  });
+});
+
+describe('Posture grid — outline of the exact area the patient marked', () => {
+  it('boxes the marked knee only, and withholds the box when that knee is hidden', async () => {
+    const { reportedAreaBox } = await import('./postureGeometry');
+    const lms = synthesize({ kind: 'standing_anterior' });
+    const b = reportedAreaBox(lms, 'knee_left', W, H);
+    expect(b.ok).toBe(true);
+    if (b.ok) {
+      const inside = (i: number) => lms[i].x > b.value.x && lms[i].x < b.value.x + b.value.w && lms[i].y > b.value.y && lms[i].y < b.value.y + b.value.h;
+      expect(inside(LM.leftKnee)).toBe(true);
+      expect(inside(LM.leftHip)).toBe(false);
+      expect(inside(LM.leftAnkle)).toBe(false);
+    }
+    const hidden = lms.map((l, i) => (i === LM.leftKnee ? { ...l, visibility: 0.1 } : l));
+    const h = reportedAreaBox(hidden, 'knee_left', W, H);
+    expect(h.ok).toBe(false);
+    if (!h.ok) expect(h.missing).toEqual([LM.leftKnee]);
+  });
+});

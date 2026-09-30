@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FilterKind } from '../engine/filters';
 import { MotionPipeline, type ProcessedFrame } from '../engine/pipeline';
-import { createPoseProvider, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
+import { createPoseProvider, variantOf, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
 import { WorkerPoseProvider } from '../engine/pose/workerProvider';
 import { cachedDecision, decisionKey, DelegateProbe, initialDelegate, saveDecision, webglRenderer, type Delegate } from '../engine/pose/delegateChoice';
 import type { PoseFrame } from '../engine/types';
@@ -110,7 +110,7 @@ export function useMotionRuntime(opts: RuntimeOptions) {
     let lastMeta: VideoFrameCallbackMetadata | null = null;
     const video = videoRef.current;
     const simulated = opts.providerId === 'simulated';
-    const variant = opts.providerId === 'mediapipe-full' ? 'full' : 'lite';
+    const variant = variantOf(opts.providerId);
     statsRef.current = { ...initialStats };
     // Delegate: explicit, cached per device, or measured now (see delegateChoice.ts).
     let probe: DelegateProbe | null = null;

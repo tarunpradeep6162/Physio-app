@@ -268,7 +268,7 @@ export function ValidationMode() {
       {panel && (
         <aside className="glass mono" style={{ position: 'absolute', zIndex: 4, right: 8, top: 64, bottom: 8, width: 'min(400px, calc(100% - 16px))', overflowY: 'auto', padding: '0.75rem', fontSize: '0.75rem' }}>
           <div className="stack tight">
-            <Segmented<PoseProviderId> label="Provider" value={providerId} onChange={setProviderId} options={[{ id: 'mediapipe-lite', label: 'Lite' }, { id: 'mediapipe-full', label: 'Full' }, { id: 'simulated', label: 'Sim' }]} />
+            <Segmented<PoseProviderId> label="Provider" value={providerId} onChange={setProviderId} options={[{ id: 'mediapipe-lite', label: 'Lite' }, { id: 'mediapipe-full', label: 'Full' }, { id: 'mediapipe-heavy', label: 'Heavy' }, { id: 'simulated', label: 'Sim' }]} />
             <Segmented<ExerciseId> label="Exercise" value={exercise} onChange={setExercise} options={EXERCISE_LIST.map((d) => ({ id: d.id, label: d.id.replace(/_/g, ' ') }))} />
             <Segmented<Side> label="Side" value={side} onChange={setSide} options={[{ id: 'left', label: 'Left' }, { id: 'right', label: 'Right' }]} />
             <Segmented<FilterKind> label="Angle filter (live)" value={filter} onChange={setFilter} options={[{ id: 'one_euro', label: '1€' }, { id: 'ema', label: 'EMA' }, { id: 'kalman', label: 'Kalman' }, { id: 'none', label: 'Raw' }]} />

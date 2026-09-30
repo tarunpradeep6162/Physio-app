@@ -1,5 +1,5 @@
 import { closeCamera, openCamera } from '../camera/camera';
-import { createPoseProvider, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
+import { createPoseProvider, variantOf, type PoseProvider, type PoseProviderId } from '../engine/pose/provider';
 import { WorkerPoseProvider } from '../engine/pose/workerProvider';
 import { sustainedWindows, type SustainedSummary } from './sustained';
 
@@ -52,7 +52,7 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   const track = stream.getVideoTracks()[0];
   const t0Load = performance.now();
   const loop = o.loop ?? 'sync';
-  const variant = o.provider === 'mediapipe-full' ? 'full' : 'lite';
+  const variant = variantOf(o.provider);
   let provider: PoseProvider | null = null;
   let worker: WorkerPoseProvider | null = null;
   if (loop === 'worker') {

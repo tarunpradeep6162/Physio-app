@@ -2,10 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { captureStill, LightingSampler } from '../../camera/camera';
 import { useDeviceRoll } from '../../camera/deviceRoll';
 import { drawAlignmentFrame, drawSkeleton, label, prepareCanvas } from '../../camera/overlay';
-import { drawGrid, drawPostureScene } from '../../camera/postureGrid';
+import { drawFaceCover, drawGrid, drawPostureScene, drawRegionPanel, drawReportedArea } from '../../camera/postureGrid';
+import { POSTURE_REGIONS, regionBox, reportedAreaBox, zoomToBox } from '../../engine/postureGeometry';
 import { useMotionRuntime } from '../../camera/useMotionRuntime';
 import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
-import { FULL_BODY_LANDMARKS } from '../../engine/landmarks';
+import { FULL_BODY_LANDMARKS, jointList } from '../../engine/landmarks';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
 import { capturedStatuses, computePostureMetrics, gateStatuses, PostureCapture, postureMetricStatus, type PostureMetricResult, type PostureMetricStatus } from '../../engine/posture';
@@ -15,7 +16,7 @@ import { usePrefs } from '../../data/prefs';
 import { IconClose, IconFlip, IconVolume, IconMute } from '../../components/icons';
 import { speechLang, useT } from '../../i18n';
 import { VoiceCoach } from '../../voice/voiceCoach';
-import { PostureBoard, PostureHud, useSceneLabels } from './PostureGrid';
+import { PostureBoard, PostureHud, StageHud, useSceneLabels } from './PostureGrid';
 import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from './StageParts';
 
 /**
@@ -45,7 +46,16 @@ const CAPTURE_MS = 3000;
 
 type Phase = 'calibrating' | 'capturing' | 'captured';
 
-export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 'self' }: { onComplete: (results: ScanViewResult[]) => void; onCancel: () => void; storeImages: boolean; defaultMode?: ScanMode }) {
+export interface ReportedArea {
+  /** Body-map region id the patient marked (e.g. "neck_side_left"). */
+  id: string;
+  label: string;
+}
+
+type Layout = 'single' | 'regions';
+const ZOOMS = [1, 1.5, 2.2] as const;
+
+export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 'self', reported = [] }: { onComplete: (results: ScanViewResult[]) => void; onCancel: () => void; storeImages: boolean; defaultMode?: ScanMode; reported?: ReportedArea[] }) {
   const { t, locale } = useT();
   const prefs = usePrefs();
   const labels = useSceneLabels();
@@ -60,6 +70,18 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   const modeRef = useRef<ScanMode>(mode);
   modeRef.current = mode;
   const manualStart = useRef(false);
+  // Display tools: zoom (display only), region layout, monochrome, face cover (privacy).
+  const [zoom, setZoom] = useState<{ scale: number; fx: number; fy: number; pain?: boolean } | null>(null);
+  const [layout, setLayout] = useState<Layout>('single');
+  const [mono, setMono] = useState(false);
+  const [coverFace, setCoverFace] = useState(false);
+  const [toolMsg, setToolMsg] = useState<string | null>(null);
+  const display = useRef({ layout, mono, coverFace });
+  display.current = { layout, mono, coverFace };
+  const regionCanvases = useRef<(HTMLCanvasElement | null)[]>([]);
+  const latestLms = useRef<{ lm: Landmark[]; w: number; h: number; support?: number[] | null } | null>(null);
+  const reportedRef = useRef(reported);
+  reportedRef.current = reported;
   const { roll, needsPermission, request } = useDeviceRoll();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -122,11 +144,39 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
       // the setup checks pass; reference lines are drawn only through visible, validated joints.
       const statuses = lms ? gateStatuses(postureMetricStatus(lms, f.width, f.height, view, 0.6, f.support), calib.frameReady) : [];
       latestStatuses.current = statuses;
+      if (lms) latestLms.current = { lm: lms, w: f.width, h: f.height, support: f.support };
+      const { layout: lay, mono: mo, coverFace: cover } = display.current;
+      // Privacy: the face cover sits on the overlay canvas above the video (and on the region crops).
+      if (lms && cover && !simulated) drawFaceCover(c2d, lms, f.width, f.height);
       if (lms && calib.frameReady) {
         drawPostureScene(c2d, { lms, width: f.width, height: f.height, view, statuses, mirrored, support: f.support, labels });
       } else {
         drawGrid(c2d, f.width, f.height);
         if (lms) drawSkeleton(c2d, lms, f.width, f.height, { mirrored, minVisibility: 0.5 });
+      }
+      // Outline the area the PATIENT marked on the pain map — a patient report, not a finding.
+      if (lms) {
+        for (const area of reportedRef.current) {
+          const b = reportedAreaBox(lms, area.id, f.width, f.height, undefined, f.support);
+          if (b.ok) drawReportedArea(c2d, b.value, f.width, f.height, mirrored, `${t('grid.reported')}: ${area.label}`);
+        }
+      }
+      // Region layout: four live zoomed crops of this one camera frame.
+      if (lay === 'regions' && lms) {
+        POSTURE_REGIONS.forEach((r, i) => {
+          const rc = regionCanvases.current[i];
+          if (!rc) return;
+          const rctx = prepareCanvas(rc, 480, 360);
+          if (!rctx) return;
+          const b = regionBox(lms, r, view, f.width, f.height, 480 / 360, f.support);
+          if (!b.ok) {
+            rctx.fillStyle = '#0b1a1f';
+            rctx.fillRect(0, 0, 480, 360);
+            label(rctx, t('grid.region_withheld', { joints: jointList(b.missing) }), 240, 180, 360, mirrored, { size: 11 });
+            return;
+          }
+          drawRegionPanel(rctx, { source: simulated ? null : ctx.video, sourceW: ctx.video.videoWidth, sourceH: ctx.video.videoHeight, lms, view, statuses, box: b.value, region: r, width: 480, height: 360, mirrored, mono: mo, coverFace: cover, support: f.support, labels });
+        });
       }
 
       // Self-scan starts on its own; therapist-guided waits for the Capture tap (which needs the same checks).
@@ -170,7 +220,7 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
               frameHeight: lastLm.current.h,
               provider: ctx.provider.info,
               confidence: conf,
-              image: storeImages && !simulated ? captureStill(ctx.video) ?? undefined : undefined,
+              image: storeImages && !simulated ? captureStill(ctx.video, 360, cover ? (c, w, h) => drawFaceCover(c, lms, w, h) : undefined) ?? undefined : undefined,
               device: {
                 userAgent: navigator.userAgent,
                 platform: navigator.platform,
@@ -228,12 +278,44 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
     if (!simulated) setFacing(m === 'therapist' ? 'environment' : 'user');
     if (m === 'therapist') setVoiceOn(false);
   };
+  const zoomToPain = () => {
+    const l = latestLms.current;
+    const target = reported[0];
+    if (!l || !target) return;
+    // Same aspect as the displayed frame, so the zoom factor fits the marked area on screen.
+    const b = reportedAreaBox(l.lm, target.id, l.w, l.h, l.w / l.h, l.support);
+    if (!b.ok) {
+      setToolMsg(t('grid.zoom_pain_unavailable', { joints: jointList(b.missing) }));
+      return;
+    }
+    setToolMsg(null);
+    setZoom({ ...zoomToBox(b.value), pain: true });
+  };
+  const frameSize = latestLms.current ? { frameW: latestLms.current.w, frameH: latestLms.current.h } : { frameW: 0, frameH: 0 };
   const currentStatuses = current ? capturedStatuses(view, current.metrics, current.landmarks, current.frameWidth, current.frameHeight) : [];
 
   const instruction = ui.calib?.instruction ?? 'no_person';
   return (
     <div className="stage">
-      <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored={facing === 'user'} simulated={simulated}>
+      <StageMedia videoRef={runtime.videoRef} canvasRef={canvasRef} mirrored={facing === 'user'} simulated={simulated} mono={mono} zoom={zoom && layout === 'single' ? { ...zoom, ...frameSize } : null}>
+        {phase !== 'captured' && runtime.status === 'running' && layout === 'single' && <StageHud view={view} statuses={ui.statuses} />}
+        {mono && layout === 'single' && <div className="stage-mono-note">{t('grid.mono_note')}</div>}
+        {layout === 'regions' && phase !== 'captured' && (
+          <div className="stage-regions" aria-label={t('grid.layout_regions')}>
+            {POSTURE_REGIONS.map((r, i) => (
+              <figure key={r}>
+                <canvas
+                  ref={(el) => {
+                    regionCanvases.current[i] = el;
+                  }}
+                  className={facing === 'user' && !simulated ? 'mirrored' : ''}
+                  aria-hidden="true"
+                />
+                <figcaption>{t(`grid.region.${r}`)}</figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
         {phase !== 'captured' && runtime.status === 'running' && (
           <div className="stage-overlay-top">
             {phase === 'capturing' ? (
@@ -286,6 +368,34 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
             ))}
           </nav>
         </div>
+        {phase !== 'captured' && runtime.status === 'running' && (
+          <div className="scan-tools" role="toolbar" aria-label={t('grid.tools_label')}>
+            <div className="seg" role="group" aria-label={t('grid.zoom')}>
+              {ZOOMS.map((z) => (
+                <button key={z} type="button" aria-pressed={(zoom?.scale ?? 1) === z && !zoom?.pain} disabled={layout !== 'single'} onClick={() => setZoom(z === 1 ? null : { scale: z, fx: 0.5, fy: 0.5 })}>
+                  {z}×
+                </button>
+              ))}
+            </div>
+            <button type="button" aria-pressed={!!zoom?.pain} disabled={!reported.length || layout !== 'single'} onClick={zoomToPain} title={reported.length ? undefined : t('grid.zoom_pain_none')}>
+              {t('grid.zoom_pain')}
+            </button>
+            <button type="button" aria-pressed={layout === 'regions'} onClick={() => setLayout((l) => (l === 'regions' ? 'single' : 'regions'))}>
+              {t('grid.layout_regions')}
+            </button>
+            <button type="button" aria-pressed={mono} onClick={() => setMono((v) => !v)}>
+              {t('grid.mono')}
+            </button>
+            <button type="button" aria-pressed={coverFace} onClick={() => setCoverFace((v) => !v)}>
+              {t('grid.cover_face')}
+            </button>
+            {toolMsg && (
+              <span className="small" role="status" style={{ color: '#f5b84a' }}>
+                {toolMsg}
+              </span>
+            )}
+          </div>
+        )}
         {phase !== 'captured' && runtime.status === 'running' && (
           <>
             <div className="glass" style={{ padding: '0.75rem 1rem' }}>

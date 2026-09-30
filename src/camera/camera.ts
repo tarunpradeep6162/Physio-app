@@ -66,12 +66,15 @@ export class LightingSampler {
 }
 
 /** Captures a small JPEG still — only called when the patient granted image_storage consent. */
-export function captureStill(video: HTMLVideoElement, maxWidth = 360): string | null {
+export function captureStill(video: HTMLVideoElement, maxWidth = 360, mask?: (ctx: CanvasRenderingContext2D, w: number, h: number) => void): string | null {
   if (video.readyState < 2) return null;
   const scale = Math.min(1, maxWidth / video.videoWidth);
   const c = document.createElement('canvas');
   c.width = Math.round(video.videoWidth * scale);
   c.height = Math.round(video.videoHeight * scale);
-  c.getContext('2d')?.drawImage(video, 0, 0, c.width, c.height);
+  const g = c.getContext('2d');
+  g?.drawImage(video, 0, 0, c.width, c.height);
+  // Optional privacy mask (e.g. face cover) burnt into the stored still before export.
+  if (g && mask) mask(g, c.width, c.height);
   return c.toDataURL('image/jpeg', 0.7);
 }

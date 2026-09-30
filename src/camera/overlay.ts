@@ -113,7 +113,7 @@ export function stateColor(s: OverlayState | undefined): string {
 }
 
 /** Draws text that stays readable when the canvas is mirrored via CSS. */
-export function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, h: number, mirrored: boolean, opts: { color?: string; bg?: string; size?: number; align?: CanvasTextAlign } = {}) {
+export function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, h: number, mirrored: boolean, opts: { color?: string; bg?: string; size?: number; align?: CanvasTextAlign; border?: string } = {}) {
   const u = unit(h);
   ctx.save();
   ctx.translate(x, y);
@@ -130,6 +130,11 @@ export function label(ctx: CanvasRenderingContext2D, text: string, x: number, y:
   ctx.beginPath();
   ctx.roundRect(bx, -bh / 2, bw, bh, 4 * u);
   ctx.fill();
+  if (opts.border) {
+    ctx.strokeStyle = opts.border;
+    ctx.lineWidth = 1.5 * u;
+    ctx.stroke();
+  }
   ctx.fillStyle = opts.color ?? '#ECFDFA';
   ctx.fillText(text, 0, 1);
   ctx.restore();

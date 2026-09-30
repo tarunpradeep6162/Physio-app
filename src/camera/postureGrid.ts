@@ -1,6 +1,6 @@
 import { LM } from '../engine/landmarks';
 import type { PostureMetricId, PostureMetricStatus } from '../engine/posture';
-import { heightScale, plumbX } from '../engine/postureGeometry';
+import { heightScale, plumbX, type Box, type PostureRegion } from '../engine/postureGeometry';
 import type { Landmark, ViewOrientation } from '../engine/types';
 import { drawSkeleton, label } from './overlay';
 
@@ -11,6 +11,14 @@ import { drawSkeleton, label } from './overlay';
  */
 
 const unit = (h: number) => Math.max(1.5, h / 360);
+
+/**
+ * Screen-side layout. The front-camera preview is mirrored with CSS, so "the left edge of the
+ * screen" is the right edge of the canvas. These helpers place the ruler and name chips on the
+ * screen's left and the value chips on its right in both cases (`label` counter-flips the text).
+ */
+const screenX = (x: number, w: number, mirrored: boolean) => (mirrored ? w - x : x);
+const toward = (dir: 'right' | 'left', mirrored: boolean): CanvasTextAlign => (dir === 'right' ? (mirrored ? 'right' : 'left') : mirrored ? 'left' : 'right');
 
 export const GRID_COLORS = {
   grid: 'rgba(120, 200, 230, 0.16)',
@@ -45,10 +53,11 @@ export function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.restore();
 }
 
-/** Relative height ruler on the frame edge: 0 at the ankles, 100 at the nose (legend is in the HUD). */
-export function drawHeightRuler(ctx: CanvasRenderingContext2D, ankleY: number, noseY: number, h: number, mirrored: boolean) {
+/** Relative height ruler on the screen's left edge: 0 at the ankles, 100 at the nose (legend is in the HUD). */
+export function drawHeightRuler(ctx: CanvasRenderingContext2D, ankleY: number, noseY: number, w: number, h: number, mirrored: boolean) {
   const u = unit(h);
-  const x = 14 * u;
+  const x = screenX(30 * u, w, mirrored);
+  const d = mirrored ? -1 : 1;
   const y0 = ankleY * h;
   const y1 = noseY * h;
   ctx.save();
@@ -63,9 +72,10 @@ export function drawHeightRuler(ctx: CanvasRenderingContext2D, ankleY: number, n
     const len = p % 50 === 0 ? 12 : p % 20 === 0 ? 9 : 5;
     ctx.beginPath();
     ctx.moveTo(x, y);
-    ctx.lineTo(x + len * u, y);
+    ctx.lineTo(x + d * len * u, y);
     ctx.stroke();
-    if (p % 20 === 0) label(ctx, String(p), x + (len + 12) * u, y, h, mirrored, { size: 9, align: 'left', bg: 'rgba(7,16,18,0.55)' });
+    // Numbers sit outside the ruler (towards the screen edge), clear of the name chips.
+    if (p % 20 === 0) label(ctx, String(p), x - d * 5 * u, y, h, mirrored, { size: 9, align: toward('left', mirrored), bg: 'rgba(7,16,18,0.55)' });
   }
   ctx.restore();
 }
@@ -121,12 +131,9 @@ export function drawNamedLevel(ctx: CanvasRenderingContext2D, a: Landmark, b: La
     ctx.fill();
   }
   ctx.restore();
-  // Name just outside one end of the measured segment, value outside the other (clear of the ruler).
-  // `label` counter-flips text in the mirrored preview, so these alignments always point away from the line.
-  const left = Math.min(A.x, B.x);
-  const right = Math.max(A.x, B.x);
-  label(ctx, name, left - 10 * u, midY, h, mirrored, { size: 11, align: 'right' });
-  label(ctx, value, right + 10 * u, midY, h, mirrored, { size: 12, align: 'left', color: GRID_COLORS.level });
+  // HUD layout: name chip beside the ruler on the screen's left, boxed value chip on its right edge.
+  label(ctx, name, screenX(46 * u, w, mirrored), midY, h, mirrored, { size: 11, align: toward('right', mirrored), bg: 'rgba(12,40,48,0.92)', border: 'rgba(120,200,230,0.55)' });
+  label(ctx, value, screenX(w - 10 * u, w, mirrored), midY, h, mirrored, { size: 12, align: toward('left', mirrored), color: GRID_COLORS.level, bg: 'rgba(7,16,18,0.9)', border: GRID_COLORS.level });
 }
 
 /** Side view: horizontal offset from a landmark to the plumb line. */
@@ -152,11 +159,11 @@ function drawOffsetTick(ctx: CanvasRenderingContext2D, lm: Landmark, px: number,
   ctx.lineWidth = 1 * u;
   ctx.setLineDash([2 * u, 4 * u]);
   ctx.beginPath();
-  ctx.moveTo(Math.max(P.x, X), P.y);
-  ctx.lineTo(w - 58 * u, P.y);
+  ctx.moveTo(P.x, P.y);
+  ctx.lineTo(screenX(w - 60 * u, w, mirrored), P.y);
   ctx.stroke();
   ctx.restore();
-  label(ctx, value, w - 30 * u, P.y, h, mirrored, { size: 11, color: GRID_COLORS.level });
+  label(ctx, value, screenX(w - 10 * u, w, mirrored), P.y, h, mirrored, { size: 11, align: toward('left', mirrored), color: GRID_COLORS.level, bg: 'rgba(7,16,18,0.9)', border: GRID_COLORS.level });
 }
 
 export interface SceneLabels {
@@ -198,7 +205,7 @@ export function drawPostureScene(ctx: CanvasRenderingContext2D, s: SceneInput) {
   if (lms.length < 33) return; // no stored landmarks (e.g. older records): grid only, no lines
   if (s.ruler !== false) {
     const scale = heightScale(lms, view, s.support);
-    if (scale.ok) drawHeightRuler(ctx, scale.value.ankleY, scale.value.noseY, h, mirrored);
+    if (scale.ok) drawHeightRuler(ctx, scale.value.ankleY, scale.value.noseY, w, h, mirrored);
   }
   const found = plumbX(lms, view, s.support);
   const plumb = s.plumbOverride !== undefined ? (s.plumbOverride === null ? null : s.plumbOverride) : found.ok ? found.value : null;
@@ -224,4 +231,92 @@ export function drawPostureScene(ctx: CanvasRenderingContext2D, s: SceneInput) {
       if (m) drawOffsetTick(ctx, lms[i], plumb, w, h, mirrored, labels.format(m));
     }
   }
+}
+
+/** Monochrome camera view (body surface only — an image filter, not an X-ray). */
+export const MONO_FILTER = 'grayscale(1) contrast(1.35) brightness(0.9)';
+
+/**
+ * Privacy: covers the face with an opaque disc centred on the nose, sized from the ear/eye spread.
+ * Drawn only when the nose is detected; otherwise nothing is guessed.
+ */
+export function drawFaceCover(ctx: CanvasRenderingContext2D, lms: Landmark[], w: number, h: number) {
+  const nose = lms[LM.nose];
+  if (!nose || nose.visibility < 0.3) return;
+  const pts = [LM.leftEar, LM.rightEar, LM.leftEye, LM.rightEye].map((i) => lms[i]).filter((l) => l && l.visibility >= 0.3);
+  const spread = pts.length ? Math.max(...pts.map((l) => Math.hypot((l.x - nose.x) * w, (l.y - nose.y) * h))) : 0.05 * h;
+  const r = Math.max(spread * 1.55, 0.035 * h);
+  ctx.save();
+  ctx.fillStyle = '#1b3a40';
+  ctx.strokeStyle = '#8fb0aa';
+  ctx.lineWidth = Math.max(1.5, h / 360);
+  ctx.beginPath();
+  ctx.arc(nose.x * w, nose.y * h - r * 0.12, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Dashed outline around the area the PATIENT marked on the pain map (a report, not a finding). */
+export function drawReportedArea(ctx: CanvasRenderingContext2D, b: Box, w: number, h: number, mirrored: boolean, text: string) {
+  const u = unit(h);
+  ctx.save();
+  ctx.strokeStyle = '#C4A5FF';
+  ctx.lineWidth = 2 * u;
+  ctx.setLineDash([7 * u, 5 * u]);
+  ctx.beginPath();
+  ctx.roundRect(b.x * w, b.y * h, b.w * w, b.h * h, 10 * u);
+  ctx.stroke();
+  ctx.restore();
+  const cx = (b.x + b.w / 2) * w;
+  label(ctx, text, cx, Math.max(12 * u, b.y * h + 12 * u), h, mirrored, { size: 10, color: '#E6D9FF', bg: 'rgba(40,20,70,0.85)', border: '#C4A5FF' });
+}
+
+export interface RegionPanelInput {
+  /** The camera frame (video) or a stored still; null draws landmarks on the grid only. */
+  source: CanvasImageSource | null;
+  sourceW: number;
+  sourceH: number;
+  lms: Landmark[];
+  view: ViewOrientation;
+  statuses: PostureMetricStatus[];
+  /** Crop in normalised frame coordinates; null = full frame. */
+  box: Box | null;
+  region: PostureRegion | null;
+  width: number;
+  height: number;
+  mirrored: boolean;
+  mono?: boolean;
+  coverFace?: boolean;
+  support?: number[] | null;
+  labels: SceneLabels;
+}
+
+/** One zoomed panel (live or captured): crop of the single camera frame, re-mapped landmarks, grid and lines. */
+export function drawRegionPanel(ctx: CanvasRenderingContext2D, p: RegionPanelInput) {
+  const b = p.box ?? { x: 0, y: 0, w: 1, h: 1 };
+  ctx.fillStyle = '#0b1a1f';
+  ctx.fillRect(0, 0, p.width, p.height);
+  if (p.source && p.sourceW > 0) {
+    ctx.save();
+    if (p.mono) ctx.filter = MONO_FILTER;
+    ctx.globalAlpha = 0.85;
+    ctx.drawImage(p.source, b.x * p.sourceW, b.y * p.sourceH, b.w * p.sourceW, b.h * p.sourceH, 0, 0, p.width, p.height);
+    ctx.restore();
+  }
+  const remap = p.lms.map((l) => ({ ...l, x: (l.x - b.x) / b.w, y: (l.y - b.y) / b.h }));
+  if (p.coverFace && p.source && remap.length >= 33) drawFaceCover(ctx, remap, p.width, p.height);
+  const full = p.lms.length >= 33 ? plumbX(p.lms, p.view, p.support) : ({ ok: false } as const);
+  drawPostureScene(ctx, {
+    lms: remap,
+    width: p.width,
+    height: p.height,
+    view: p.view,
+    statuses: p.statuses,
+    mirrored: p.mirrored,
+    ruler: p.region === null || p.region === 'full_body',
+    plumbOverride: full.ok ? (full.value - b.x) / b.w : null,
+    plumbLabel: p.region === null,
+    labels: p.labels,
+  });
 }

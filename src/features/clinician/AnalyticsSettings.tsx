@@ -381,6 +381,7 @@ export function ClinicSettingsPage() {
             options={[
               { id: 'mediapipe-lite', label: 'BlazePose Lite (fast)' },
               { id: 'mediapipe-full', label: 'BlazePose Full' },
+              { id: 'mediapipe-heavy', label: 'BlazePose Heavy (most accurate, slow; 31 MB download)' },
               { id: 'simulated', label: 'Simulated (demo)' },
             ]}
           />

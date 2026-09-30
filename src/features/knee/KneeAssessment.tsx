@@ -455,6 +455,7 @@ function TestsStep({ a, actorId, cameraConsent, inClinic, onBack, onNext }: { a:
       <StaticScan
         storeImages={imageConsent}
         defaultMode={db.users.find((u) => u.id === actorId)?.role === 'clinician' ? 'therapist' : 'self'}
+        reported={db.painRegions.filter((r) => r.assessmentId === a.id).map((r) => ({ id: r.regionId, label: regionLabel(r.regionId) }))}
         onCancel={() => setPosture(false)}
         onComplete={(res) => {
           if (res.length) saveScan(a.patientId, a.id, actorId, res, a.isDemo);

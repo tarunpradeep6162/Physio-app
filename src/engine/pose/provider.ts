@@ -1,4 +1,5 @@
 import type { PoseFrame, PoseProviderInfo } from '../types';
+import type { PoseVariant } from './mediapipe';
 
 /** Anything a pose model can read pixels from: a live video element, a canvas or a transferred bitmap. */
 export type PoseSource = HTMLVideoElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap;
@@ -25,7 +26,10 @@ export interface PoseProvider {
   close(): void;
 }
 
-export type PoseProviderId = 'mediapipe-lite' | 'mediapipe-full' | 'simulated';
+export type PoseProviderId = 'mediapipe-lite' | 'mediapipe-full' | 'mediapipe-heavy' | 'simulated';
+
+/** The BlazePose variant for a provider id (simulated has none; lite is the fallback). */
+export const variantOf = (id: PoseProviderId): PoseVariant => (id === 'mediapipe-full' ? 'full' : id === 'mediapipe-heavy' ? 'heavy' : 'lite');
 
 export interface ProviderOptions {
   /** Detect up to this many people so that "multiple people" can be reported instead of guessed. */
@@ -46,5 +50,5 @@ export async function createPoseProvider(id: PoseProviderId, opts: ProviderOptio
     return new SimulatedPoseProvider();
   }
   const { MediaPipePoseProvider } = await import('./mediapipe');
-  return new MediaPipePoseProvider(id === 'mediapipe-full' ? 'full' : 'lite', opts);
+  return new MediaPipePoseProvider(variantOf(id), opts);
 }

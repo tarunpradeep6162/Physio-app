@@ -15,7 +15,10 @@ export const MP_VERSION = '1.0.1';
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
 const LOCAL_WASM = `${BASE}pose/wasm`;
 const CDN_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`;
-export const POSE_MODELS = {
+/** BlazePose GHUM variants: lite (fastest), full, heavy (most accurate, ~31 MB, slowest — laptops/desktops). */
+export type PoseVariant = 'lite' | 'full' | 'heavy';
+
+export const POSE_MODELS: Record<PoseVariant, { local: string; cdn: string }> = {
   lite: {
     local: `${BASE}pose/models/pose_landmarker_lite.task`,
     cdn: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task',
@@ -23,6 +26,11 @@ export const POSE_MODELS = {
   full: {
     local: `${BASE}pose/models/pose_landmarker_full.task`,
     cdn: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
+  },
+  // Not bundled with the site (31 MB): always fetched from Google's model CDN on first use.
+  heavy: {
+    local: `${BASE}pose/models/pose_landmarker_heavy.task`,
+    cdn: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
   },
 };
 
@@ -42,7 +50,7 @@ export interface LoadedLandmarker {
 }
 
 /** Creates a BlazePose landmarker (main thread or worker), falling back from GPU to CPU if needed. */
-export async function createLandmarker(variant: 'lite' | 'full', o: ProviderOptions): Promise<LoadedLandmarker> {
+export async function createLandmarker(variant: PoseVariant, o: ProviderOptions): Promise<LoadedLandmarker> {
   const t0 = performance.now();
   const wasmBase = (await reachable(`${LOCAL_WASM}/vision_wasm_internal.js`)) ? LOCAL_WASM : CDN_WASM;
   const model = POSE_MODELS[variant];
@@ -91,7 +99,7 @@ export class MediaPipePoseProvider implements PoseProvider {
   /** Wall time spent loading runtime + model (ms), for benchmarking. */
   loadMs = 0;
 
-  constructor(private readonly variant: 'lite' | 'full', private readonly opts: ProviderOptions) {
+  constructor(private readonly variant: PoseVariant, private readonly opts: ProviderOptions) {
     this.info = { id: `mediapipe-${variant}`, model: `blazepose-ghum-${variant}`, version: `tasks-vision@${MP_VERSION}`, simulated: false };
   }
 

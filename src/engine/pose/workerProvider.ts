@@ -1,5 +1,5 @@
 import type { PoseFrame, PoseProviderInfo } from '../types';
-import { MP_VERSION } from './mediapipe';
+import { MP_VERSION, type PoseVariant } from './mediapipe';
 import type { ProviderOptions } from './provider';
 import type { WorkerRequest, WorkerResponse } from './pose.worker';
 
@@ -17,7 +17,7 @@ export class WorkerPoseProvider {
   private failed: ((e: Error) => void) | null = null;
   busy = false;
 
-  constructor(private readonly variant: 'lite' | 'full', private readonly opts: ProviderOptions) {
+  constructor(private readonly variant: PoseVariant, private readonly opts: ProviderOptions) {
     this.info = { id: `mediapipe-${variant}`, model: `blazepose-ghum-${variant}`, version: `tasks-vision@${MP_VERSION}`, simulated: false };
   }
 

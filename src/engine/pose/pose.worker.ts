@@ -7,11 +7,11 @@
 import type { PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { ProviderOptions } from './provider';
 import { PatchMotion } from '../appearance';
-import { createLandmarker, detectWithSupport } from './mediapipe';
+import { createLandmarker, detectWithSupport, type PoseVariant } from './mediapipe';
 import type { PoseProviderInfo } from '../types';
 
 export type WorkerRequest =
-  | { type: 'init'; variant: 'lite' | 'full'; opts: ProviderOptions; info: PoseProviderInfo }
+  | { type: 'init'; variant: PoseVariant; opts: ProviderOptions; info: PoseProviderInfo }
   | { type: 'frame'; id: number; ts: number; bitmap: ImageBitmap }
   | { type: 'close' };
 

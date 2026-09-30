@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { prepareCanvas } from '../../camera/overlay';
-import { drawPostureScene, type SceneLabels } from '../../camera/postureGrid';
+import { drawRegionPanel, type SceneLabels } from '../../camera/postureGrid';
 import { jointList } from '../../engine/landmarks';
 import type { PostureMetricStatus } from '../../engine/posture';
-import { plumbX, POSTURE_REGIONS, regionBox, type PostureRegion } from '../../engine/postureGeometry';
+import { POSTURE_REGIONS, regionBox, type PostureRegion } from '../../engine/postureGeometry';
 import type { Landmark, ViewOrientation } from '../../engine/types';
 import { ConfidenceBadge } from '../../components/ui';
 import { useT } from '../../i18n';
@@ -106,29 +106,19 @@ function Panel({ p, region, labels }: { p: BoardProps; region: PostureRegion | n
     if (!c || !box.ok) return;
     const ctx = prepareCanvas(c, PW, PH);
     if (!ctx) return;
-    const b = box.value;
-    ctx.fillStyle = '#0b1a1f';
-    ctx.fillRect(0, 0, PW, PH);
-    if (img) {
-      // The stored still may be downscaled; the crop box is normalised, so it maps onto any size.
-      const iw = img.naturalWidth;
-      const ih = img.naturalHeight;
-      ctx.globalAlpha = 0.85;
-      ctx.drawImage(img, b.x * iw, b.y * ih, b.w * iw, b.h * ih, 0, 0, PW, PH);
-      ctx.globalAlpha = 1;
-    }
-    const remap = p.landmarks.map((l) => ({ ...l, x: (l.x - b.x) / b.w, y: (l.y - b.y) / b.h }));
-    const full = plumbX(p.landmarks, p.view);
-    drawPostureScene(ctx, {
-      lms: remap,
-      width: PW,
-      height: PH,
+    // The stored still may be downscaled; the crop box is normalised, so it maps onto any size.
+    drawRegionPanel(ctx, {
+      source: img,
+      sourceW: img?.naturalWidth ?? 0,
+      sourceH: img?.naturalHeight ?? 0,
+      lms: p.landmarks,
       view: p.view,
       statuses: p.statuses,
+      box: box.value,
+      region,
+      width: PW,
+      height: PH,
       mirrored: false,
-      ruler: region === null || region === 'full_body',
-      plumbOverride: full.ok ? (full.value - b.x) / b.w : null,
-      plumbLabel: region === null,
       labels,
     });
   }, [box, img, p, PW, PH, labels, region]);
@@ -163,5 +153,31 @@ export function PostureBoard(p: BoardProps) {
         ))}
       </div>
     </div>
+  );
+}
+
+const VIEW_LETTER: Partial<Record<ViewOrientation, string>> = { anterior: 'A', posterior: 'P', lateral_left: 'L', lateral_right: 'R' };
+
+/** In-camera overlays: view badge (top-left) and a compact HUD (top-right). Withheld values show "—". */
+export function StageHud({ view, statuses }: { view: ViewOrientation; statuses: PostureMetricStatus[] }) {
+  const { t } = useT();
+  return (
+    <>
+      <div className="stage-view-badge" aria-hidden="true">
+        <span className="letter">{VIEW_LETTER[view] ?? '?'}</span>
+        <span className="name">{t(`scan.view.${view}`)}</span>
+      </div>
+      {statuses.length > 0 && (
+        <div className="stage-hud" aria-hidden="true">
+          <div className="stage-hud-title">{t('grid.hud_short_title')}</div>
+          {statuses.map((s) => (
+            <div key={s.id} className={`row-item ${s.state}`}>
+              <span>{t(`posture.short.${s.id}`)}</span>
+              <b className="num">{s.state === 'measured' ? formatMetric(s) : '—'}</b>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

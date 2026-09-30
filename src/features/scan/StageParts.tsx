@@ -13,12 +13,34 @@ import { useT } from '../../i18n';
  * Camera + overlay canvas. Only the inner layer is mirrored (front camera) so that `children`
  * (cue pills, captions) render normally on top.
  */
-export function StageMedia({ videoRef, canvasRef, mirrored, simulated, children }: { videoRef: RefObject<HTMLVideoElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; mirrored: boolean; simulated: boolean; children?: ReactNode }) {
+export interface StageZoom {
+  scale: number;
+  /** Focus point in camera-frame coordinates (0–1, unmirrored). */
+  fx: number;
+  fy: number;
+  frameW: number;
+  frameH: number;
+}
+
+export function StageMedia({ videoRef, canvasRef, mirrored, simulated, zoom, mono, children }: { videoRef: RefObject<HTMLVideoElement | null>; canvasRef: RefObject<HTMLCanvasElement | null>; mirrored: boolean; simulated: boolean; zoom?: StageZoom | null; mono?: boolean; children?: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Digital zoom of what is displayed only — the pose model always analyses the full camera frame.
+  let style: React.CSSProperties | undefined;
+  if (zoom && zoom.scale > 1 && box.current && zoom.frameW > 0) {
+    const W = box.current.clientWidth;
+    const H = box.current.clientHeight;
+    const k = Math.min(W / zoom.frameW, H / zoom.frameH); // object-fit: contain
+    const ox = (W - zoom.frameW * k) / 2 + (mirrored && !simulated ? 1 - zoom.fx : zoom.fx) * zoom.frameW * k;
+    const oy = (H - zoom.frameH * k) / 2 + zoom.fy * zoom.frameH * k;
+    style = { transform: `scale(${zoom.scale})`, transformOrigin: `${ox}px ${oy}px` };
+  }
   return (
-    <div className="stage-media">
-      <div className={`stage-media-inner ${mirrored && !simulated ? 'mirrored' : ''}`}>
-        <video ref={videoRef} playsInline muted aria-hidden="true" style={{ display: simulated ? 'none' : undefined }} />
-        <canvas ref={canvasRef} aria-hidden="true" />
+    <div className="stage-media" ref={box}>
+      <div className="stage-media-zoom" style={style}>
+        <div className={`stage-media-inner ${mirrored && !simulated ? 'mirrored' : ''} ${mono ? 'mono' : ''}`}>
+          <video ref={videoRef} playsInline muted aria-hidden="true" style={{ display: simulated ? 'none' : undefined }} />
+          <canvas ref={canvasRef} aria-hidden="true" />
+        </div>
       </div>
       {children}
     </div>
