@@ -17,7 +17,7 @@
 
 `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (the publishable key) are set in Vercel. **Still to do by the owner:**
 - ~~add the physiotherapist email(s) to the allowlist (step 3)~~ — done 30 Sep 2026: the owner's own account is the physiotherapist account; add further physiotherapists the same way;
-- **set the Site URL and redirect URLs (step 4)** — still the default `http://localhost:3000`, so confirmation and password-reset links open localhost. The account is confirmed before that redirect, so signing in at the site works, but the setting must be fixed. It cannot be set through the connector.
+- ~~set the Site URL and redirect URLs (step 4)~~ — done 30 Sep 2026 and verified (an invalid-token probe redirects to the site, and a non-allowlisted redirect falls back to the site).
 
 Without the environment variables the app stays in **local mode** (browser-only).
 

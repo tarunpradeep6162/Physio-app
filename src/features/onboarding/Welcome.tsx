@@ -102,7 +102,9 @@ export function AuthScreen() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<Role>('patient');
   const [err, setErr] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  // Supabase sends people back with "#error=…" when an email link has expired or was already used.
+  const linkError = typeof location !== 'undefined' && /(^|[#&])error_code=/.test(location.hash);
+  const [info, setInfo] = useState<string | null>(linkError ? t('auth.link_invalid') : null);
   const [busy, setBusy] = useState(false);
   // Every new account must acknowledge that this is a pilot build: it is not yet approved for real
   // patient information (local mode additionally keeps everything in this browser only).

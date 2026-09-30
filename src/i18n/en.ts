@@ -82,6 +82,7 @@ export const en = {
   'auth.server_role_note': 'New accounts are patient accounts. Physiotherapist access is enabled only by the clinic owner.',
   'auth.pilot_body_server': 'Accounts and records are stored on the clinic server so your physiotherapist can see them from their own device. This pilot is not yet approved for real patient care.',
   'auth.server_notice': 'Records sync to the clinic server. Physiotherapists of this clinic can see every patient\'s records; patients see only their own.',
+  'auth.link_invalid': 'That email link has expired or was already used. If you already confirmed your email, just sign in. Otherwise use "Forgot password?" or sign up again for a new link.',
   'auth.forgot': 'Forgot password?',
   'auth.forgot_title': 'Reset your password',
   'auth.send_reset': 'Send reset link',
