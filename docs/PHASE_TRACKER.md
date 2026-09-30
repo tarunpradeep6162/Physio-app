@@ -122,6 +122,24 @@ Views (front, left and right side, back) can be selected directly. Results show 
 
 The zoomed panels are crops of one camera, labelled as such. Tests: `src/engine/postureGrid.test.ts`, which covers the phone-in-front and head-and-shoulders webcam framing cases.
 
+## "Physio AI" brief (7 rules, modules A–E) — mapped onto Dheepika Lab, 30 Sep 2026
+The brief was applied to this app rather than rebuilt in Next.js. Where each requirement lives:
+
+| Brief | Where |
+|---|---|
+| Rule 1 — surface landmarks only; no X-ray or vertebral markers | Posture grid (`camera/postureGrid.ts`) draws landmarks, lines and a plumb line only |
+| Rule 2 — no centimetres | Degrees and % of ankle-to-nose height (`engine/posture.ts`, `postureGeometry.ts`) |
+| Rule 3 — quality gate | `postureMetricStatus` / `gateStatuses` (withheld with a reason); calibration gate before capture |
+| Rule 4 — no diagnosis or percentages; separate categories; clinician confirms | Algorithmic observations with rule and version; `reasoning.ts`; clinician review in the workspace |
+| Rule 5 — red flags stop the flow | Safety step skips the camera tests; "unticked" never rules anything out |
+| Rule 6 — real PubMed or labelled sample | `evidence/pubmed.ts` (E-utilities, records verbatim, errors show no citations); `EvidencePanel` in the planner |
+| Rule 7 — opaque IDs, roles, consent, demo labelled | UUID routes plus `PT-XXXXXX` display code; Supabase RLS; camera consent (recorded in clinic if needed); demo banner |
+| A — directory, volume chart, start assessment | Patients page (ID, age/sex, complaint, registered, Start assessment); Analytics patient-volume chart; `/c/patients/:id/assess` |
+| B — 3D pain map with 2D keyboard fallback | `bodymap/BodyMap3D.tsx`, `BodyMap.tsx`, pathway sub-locations |
+| C — posture scan modes, tabs, grid, HUD | `scan/StaticScan.tsx`, `PostureGrid.tsx` |
+| D — intake, red flags, side-by-side summary | Assessment steps; clinician workspace summary by category |
+| E — planner with evidence and rule explanations | `ProgramBuilder.tsx` + `EvidencePanel.tsx`; "Why?" and reasoning tabs |
+
 ## Pending human approval or real-device / clinical validation
 - **Dheepika's approval** of the claims, rules, content, validation plan, incident process and release: **pending (on hold)**. Nothing was recorded or simulated.
 - **Owner decisions:**

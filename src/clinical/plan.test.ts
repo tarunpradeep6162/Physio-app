@@ -52,6 +52,14 @@ describe('Phase 9 — prescription and plan versioning', () => {
     expect(now.programExercises.filter((e) => e.programId === current.id).length).toBeGreaterThan(0);
   });
 
+  it('keeps attached PubMed references verbatim with the published plan version', () => {
+    const ref = { source: 'pubmed' as const, pmid: '25629215', title: 'Exercises for mechanical neck disorders.', journal: 'The Cochrane database of systematic reviews', year: '2015', url: 'https://pubmed.ncbi.nlm.nih.gov/25629215/', query: 'neck exercise therapy', retrievedAt: '2026-09-30T00:00:00Z', attachedBy: clinUser.id, attachedAt: '2026-09-30T00:01:00Z' };
+    const plan = preparePublish(getDb(), base(currentRx(), { evidence: [ref] }), new Date().toISOString(), uuid, version);
+    expect(plan.program!.evidence).toEqual([ref]);
+    expect(plan.program!.evidence![0]).not.toBe(ref); // copied, not shared with the editor state
+    expect(preparePublish(getDb(), base(currentRx()), new Date().toISOString(), uuid, version).program!.evidence).toBeUndefined();
+  });
+
   it('only a clinician can publish a version; the patient session cannot write a plan', () => {
     const plan = preparePublish(getDb(), base(currentRx()), new Date().toISOString(), uuid, version);
     expect(() => insert('programs', plan.program!, patientUser.id)).toThrow(AuthorizationError);

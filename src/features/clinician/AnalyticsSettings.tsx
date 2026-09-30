@@ -17,6 +17,8 @@ import { setPrefs, usePrefs } from '../../data/prefs';
 import { adherence, fmtDateTime, measurementSeries } from '../../data/queries';
 import { getDb, purgeDemo, recordAudit, updateSettings, useDb } from '../../data/store';
 import { ExceptionRulesEditor } from './Trends';
+import { BarChart } from '../../components/BarChart';
+import { monthlyVolume } from '../../clinical/directory';
 import { clearIncidents, readIncidents } from '../../app/incidents';
 import { INTENDED_USES, releaseGate } from '../../release/intendedUses';
 
@@ -124,9 +126,29 @@ export function Analytics() {
   ] as const;
   const maxBucket = Math.max(1, ...confBuckets.map(([, n]) => n));
 
+  const user = useCurrentUser();
+  const volume = monthlyVolume(db, 12);
+  const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', timeZone: 'UTC' });
+
   return (
     <div className="content stack loose">
       <h1>Analytics</h1>
+      <section className="panel stack">
+        <div className="row between wrap">
+          <h2>Patient volume (last 12 months)</h2>
+          {user?.isDemo && <span className="badge demo">Simulated demonstration data</span>}
+        </div>
+        <BarChart
+          title="New patient registrations and assessments started, per month"
+          categories={volume.map((v) => monthLabel(v.month))}
+          series={[
+            { id: 'patients', label: 'New patients', color: '#0D9488' },
+            { id: 'assessments', label: 'Assessments started', color: '#7C5CD6', hatched: true },
+          ]}
+          values={[volume.map((v) => v.newPatients), volume.map((v) => v.assessments)]}
+        />
+        <p className="xs muted">Counts of records in this clinic's system by the month they were created. Not a clinical measure.</p>
+      </section>
       <div className="grid cols-4">
         <div className="panel">
           <Stat label="Patients on a program" value={withProgram.length} />

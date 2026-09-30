@@ -1,4 +1,4 @@
-import type { DB, ID, PlanPause, Program, ProgramExercise, ProgramLibraryItem, ReassessTrigger } from '../data/models';
+import type { DB, EvidenceRef, ID, PlanPause, Program, ProgramExercise, ProgramLibraryItem, ReassessTrigger } from '../data/models';
 import { validatePrescription } from '../engine/exercises/definitions';
 import type { ExercisePrescription } from '../engine/exercises/types';
 
@@ -113,6 +113,8 @@ export interface PublishInput {
   exercises: ExercisePrescription[];
   /** Approved library items (validated by the caller against publishedItems). */
   library?: LibraryRx[];
+  /** PubMed references attached by the clinician (kept verbatim with the plan version). */
+  evidence?: EvidenceRef[];
   isDemo?: boolean;
 }
 
@@ -175,6 +177,7 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
     reassessTriggers: input.reassessTriggers?.length ? input.reassessTriggers : undefined,
     pauseOnPainStop: input.pauseOnPainStop ?? true,
     scheduleDays: input.scheduleDays?.length ? [...new Set(input.scheduleDays)].sort() : undefined,
+    evidence: input.evidence?.length ? input.evidence.map((e) => ({ ...e })) : undefined,
     isDemo: input.isDemo,
   };
   const programExercises = input.exercises.map((rx, i) => ({

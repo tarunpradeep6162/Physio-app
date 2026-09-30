@@ -9,6 +9,7 @@ import { activeProgram, adherence, age, fmtDate, fmtDateTime, latestAssessment, 
 import { insert, update, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { MEASUREMENTS, type MeasurementType } from '../../engine/measurements';
+import { patientCode } from '../../clinical/directory';
 import { useT } from '../../i18n';
 import { BodyMap } from '../bodymap/BodyMap';
 import { regionLabel } from '../bodymap/regions';
@@ -16,6 +17,7 @@ import { ProgressView } from '../progress/ProgressView';
 import { ClinicianActivity } from '../activity/ActivityPanel';
 import { ExceptionQueuePanel, TrendsTab } from './Trends';
 import { DeviceTab } from './DeviceTab';
+import { RefLine } from './EvidencePanel';
 import { SessionSummary } from '../session/SessionSummary';
 
 /** Clinician experience: overview, patient list, patient record. */
@@ -192,7 +194,10 @@ export function PatientList() {
   const [filter, setFilter] = useState<Filter>('all');
   const db = useDb((d) => d);
   const rows = db.patients
-    .filter((p) => p.name.toLowerCase().includes(q.toLowerCase()) || (p.concern ?? '').toLowerCase().includes(q.toLowerCase()))
+    .filter((p) => {
+      const s = q.trim().toLowerCase();
+      return !s || p.name.toLowerCase().includes(s) || (p.concern ?? '').toLowerCase().includes(s) || patientCode(p.id).toLowerCase().includes(s);
+    })
     .filter((p) => {
       if (filter === 'review') return db.assessments.some((a) => a.patientId === p.id && (a.status === 'submitted' || a.status === 'safety_hold'));
       if (filter === 'alerts') return openAlerts(db, p.id).length > 0;
@@ -201,9 +206,12 @@ export function PatientList() {
     });
   return (
     <div className="content stack loose">
-      <h1>Patients</h1>
+      <div className="row between wrap">
+        <h1>Registered patient directory</h1>
+        <span className="small muted">{db.patients.length} patient{db.patients.length === 1 ? '' : 's'}</span>
+      </div>
       <div className="row wrap">
-        <input className="input grow" style={{ minWidth: 220 }} placeholder="Search by name or concern…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search patients" />
+        <input className="input grow" style={{ minWidth: 220 }} placeholder="Search by name, patient ID or complaint…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search patients" />
         <Segmented<Filter>
           label="Filter"
           value={filter}
@@ -220,12 +228,16 @@ export function PatientList() {
         <table className="data">
           <thead>
             <tr>
-              <th>Patient</th>
-              <th>Concern (patient-reported)</th>
+              <th>Patient ID</th>
+              <th>Patient · age / sex</th>
+              <th>Presenting complaint (patient's words)</th>
+              <th>Registered</th>
               <th>Program</th>
               <th>Adherence</th>
-              <th>Last session</th>
               <th>Alerts</th>
+              <th>
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -236,6 +248,7 @@ export function PatientList() {
               const al = openAlerts(db, p.id);
               return (
                 <tr key={p.id}>
+                  <td className="mono small">{patientCode(p.id)}</td>
                   <td>
                     <Link to={`/c/patients/${p.id}`} className="row" style={{ textDecoration: 'none', color: 'inherit' }}>
                       <div className="avatar">{initials(p.name)}</div>
@@ -252,10 +265,18 @@ export function PatientList() {
                   <td className="small" style={{ maxWidth: 280 }}>
                     {p.concern ?? '–'}
                   </td>
-                  <td className="small">{prog ? prog.title : <span className="muted">None</span>}</td>
+                  <td className="small">{new Date(p.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                  <td className="small">
+                    {prog ? prog.title : <span className="muted">None</span>}
+                    {last && <div className="xs muted">last session {fmtDate(last.startedAt)}</div>}
+                  </td>
                   <td className="num">{a.pct === null ? '–' : `${Math.round(a.pct * 100)}%`}</td>
-                  <td className="small">{last ? fmtDate(last.startedAt) : '–'}</td>
                   <td>{al.length > 0 ? <span className={`badge ${al.some((x) => x.severity === 'critical') ? 'danger' : 'warn'}`}>! {al.length}</span> : <span className="muted">–</span>}</td>
+                  <td>
+                    <Link to={`/c/patients/${p.id}/assess`} className="btn sm primary" style={{ whiteSpace: 'nowrap' }} aria-label={`Start assessment for ${p.name} (${patientCode(p.id)})`}>
+                      Start assessment
+                    </Link>
+                  </td>
                 </tr>
               );
             })}
@@ -307,12 +328,15 @@ export function PatientDetail() {
               {patient.name} <DemoBadge show={!!patient.isDemo} />
             </h1>
             <p className="muted small">
-              {age(patient.dob) ?? '–'} y · {patient.sex ?? '–'} · {patient.phone ?? 'no phone'}
+              <span className="mono">{patientCode(patient.id)}</span> · {age(patient.dob) ?? '–'} y · {patient.sex ?? '–'} · {patient.phone ?? 'no phone'}
             </p>
           </div>
         </div>
         <div className="row wrap">
-          <Link to={`/c/programs/new?patient=${patient.id}`} className="btn primary">
+          <Link to={`/c/patients/${patient.id}/assess`} className="btn primary">
+            Start assessment
+          </Link>
+          <Link to={`/c/programs/new?patient=${patient.id}`} className="btn secondary">
             Build program
           </Link>
           <button className="btn secondary" onClick={() => nav(-1)}>
@@ -699,6 +723,18 @@ function ProgramsTab({ db, patient, actorId }: { db: DB; patient: Patient; actor
               {p.pauseOnPainStop === false ? ' · pain-rule stop does not pause the plan' : ''}
             </p>
             {p.changeReason && <p className="small">Reason for this version: {p.changeReason}</p>}
+            {!!p.evidence?.length && (
+              <details className="small">
+                <summary>{p.evidence.length} PubMed reference(s) attached by the clinician</summary>
+                <ul className="evidence-list">
+                  {p.evidence.map((r) => (
+                    <li key={r.pmid}>
+                      <RefLine r={r} />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
             {changes.length > 0 && (
               <details className="small">
                 <summary>

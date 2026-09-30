@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { currentAnswers, SCALE04, visibleQuestions, type AnswerValue, type Question } from '../../clinical/intake';
-import { isPathwayRegion, PATHWAYS, pathwayFor, type PathwayRegion } from '../../clinical/pathways';
+import { isPathwayRegion, PATHWAY_ORDER, PATHWAYS, pathwayFor, type PathwayRegion } from '../../clinical/pathways';
+import { patientCode } from '../../clinical/directory';
 import { routineAllowed, SAFETY_ACTION_TEXT } from '../../clinical/safety';
 import { CategoryBadge, ChipGroup, NprsInput, Notice, Segmented, Steps } from '../../components/ui';
 import type { Assessment, PainRegion, RadiationPath, SymptomType } from '../../data/models';
@@ -13,6 +14,7 @@ import { BodyMap, type MapPath } from '../bodymap/BodyMap';
 import { parseRegion, regionLabel, type BodyView } from '../bodymap/regions';
 import { saveScan } from '../assessment/persist';
 import { StaticScan } from '../scan/StaticScan';
+import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProtocolCapture } from './ProtocolCapture';
 import { baselineCapture, createAssessment, ensurePlan, currentPlan, itemKey, latestCapture, saveAnswers, saveCapture, saveRadiationPaths, saveRegions, saveSafety } from './persist';
 import { BilateralTable, CaptureCard, ComparisonTable } from './Results';
@@ -45,12 +47,55 @@ export function RegionAssessment() {
   return <PathwayAssessment key={region} region={region} />;
 }
 
-export function PathwayAssessment({ region }: { region: PathwayRegion }) {
+/**
+ * `patientId` set = an in-clinic assessment run by the physiotherapist for that patient (same
+ * steps, safety screen and quality gates; answers are recorded as the patient gives them).
+ */
+/** /c/patients/:id/assess — the physiotherapist chooses the pathway for an in-clinic assessment. */
+export function ClinicAssessmentStart() {
+  const { id } = useParams();
+  const db = useDb((d) => d);
+  const patient = db.patients.find((p) => p.id === id);
+  if (!patient) return <div className="content">Patient not found.</div>;
+  return (
+    <div className="content narrow stack loose">
+      <div>
+        <p className="eyebrow">In-clinic assessment</p>
+        <h1>
+          {patient.name} <span className="mono small muted">{patientCode(patient.id)}</span>
+        </h1>
+        <p className="muted">Choose the body region. The patient answers every question; you record their answers as they give them. The safety screen runs before any camera test.</p>
+      </div>
+      <div className="panel list">
+        {PATHWAY_ORDER.map((r) => (
+          <Link key={r} to={`/c/patients/${patient.id}/assess/${r}`} className="list-item">
+            <span className="grow list-title">{PATHWAYS[r].label}</span>
+            <span className="small muted">Start</span>
+          </Link>
+        ))}
+      </div>
+      <Link to={`/c/patients/${patient.id}`} className="btn secondary">
+        Back to patient
+      </Link>
+    </div>
+  );
+}
+
+/** /c/patients/:id/assess/:region */
+export function ClinicAssessment() {
+  const { id, region } = useParams();
+  if (!id || !isPathwayRegion(region)) return <Navigate to="/c/patients" replace />;
+  return <PathwayAssessment key={`${id}:${region}`} region={region} patientId={id} />;
+}
+
+export function PathwayAssessment({ region, patientId }: { region: PathwayRegion; patientId?: string }) {
   const pathway = PATHWAYS[region];
   const nav = useNavigate();
   const user = useCurrentUser();
-  const patient = useCurrentPatient();
+  const ownPatient = useCurrentPatient();
   const db = useDb((d) => d);
+  const inClinic = !!patientId;
+  const patient = inClinic ? db.patients.find((p) => p.id === patientId) : ownPatient;
   const reassessOf = new URLSearchParams(location.search).get('reassess');
   const open = useMemo(
     () => db.assessments.filter((a) => a.patientId === patient?.id && a.region === region && !a.submittedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0],
@@ -96,11 +141,11 @@ export function PathwayAssessment({ region }: { region: PathwayRegion }) {
       {step === 0 && <MapStep a={a} actorId={user.id} onNext={() => go(1)} />}
       {step === 1 && <HistoryStep a={a} actorId={user.id} onBack={() => go(0)} onNext={() => go(2)} />}
       {step === 2 && <SafetyStep a={a} actorId={user.id} onBack={() => go(1)} onNext={(clear) => go(clear ? 3 : 5)} />}
-      {step === 3 && <TestsStep a={a} actorId={user.id} cameraConsent={consent('camera_processing')} onBack={() => go(2)} onNext={() => go(4)} />}
+      {step === 3 && <TestsStep a={a} actorId={user.id} inClinic={inClinic} cameraConsent={consent('camera_processing')} onBack={() => go(2)} onNext={() => go(4)} />}
       {step === 4 && (
         <section className="stack">
-          <h1>Your results</h1>
-          <Notice>These are camera estimates for your physiotherapist to review. They are not a diagnosis.</Notice>
+          <h1>{inClinic ? 'Results' : 'Your results'}</h1>
+          <Notice>{inClinic ? 'Camera estimates for your review in the clinician workspace. They are not a diagnosis.' : 'These are camera estimates for your physiotherapist to review. They are not a diagnosis.'}</Notice>
           <BilateralTable db={db} assessmentId={a.id} />
           {a.type === 'reassessment' && <ComparisonTable db={db} current={a} />}
           <div className="row">
@@ -115,14 +160,18 @@ export function PathwayAssessment({ region }: { region: PathwayRegion }) {
       )}
       {step === 5 && (
         <section className="stack">
-          <h1>Send to your physiotherapist</h1>
+          <h1>{inClinic ? 'Submit for review' : 'Send to your physiotherapist'}</h1>
           {!routineAllowed(a.safetyLevel) && (
             <Notice tone={a.safetyLevel === 'clinician_review' ? 'warn' : 'danger'}>
               <strong>{SAFETY_ACTION_TEXT[a.safetyLevel!].title}</strong>
               <p>{SAFETY_ACTION_TEXT[a.safetyLevel!].body.replace('{emergency}', db.settings.emergencyNumber)}</p>
             </Notice>
           )}
-          <p className="muted">Your physiotherapist will review your answers and every camera estimate before anything is used in your plan.</p>
+          <p className="muted">
+            {inClinic
+              ? 'The assessment opens in the clinician workspace, where every camera estimate and algorithmic observation is confirmed or rejected before it is used.'
+              : 'Your physiotherapist will review your answers and every camera estimate before anything is used in your plan.'}
+          </p>
           <div className="row">
             <button className="btn secondary" onClick={() => go(routineAllowed(a.safetyLevel) ? 4 : 2)}>
               Back
@@ -132,7 +181,7 @@ export function PathwayAssessment({ region }: { region: PathwayRegion }) {
               onClick={() => {
                 update('assessments', a.id, { status: routineAllowed(a.safetyLevel) ? 'submitted' : 'safety_hold', submittedAt: new Date().toISOString(), step: 5 }, user.id, 'submit');
                 insert('alerts', { id: uuid(), patientId: a.patientId, type: 'assessment_submitted', severity: 'info', detail: `${pathway.label} ${a.type === 'reassessment' ? 'reassessment' : 'assessment'}`, createdAt: new Date().toISOString(), isDemo: a.isDemo }, user.id);
-                nav('/p/home');
+                nav(inClinic ? `/c/assessments/${a.id}` : '/p/home');
               }}
             >
               Submit
@@ -389,7 +438,7 @@ function SafetyStep({ a, actorId, onBack, onNext }: { a: Assessment; actorId: st
   );
 }
 
-function TestsStep({ a, actorId, cameraConsent, onBack, onNext }: { a: Assessment; actorId: string; cameraConsent: boolean; onBack: () => void; onNext: () => void }) {
+function TestsStep({ a, actorId, cameraConsent, inClinic, onBack, onNext }: { a: Assessment; actorId: string; cameraConsent: boolean; inClinic: boolean; onBack: () => void; onNext: () => void }) {
   const db = useDb((d) => d);
   const plan = currentPlan(db, a.id);
   const [active, setActive] = useState<{ protocolId: string; side: Side | null } | null>(null);
@@ -437,11 +486,12 @@ function TestsStep({ a, actorId, cameraConsent, onBack, onNext }: { a: Assessmen
           Your test plan ({plan.source === 'clinician' ? 'set by your physiotherapist' : plan.source === 'baseline_copy' ? 'same as your first assessment' : `standard ${pathwayFor(a).label.toLowerCase()} plan — your physiotherapist may change it`}). Each test explains its own camera setup.
         </p>
       </div>
-      {!cameraConsent && (
+      {!cameraConsent && !inClinic && (
         <Notice tone="warn">
           Camera tests need your consent to on-device camera processing. <Link to="/p/profile">Change in Profile</Link>
         </Notice>
       )}
+      {!cameraConsent && inClinic && <ClinicConsent patientId={a.patientId} actorId={actorId} />}
       {!routineAllowed(a.safetyLevel) && <Notice tone="warn">Tests are paused until your physiotherapist reviews your safety answers.</Notice>}
       <div className="panel list">
         {plan.items.map((i) => {
@@ -489,5 +539,32 @@ function TestsStep({ a, actorId, cameraConsent, onBack, onNext }: { a: Assessmen
         </button>
       </div>
     </section>
+  );
+}
+
+/** In clinic: the physiotherapist records the patient's camera-processing consent (audited as theirs). */
+function ClinicConsent({ patientId, actorId }: { patientId: string; actorId: string }) {
+  const [confirmed, setConfirmed] = useState(false);
+  return (
+    <Notice tone="warn">
+      <div className="stack tight">
+        <strong>No camera-processing consent is recorded for this patient.</strong>
+        <label className="row" style={{ gap: '0.5rem', alignItems: 'flex-start' }}>
+          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} style={{ minWidth: 24, minHeight: 24, marginTop: '0.15rem' }} />
+          <span className="small">
+            The patient has read the camera-processing consent text (v{CONSENT_TEXT_VERSION}) and agreed. Video is processed on this device and not stored.
+          </span>
+        </label>
+        <div>
+          <button
+            className="btn sm primary"
+            disabled={!confirmed}
+            onClick={() => insert('consents', { id: uuid(), patientId, type: 'camera_processing', granted: true, textVersion: CONSENT_TEXT_VERSION, at: new Date().toISOString() }, actorId, 'consent_recorded_in_clinic')}
+          >
+            Record consent
+          </button>
+        </div>
+      </div>
+    </Notice>
   );
 }

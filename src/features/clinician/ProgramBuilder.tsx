@@ -6,8 +6,10 @@ import { CategoryBadge, DemoBadge, Notice, Segmented } from '../../components/ui
 import { diffLibrary, diffPlans, preparePublish, TRIGGER_LABELS, type LibraryRx } from '../../clinical/plan';
 import { publishedItems } from '../../content/contentStore';
 import type { ContentItem } from '../../content/library';
-import type { ReassessTrigger } from '../../data/models';
-import { activeProgram, fmtDate, programExercises } from '../../data/queries';
+import type { EvidenceRef, ReassessTrigger } from '../../data/models';
+import { pathwayFor } from '../../clinical/pathways';
+import { EvidencePanel } from './EvidencePanel';
+import { activeProgram, fmtDate, latestAssessment, programExercises } from '../../data/queries';
 import { getDb, insert, insertMany, update, useDb, uuid } from '../../data/store';
 import { defaultPrescription, EXERCISE_LIST, getDefinition, validatePrescription } from '../../engine/exercises/definitions';
 import type { ExerciseId, ExercisePrescription } from '../../engine/exercises/types';
@@ -59,6 +61,7 @@ export function ProgramBuilder() {
   const [pauseOnPainStop, setPauseOnPainStop] = useState(existing?.pauseOnPainStop ?? true);
   const [scheduleDays, setScheduleDays] = useState<number[]>(existing?.scheduleDays ?? []);
   const [publishError, setPublishError] = useState<string[]>([]);
+  const [evidence, setEvidence] = useState<EvidenceRef[]>(existing?.evidence ?? []);
   const [rows, setRows] = useState<Row[]>(() =>
     existing
       ? programExercises(db, existing.id).map((e) => ({
@@ -110,6 +113,7 @@ export function ProgramBuilder() {
         scheduleDays,
         exercises: rows.map((r) => r.rx),
         library: lib,
+        evidence,
         isDemo: patient.isDemo,
       },
       new Date().toISOString(),
@@ -334,6 +338,17 @@ export function ProgramBuilder() {
         <span>Program notes (clinician only)</span>
         <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </label>
+      <EvidencePanel
+        key={patientId}
+        value={evidence}
+        onChange={setEvidence}
+        actorId={user.id}
+        suggestedQuery={(() => {
+          const a = patient ? latestAssessment(db, patient.id) : undefined;
+          return a ? `${pathwayFor(a).label.toLowerCase()} exercise therapy` : '';
+        })()}
+      />
+
       <section className="panel stack">
         <h2>Reassessment and pauses</h2>
         <div className="grid cols-2">

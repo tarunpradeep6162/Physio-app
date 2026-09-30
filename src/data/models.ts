@@ -377,6 +377,23 @@ export interface Observation {
   isDemo?: boolean;
 }
 
+/**
+ * A PubMed record the clinician attached to a plan: PMID, title, journal and year exactly as
+ * PubMed returned them, with the search, retrieval time and who attached it (evidence/pubmed.ts).
+ */
+export interface EvidenceRef {
+  source: 'pubmed';
+  pmid: string;
+  title: string;
+  journal: string;
+  year: string;
+  url: string;
+  query: string;
+  retrievedAt: ISODate;
+  attachedBy: ID;
+  attachedAt: ISODate;
+}
+
 export interface Program {
   id: ID;
   patientId: ID;
@@ -402,6 +419,8 @@ export interface Program {
   pauseOnPainStop?: boolean;
   /** Days of the week the clinician scheduled sessions on (0 = Sunday). Absent = flexible (N per week). */
   scheduleDays?: number[];
+  /** PubMed references the clinician attached to this plan version. */
+  evidence?: EvidenceRef[];
   isDemo?: boolean;
 }
 
