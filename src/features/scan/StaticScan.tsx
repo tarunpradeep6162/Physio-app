@@ -5,7 +5,7 @@ import { drawAlignmentFrame, drawSkeleton, label, prepareCanvas } from '../../ca
 import { drawFaceCover, drawGrid, drawPostureScene, drawRegionPanel, drawReportedArea, type ImageTone } from '../../camera/postureGrid';
 import { POSTURE_REGIONS, regionBox, reportedAreaBox, zoomToBox } from '../../engine/postureGeometry';
 import { useMotionRuntime } from '../../camera/useMotionRuntime';
-import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
+import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample, type CalibrationMemory } from '../../engine/calibration';
 import { FULL_BODY_LANDMARKS, jointList } from '../../engine/landmarks';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
@@ -94,6 +94,7 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   const phaseRef = useRef<Phase>('calibrating');
   phaseRef.current = phase;
   const gate = useRef(new CalibrationGate(1200));
+  const calibMemory = useRef<CalibrationMemory>({});
   const capture = useRef<PostureCapture | null>(null);
   const captureStart = useRef(0);
   const lastLm = useRef<{ lm: Landmark[]; w: number; h: number } | null>(null);
@@ -131,6 +132,7 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
         }
       }
       const calib = evaluateCalibration({
+        memory: calibMemory.current,
         frame: f,
         req: { landmarks: FULL_BODY_LANDMARKS, views: [view], heightRange: [0.5, 0.97], minConfidence: 0.7, maxRollDeg: 3, handsFree: view === 'anterior' || view === 'posterior' },
         lighting: lighting.current,
@@ -261,12 +263,14 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   const current = results.find((r) => r.view === view);
   const goTo = (i: number) => {
     gate.current.reset();
+    calibMemory.current = {};
     manualStart.current = false;
     setViewIdx(i);
     setPhase(results.some((r) => r.view === VIEWS[i]) ? 'captured' : 'calibrating');
   };
   const next = () => {
     gate.current.reset();
+    calibMemory.current = {};
     manualStart.current = false;
     if (viewIdx < VIEWS.length - 1) {
       setViewIdx(viewIdx + 1);
@@ -275,6 +279,7 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   };
   const retake = () => {
     gate.current.reset();
+    calibMemory.current = {};
     manualStart.current = false;
     setResults((r) => r.filter((x) => x.view !== view));
     setPhase('calibrating');

@@ -5,7 +5,7 @@ import { drawAlignmentFrame, drawAngleArc, drawSkeleton, prepareCanvas, type Ove
 import { useMotionRuntime, type FrameContext } from '../../camera/useMotionRuntime';
 import { IconCC, IconClose, IconMute, IconPause, IconPlay, IconVolume } from '../../components/icons';
 import { usePrefs } from '../../data/prefs';
-import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
+import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample, type CalibrationMemory } from '../../engine/calibration';
 import { ExerciseRunner, type ExerciseResult, type RunnerSnapshot } from '../../engine/exerciseRunner';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { requiredView, type ExercisePrescription } from '../../engine/exercises/types';
@@ -86,6 +86,7 @@ export function MotionMirror({
   const feedback = useRef(new FeedbackEngine(def));
   const voice = useRef<VoiceCoach | null>(null);
   const gate = useRef(new CalibrationGate(1500));
+  const calibMemory = useRef<CalibrationMemory>({});
   const lighting = useRef<LightingSample | null>(null);
   const lightT = useRef(0);
   const sampler = useRef<LightingSampler | null>(null);
@@ -181,6 +182,7 @@ export function MotionMirror({
           }
         }
         const c = evaluateCalibration({
+        memory: calibMemory.current,
           frame: f,
           req: { landmarks: reqLandmarks, views, heightRange: [0.45, 0.98], extentAxis: def.position === 'supine' ? 'horizontal' : 'vertical', minConfidence: 0.65, maxRollDeg: 4 },
           lighting: lighting.current,

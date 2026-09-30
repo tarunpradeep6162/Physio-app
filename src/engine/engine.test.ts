@@ -146,7 +146,9 @@ describe('calibration', () => {
   });
   it('asks the person to move back when too close, and closer when too far', () => {
     expect(run({ kind: 'standing_anterior', scale: 1.4 }).instruction).toBe('move_back');
-    expect(run({ kind: 'standing_anterior', scale: 0.5 }).instruction).toBe('move_closer');
+    // On this 1280 px-tall frame the minimum scales to keep 720 px-equivalent detail (≥ 30% of the
+    // height), so a body filling ~40% (scale 0.5) now passes; ~24% (scale 0.3) is genuinely too far.
+    expect(run({ kind: 'standing_anterior', scale: 0.3 }).instruction).toBe('move_closer');
   });
   it('gives mirrored-aware left/right instructions', () => {
     // Subject on image-right in a front camera = too far to their own left → "move right".

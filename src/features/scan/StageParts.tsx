@@ -86,7 +86,7 @@ export function CalibrationChecklist({ checks, compact }: { checks: CalibrationC
   const { t } = useT();
   const byId = new Map(checks.map((c) => [c.id, c]));
   // Compact: the key checks plus ANY failing check (an occluded joint must never be hidden from view).
-  const shown = ORDER.filter((id) => byId.has(id)).filter((id) => !compact || ['person', 'framing', 'orientation', 'camera_level', 'lighting'].includes(id) || byId.get(id)!.status === 'fail');
+  const shown = ORDER.filter((id) => byId.has(id)).filter((id) => !compact || ['person', 'framing', 'distance', 'orientation', 'camera_level', 'lighting'].includes(id) || byId.get(id)!.status === 'fail');
   return (
     <div className="checklist">
       <ul>
@@ -101,6 +101,8 @@ export function CalibrationChecklist({ checks, compact }: { checks: CalibrationC
                 {t(`calib.check.${id}`)}
                 <span className="sr-only">: {c.status}</span>
                 {id === 'camera_level' && c.status === 'unknown' && <span style={{ color: '#8fb0aa' }}> — {t('calib.level_unknown')}</span>}
+                {/* Show the actual reading and the target band, so "move closer" is never a mystery. */}
+                {id === 'distance' && c.params?.pct && <span style={{ color: '#8fb0aa' }}> — {t('calib.distance_detail', c.params)}</span>}
               </span>
             </li>
           );

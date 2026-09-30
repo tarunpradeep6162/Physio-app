@@ -101,6 +101,39 @@ export interface CalibrationInput {
   cameraRollDeg: number | null;
   /** 'user' = front camera shown mirrored; affects left/right instructions. */
   facing: 'user' | 'environment';
+  /**
+   * Per-session memory (pass the same object every frame). Smooths the distance reading and adds
+   * hysteresis, so standing still near a limit does not flip between "ready" and "move closer".
+   */
+  memory?: CalibrationMemory;
+}
+
+export interface CalibrationMemory {
+  extent?: number;
+  distanceOk?: boolean;
+  roll?: number;
+  levelOk?: boolean;
+  offset?: number;
+  centredOk?: boolean;
+}
+
+const ROLL_HYSTERESIS_DEG = 1;
+const CENTRE_LIMIT = 0.17;
+const CENTRE_HYSTERESIS = 0.03;
+
+/**
+ * Frame size (px along the extent axis) the fraction limits were written for. On a larger frame the
+ * same fraction holds more pixels, so a smaller body is still measured precisely: the minimum is
+ * scaled to keep the same pixel count, but never below 60% of the written fraction.
+ */
+const REFERENCE_PX = 720;
+const MIN_FRACTION_FLOOR = 0.6;
+const EXTENT_SMOOTHING = 0.8;
+const DISTANCE_HYSTERESIS = 0.03;
+
+export function effectiveDistanceRange(range: [number, number], axisPx: number): [number, number] {
+  const scaled = axisPx > REFERENCE_PX ? range[0] * (REFERENCE_PX / axisPx) : range[0];
+  return [Math.max(range[0] * MIN_FRACTION_FLOOR, Math.min(range[0], scaled)), range[1]];
 }
 
 export interface CalibrationResult {
@@ -122,7 +155,14 @@ function visibleIn(lm: Landmark, minC: number): boolean {
 }
 
 export function evaluateCalibration(input: CalibrationInput): CalibrationResult {
-  const { frame, req, lighting, cameraRollDeg, facing } = input;
+  const { frame, req, lighting, facing } = input;
+  const mem = input.memory;
+  // Hand-held phones wobble: smooth the tilt reading and allow 1° of margin once level.
+  let cameraRollDeg = input.cameraRollDeg;
+  if (mem && cameraRollDeg !== null) {
+    cameraRollDeg = mem.roll === undefined ? cameraRollDeg : mem.roll * EXTENT_SMOOTHING + cameraRollDeg * (1 - EXTENT_SMOOTHING);
+    mem.roll = cameraRollDeg;
+  }
   const checks: CalibrationCheck[] = [];
   const add = (c: CalibrationCheck) => checks.push(c);
 
@@ -134,8 +174,13 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
   } else add({ id: 'lighting', status: 'unknown' });
 
   if (cameraRollDeg === null) add({ id: 'camera_level', status: 'unknown', detail: 'no orientation sensor' });
-  else if (Math.abs(cameraRollDeg) > req.maxRollDeg) add({ id: 'camera_level', status: 'fail', instruction: 'camera_tilted', detail: `${cameraRollDeg.toFixed(1)}°` });
-  else add({ id: 'camera_level', status: 'pass', detail: `${cameraRollDeg.toFixed(1)}°` });
+  else if (Math.abs(cameraRollDeg) > req.maxRollDeg + (mem?.levelOk ? ROLL_HYSTERESIS_DEG : 0)) {
+    add({ id: 'camera_level', status: 'fail', instruction: 'camera_tilted', detail: `${cameraRollDeg.toFixed(1)}°` });
+    if (mem) mem.levelOk = false;
+  } else {
+    add({ id: 'camera_level', status: 'pass', detail: `${cameraRollDeg.toFixed(1)}°` });
+    if (mem) mem.levelOk = true;
+  }
 
   if (frame.status === 'no_person') {
     add({ id: 'person', status: 'fail', instruction: 'no_person' });
@@ -172,17 +217,27 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
     top = Math.min(...required.map(coord), ...ys);
     bottom = Math.max(...required.map(coord), ...ys);
   }
-  const extent = bottom - top;
-  const tooClose = extent > req.heightRange[1] || top < 0 || bottom > 1;
+  const rawExtent = bottom - top;
+  // Smoothed extent (EMA) so single-frame jitter does not change the instruction.
+  const extent = mem ? (mem.extent === undefined ? rawExtent : mem.extent * EXTENT_SMOOTHING + rawExtent * (1 - EXTENT_SMOOTHING)) : rawExtent;
+  if (mem) mem.extent = extent;
+  const [minExt, maxExt] = effectiveDistanceRange(req.heightRange, horiz ? frame.width : frame.height);
+  // Once distance has passed, allow a small margin before failing again (hysteresis).
+  const margin = mem?.distanceOk ? DISTANCE_HYSTERESIS : 0;
+  const outOfFrame = top < 0 || bottom > 1;
+  const tooClose = extent > maxExt + margin || outOfFrame;
+  const tooFar = !tooClose && extent < minExt - margin;
 
   const outside = required.filter((l) => !visibleIn(l, 0.3));
   if (outside.length > 0) {
     add({ id: 'framing', status: 'fail', instruction: tooClose ? 'move_back' : 'full_body', detail: `${outside.length} landmarks outside` });
   } else add({ id: 'framing', status: 'pass' });
 
-  if (tooClose) add({ id: 'distance', status: 'fail', instruction: 'move_back', detail: `extent ${(extent * 100).toFixed(0)}%` });
-  else if (extent < req.heightRange[0]) add({ id: 'distance', status: 'fail', instruction: 'move_closer', detail: `extent ${(extent * 100).toFixed(0)}%` });
-  else add({ id: 'distance', status: 'pass', detail: `extent ${(extent * 100).toFixed(0)}%` });
+  const distParams = { pct: String(Math.round(extent * 100)), min: String(Math.round(minExt * 100)), max: String(Math.round(maxExt * 100)) };
+  if (tooClose) add({ id: 'distance', status: 'fail', instruction: 'move_back', detail: `extent ${(extent * 100).toFixed(0)}%`, params: distParams });
+  else if (tooFar) add({ id: 'distance', status: 'fail', instruction: 'move_closer', detail: `extent ${(extent * 100).toFixed(0)}%`, params: distParams });
+  else add({ id: 'distance', status: 'pass', detail: `extent ${(extent * 100).toFixed(0)}%`, params: distParams });
+  if (mem) mem.distanceOk = !tooClose && !tooFar;
 
   // Room for a raised arm: the elbow (the measured point) must stay inside the frame at full elevation.
   if (req.armReach) {
@@ -202,8 +257,14 @@ export function evaluateCalibration(input: CalibrationInput): CalibrationResult 
 
   // Horizontal centring on the hip midpoint.
   const cx = (lms[LM.leftHip].x + lms[LM.rightHip].x) / 2;
-  const off = cx - 0.5;
-  if (Math.abs(off) > 0.17) {
+  let off = cx - 0.5;
+  if (mem) {
+    off = mem.offset === undefined ? off : mem.offset * EXTENT_SMOOTHING + off * (1 - EXTENT_SMOOTHING);
+    mem.offset = off;
+  }
+  const centreLimit = CENTRE_LIMIT + (mem?.centredOk ? CENTRE_HYSTERESIS : 0);
+  if (mem) mem.centredOk = Math.abs(off) <= centreLimit;
+  if (Math.abs(off) > centreLimit) {
     // Raw image: a person who steps to THEIR left moves to the image right when facing a front camera.
     // For a rear (clinician-held) camera the instruction is phrased relative to the displayed image.
     let instruction: InstructionCode;

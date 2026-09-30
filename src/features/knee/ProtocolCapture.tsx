@@ -8,7 +8,7 @@ import { IconClose, IconMute, IconVolume } from '../../components/icons';
 import { Notice } from '../../components/ui';
 import type { CaptureSession } from '../../data/models';
 import { usePrefs } from '../../data/prefs';
-import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample } from '../../engine/calibration';
+import { CalibrationGate, evaluateCalibration, lightingFromPixels, type CalibrationResult, type LightingSample, type CalibrationMemory } from '../../engine/calibration';
 import { pauseText } from '../../engine/feedback';
 import type { ProcessedFrame } from '../../engine/pipeline';
 import type { SimulatedPoseProvider } from '../../engine/pose/simulated';
@@ -73,6 +73,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
   phaseRef.current = phase;
   const recorder = useRef<ProtocolRecorder | null>(null);
   const gate = useRef(new CalibrationGate(1500));
+  const calibMemory = useRef<CalibrationMemory>({});
   const lighting = useRef<LightingSample | null>(null);
   const lightT = useRef(0);
   const sampler = useRef<LightingSampler | null>(null);
@@ -188,6 +189,7 @@ export function ProtocolCapture({ protocolId, side, baseline, onSave, onCancel }
         }
         const fr = def.framing;
         const c = evaluateCalibration({
+        memory: calibMemory.current,
           frame: f,
           req: fr
             ? { landmarks: focus, views, heightRange: fr.range, extentAxis: fr.axis, extentLandmarks: fr.extentLandmarks(side), minConfidence: fr.minConfidence, maxRollDeg: fr.maxRollDeg, armReach: fr.armReach ? { side: side ?? 'left', mode: fr.armReach } : undefined }

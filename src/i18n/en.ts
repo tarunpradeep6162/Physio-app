@@ -246,6 +246,7 @@ export const en = {
   'calib.check.hands_clear': 'Nothing in front of your body',
   'calib.check.arm_room': 'Room for your raised arm',
   'calib.check.distance': 'Distance',
+  'calib.distance_detail': 'body fills {pct}% of the picture height (aim for {min}–{max}%)',
   'calib.check.centering': 'Centred',
   'calib.check.orientation': 'Body orientation',
   'calib.check.camera_level': 'Camera level',
