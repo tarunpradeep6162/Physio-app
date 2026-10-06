@@ -35,6 +35,7 @@ const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 
 const SchedulePage = lazy(() => named(import('../features/clinic/SchedulePage'), 'SchedulePage'));
 const BillingPage = lazy(() => named(import('../features/clinic/BillingPage'), 'BillingPage'));
 const DischargePage = lazy(() => named(import('../features/clinic/DischargePage'), 'DischargePage'));
+const RomGuide = lazy(() => named(import('../features/library/RomGuide'), 'RomGuide'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
@@ -282,6 +283,7 @@ export function App() {
               <Route path="programs" element={<ProgramsIndex />} />
               <Route path="programs/new" element={<ProgramBuilder />} />
               <Route path="library" element={<LibraryPage />} />
+              <Route path="library/rom-guide" element={<RomGuide />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="billing" element={<BillingPage />} />
               <Route path="analytics" element={<Analytics />} />

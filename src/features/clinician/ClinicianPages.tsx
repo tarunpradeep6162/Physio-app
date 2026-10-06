@@ -10,6 +10,8 @@ import { insert, update, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { MEASUREMENTS, type MeasurementType } from '../../engine/measurements';
 import { patientCode } from '../../clinical/directory';
+import { QrCode } from '../../components/QrCode';
+import { PATHWAY_ORDER, PATHWAYS, type PathwayRegion } from '../../clinical/pathways';
 import { useT } from '../../i18n';
 import { BodyMap } from '../bodymap/BodyMap';
 import { regionLabel } from '../bodymap/regions';
@@ -192,8 +194,15 @@ type Filter = 'all' | 'review' | 'alerts' | 'low_adherence';
 export function PatientList() {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
+  const [region, setRegion] = useState<PathwayRegion | ''>('');
   const db = useDb((d) => d);
+  const inRegion = (pid: string) => {
+    if (!region) return true;
+    const mine = db.assessments.filter((a) => a.patientId === pid);
+    return mine.some((a) => a.region === region) || db.painRegions.some((r) => mine.some((a) => a.id === r.assessmentId) && PATHWAYS[region].isRegion(r.regionId));
+  };
   const rows = db.patients
+    .filter((p) => inRegion(p.id))
     .filter((p) => {
       const s = q.trim().toLowerCase();
       return !s || p.name.toLowerCase().includes(s) || (p.concern ?? '').toLowerCase().includes(s) || patientCode(p.id).toLowerCase().includes(s);
@@ -212,6 +221,17 @@ export function PatientList() {
       </div>
       <div className="row wrap">
         <input className="input grow" style={{ minWidth: 220 }} placeholder="Search by name, patient ID or complaint…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search patients" />
+        <label className="field" style={{ margin: 0 }}>
+          <span className="sr-only">Body region</span>
+          <select className="input" value={region} onChange={(e) => setRegion(e.target.value as PathwayRegion | '')} aria-label="Body region">
+            <option value="">All body regions</option>
+            {PATHWAY_ORDER.map((r) => (
+              <option key={r} value={r}>
+                {PATHWAYS[r].label}
+              </option>
+            ))}
+          </select>
+        </label>
         <Segmented<Filter>
           label="Filter"
           value={filter}
@@ -348,6 +368,7 @@ export function PatientDetail() {
           <Link to={`/c/patients/${patient.id}/discharge`} className="btn secondary">
             Discharge
           </Link>
+          <AppLinkQr />
           <button className="btn secondary" onClick={() => nav(-1)}>
             {t('common.back')}
           </button>
@@ -469,21 +490,29 @@ function CompanionPanel({ db, patient, actorId }: { db: DB; patient: Patient; ac
         <p className="xs muted">Patient-reported, shown verbatim. The app does not interpret check-ins.</p>
       </section>
       <section className="panel stack tight">
-        <h2>Appointments</h2>
+        <div className="row between wrap">
+          <h2>Appointments</h2>
+          <Link className="btn ghost sm" to="/c/schedule">
+            Open schedule
+          </Link>
+        </div>
         {appts.map((a) => (
-          <div key={a.id} className="row between small">
-            <span>
+          <div key={a.id} className="agenda-item small">
+            <span className="grow" style={{ minWidth: '12rem' }}>
               {fmtDateTime(a.at)} · {a.kind}
               {a.note ? ` — ${a.note}` : ''}
             </span>
-            <span className="row" style={{ gap: '0.3rem' }}>
-              <span className="badge">{a.status}</span>
+            <span className="row wrap" style={{ gap: '0.3rem' }}>
+              <span className="badge">{a.status === 'done' ? 'attended' : a.status}</span>
               {a.status === 'scheduled' && (
                 <>
-                  <button className="btn ghost sm" onClick={() => update('appointments', a.id, { status: 'done' }, actorId)}>
-                    Done
+                  <button className="btn ghost sm nowrap" onClick={() => update('appointments', a.id, { status: 'done' }, actorId)}>
+                    Attended
                   </button>
-                  <button className="btn ghost sm" onClick={() => update('appointments', a.id, { status: 'cancelled' }, actorId)}>
+                  <button className="btn ghost sm nowrap" onClick={() => update('appointments', a.id, { status: 'missed' }, actorId)}>
+                    Missed
+                  </button>
+                  <button className="btn ghost sm nowrap" onClick={() => update('appointments', a.id, { status: 'cancelled' }, actorId)}>
                     Cancel
                   </button>
                 </>
@@ -858,5 +887,29 @@ function NotesTab({ db, patient, actorId }: { db: DB; patient: Patient; actorId:
         </div>
       ))}
     </div>
+  );
+}
+
+/** QR for the patient's own phone: opens the app's sign-in page. Carries no patient data. */
+function AppLinkQr() {
+  const [open, setOpen] = useState(false);
+  const url = `${window.location.origin}/auth`;
+  return (
+    <>
+      <button className="btn secondary" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        App QR
+      </button>
+      {open && (
+        <div className="panel stack tight qr-card" role="dialog" aria-label="App sign-in QR code">
+          <QrCode text={url} label={`QR code for ${url}`} />
+          <p className="xs muted" style={{ maxWidth: 220, margin: 0 }}>
+            The patient scans this to open Dheepika Lab and signs in with their own account. The code contains only the app address — no patient information.
+          </p>
+          <button className="btn ghost sm" onClick={() => setOpen(false)}>
+            Close
+          </button>
+        </div>
+      )}
+    </>
   );
 }

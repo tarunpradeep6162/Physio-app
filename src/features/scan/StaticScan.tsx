@@ -16,7 +16,7 @@ import { setPrefs, usePrefs } from '../../data/prefs';
 import { IconClose, IconFlip, IconVolume, IconMute } from '../../components/icons';
 import { speechLang, useT } from '../../i18n';
 import { VoiceCoach } from '../../voice/voiceCoach';
-import { PostureBoard, PostureHud, StageHud, useSceneLabels } from './PostureGrid';
+import { formatMetric, PostureBoard, PostureHud, StageHud, useSceneLabels } from './PostureGrid';
 import { CalibrationChecklist, CuePill, RuntimeOverlay, StageMedia } from './StageParts';
 
 /**
@@ -44,7 +44,8 @@ export interface ScanViewResult {
 const VIEWS: ViewOrientation[] = ['anterior', 'lateral_left', 'lateral_right', 'posterior'];
 const CAPTURE_MS = 3000;
 
-type Phase = 'calibrating' | 'capturing' | 'captured';
+type Phase = 'calibrating' | 'capturing' | 'captured' | 'correcting';
+const CORRECTION_S = 15;
 
 export interface ReportedArea {
   /** Body-map region id the patient marked (e.g. "neck_side_left"). */
@@ -66,6 +67,10 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
   const [phase, setPhase] = useState<Phase>('calibrating');
   const [ui, setUi] = useState<{ calib: CalibrationResult | null; gate: number; capture: number; ready: boolean; statuses: PostureMetricStatus[] }>({ calib: null, gate: 0, capture: 0, ready: false, statuses: [] });
   const [results, setResults] = useState<ScanViewResult[]>([]);
+  // Self-correction (coaching only): the habitual capture stays the saved result for each view.
+  const [comparisons, setComparisons] = useState<Partial<Record<ViewOrientation, { before: ScanViewResult; after: ScanViewResult }>>>({});
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const correctionBefore = useRef<ScanViewResult | null>(null);
   const [voiceOn, setVoiceOn] = useState(defaultMode === 'therapist' ? false : prefs.voice);
   const modeRef = useRef<ScanMode>(mode);
   modeRef.current = mode;
@@ -112,6 +117,24 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
     return () => voice.current?.stop();
   }, [locale]);
   useEffect(() => voice.current?.setMuted(!voiceOn), [voiceOn]);
+  // Spoken instruction for each standard view as the scan reaches it.
+  useEffect(() => {
+    voice.current?.say(t(`scan.view_prompt.${view}`), `view_${view}`, 3, 0);
+  }, [view, t]);
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      gate.current.reset();
+      calibMemory.current = {};
+      manualStart.current = modeRef.current === 'therapist';
+      phaseRef.current = 'calibrating';
+      setPhase('calibrating');
+      setCountdown(null);
+      return;
+    }
+    const id = setTimeout(() => setCountdown((c) => (c === null ? null : c - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [countdown]);
 
   const onFrame = useCallback(
     (f: ProcessedFrame, ctx: { video: HTMLVideoElement; now: number; stats: { fps: number; inferenceMs: number }; provider: { info: PoseProviderInfo } }) => {
@@ -241,10 +264,15 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
                 meanInferenceMs: Math.round(ctx.stats.inferenceMs * 10) / 10,
               },
             };
-            setResults((r) => [...r.filter((x) => x.view !== view), res]);
+            const before = correctionBefore.current?.view === view ? correctionBefore.current : null;
+            correctionBefore.current = null;
+            if (before) {
+              setComparisons((c) => ({ ...c, [view]: { before, after: res } }));
+              setResults((r) => [...r.filter((x) => x.view !== view), before]);
+            } else setResults((r) => [...r.filter((x) => x.view !== view), res]);
             phaseRef.current = 'captured';
             setPhase('captured');
-            voice.current?.say(t('scan.captured'), 'captured', 3, 0);
+            voice.current?.say(before ? t('scan.correct_done') : t('scan.captured'), 'captured', 3, 0);
           }
         }
       }
@@ -277,11 +305,26 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
       setPhase('calibrating');
     } else onComplete(results);
   };
+  const startCorrection = () => {
+    if (!current) return;
+    correctionBefore.current = current;
+    phaseRef.current = 'correcting';
+    setPhase('correcting');
+    setCountdown(CORRECTION_S);
+    voice.current?.say(t('scan.correct_body', { n: CORRECTION_S }), 'correct', 3, 0);
+  };
+  const cancelCorrection = () => {
+    correctionBefore.current = null;
+    setCountdown(null);
+    phaseRef.current = 'captured';
+    setPhase('captured');
+  };
   const retake = () => {
     gate.current.reset();
     calibMemory.current = {};
     manualStart.current = false;
     setResults((r) => r.filter((x) => x.view !== view));
+    setComparisons((c) => ({ ...c, [view]: undefined }));
     setPhase('calibrating');
   };
   const setMode = (m: ScanMode) => {
@@ -412,7 +455,21 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
             )}
           </div>
         )}
-        {phase !== 'captured' && runtime.status === 'running' && (
+        {phase === 'correcting' && countdown !== null && (
+          <div className="glass stack tight" style={{ padding: '0.75rem 1rem' }} role="status" aria-live="polite">
+            <strong>{t('scan.correct_title')}</strong>
+            <p className="small" style={{ margin: 0 }}>{t('scan.correct_body', { n: CORRECTION_S })}</p>
+            <div className="row between" style={{ alignItems: 'center' }}>
+              <span className="num" style={{ fontSize: '2.2rem', fontWeight: 800 }} aria-label={t('scan.correct_left', { n: countdown })}>
+                {countdown}
+              </span>
+              <button className="btn secondary sm" style={{ background: 'transparent', color: '#f0fdfa' }} onClick={cancelCorrection}>
+                {t('scan.correct_cancel')}
+              </button>
+            </div>
+          </div>
+        )}
+        {phase !== 'captured' && phase !== 'correcting' && runtime.status === 'running' && (
           <>
             <div className="glass" style={{ padding: '0.75rem 1rem' }}>
               <p className="small" style={{ marginBottom: '0.5rem' }}>
@@ -461,7 +518,11 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
             <p className="xs" style={{ color: '#8fb0aa' }}>
               {t('scan.estimate_note')}
             </p>
-            <div className="row">
+            {comparisons[view] && <CorrectionTable view={view} pair={comparisons[view]!} />}
+            <div className="row wrap">
+              <button className="btn secondary grow" style={{ background: 'transparent', color: '#ecfdfa' }} onClick={startCorrection}>
+                {comparisons[view] ? t('scan.correct_again') : t('scan.correct_try', { n: CORRECTION_S })}
+              </button>
               <button className="btn secondary grow" style={{ background: 'transparent', color: '#ecfdfa' }} onClick={retake}>
                 {t('scan.retake')}
               </button>
@@ -472,6 +533,50 @@ export function StaticScan({ onComplete, onCancel, storeImages, defaultMode = 's
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** "+1.2°", "−0.8%", or "0.0°" for differences that round to zero (never "-0.0"). */
+export function signedChange(d: number, unit: string): string {
+  const r = Math.round(d * 10) / 10;
+  const u = unit === 'deg' ? '°' : '%';
+  return r === 0 ? `0.0${u}` : `${r > 0 ? '+' : '−'}${Math.abs(r).toFixed(1)}${u}`;
+}
+
+/** Before / after a self-correction: only metrics measured in BOTH captures get numbers. Coaching only. */
+function CorrectionTable({ view, pair }: { view: ViewOrientation; pair: { before: ScanViewResult; after: ScanViewResult } }) {
+  const { t } = useT();
+  const b = capturedStatuses(view, pair.before.metrics, pair.before.landmarks, pair.before.frameWidth, pair.before.frameHeight);
+  const a = capturedStatuses(view, pair.after.metrics, pair.after.landmarks, pair.after.frameWidth, pair.after.frameHeight);
+  return (
+    <div className="stack tight">
+      <strong className="small">{t('scan.correct_compare')}</strong>
+      <table className="data compact" style={{ color: '#f0fdfa' }}>
+        <thead>
+          <tr>
+            <th>{t('scan.correct_measure')}</th>
+            <th className="num">{t('scan.correct_before')}</th>
+            <th className="num">{t('scan.correct_after')}</th>
+            <th className="num">{t('scan.correct_change')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {b.map((x) => {
+            const y = a.find((m) => m.id === x.id);
+            const both = x.state === 'measured' && y?.state === 'measured' ? { x, y } : null;
+            return (
+              <tr key={x.id}>
+                <td>{t(`posture.${x.id}`)}</td>
+                <td className="num">{x.state === 'measured' ? formatMetric(x) : '—'}</td>
+                <td className="num">{y?.state === 'measured' ? formatMetric(y) : '—'}</td>
+                <td className="num">{both ? signedChange(both.y.value - both.x.value, both.x.unit) : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="xs" style={{ color: '#94a3b8', margin: 0 }}>{t('scan.correct_note')}</p>
     </div>
   );
 }

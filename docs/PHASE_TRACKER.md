@@ -140,6 +140,54 @@ The brief was applied to this app rather than rebuilt in Next.js. Where each req
 | D — intake, red flags, side-by-side summary | Assessment steps; clinician workspace summary by category |
 | E — planner with evidence and rule explanations | `ProgramBuilder.tsx` + `EvidencePanel.tsx`; "Why?" and reasoning tabs |
 
+## Clinic back office and competitor-informed features — added 6 Oct 2026
+
+Features were chosen after reviewing a competitor's public pages. They are built in our own design and wording; none of the competitor's text, code or images was copied.
+
+- **Theme:** system typeface; slate neutrals; teal accent. Text and buttons use teal-700 for 5.5:1 contrast. The custom Latin web fonts were removed; Tamil keeps Noto Sans Tamil.
+- **Schedule** (`/c/schedule`):
+  - month calendar and day agenda;
+  - booking with a double-booking check;
+  - attended, missed or cancelled status;
+  - staff list;
+  - WhatsApp reminder carrying only the date, time, clinic and staff name.
+- **Billing** (`/c/billing`):
+  - treatment courses, with sessions counted from attendance only;
+  - payments in paise and outstanding dues;
+  - expenses;
+  - 12-month statement and chart;
+  - CSV exports that are formula-safe and recorded in the audit log.
+- **Discharge summary** (`/c/patients/:id/discharge`):
+  - built from recorded data plus the physiotherapist's own text;
+  - signed versions are append-only;
+  - shows as preliminary again when the patient's data changes (fingerprint check).
+- **Reports:** list the plan's attached PubMed evidence with PMID and DOI. The DOI is copied from PubMed and never constructed.
+- **Onboarding:** asks for equipment at home and minutes per day (patient-reported). The program builder flags library items that need equipment the patient did not list.
+- **Library supervision level** (home / in clinic only):
+  - changed only through a new reviewed version;
+  - in-clinic-only items cannot be added to a home plan.
+- **Posture scan:**
+  - spoken prompt for each view;
+  - optional 15-second self-correction with a before/after table, coaching only (the habitual capture is the one saved).
+- **Range-of-motion measurement guide** (`/c/library/rom-guide`): instrument placement only, no normal ranges; a draft awaiting clinical review.
+- **Patient directory:** body-region filter, and an "App QR" button that encodes only the public sign-in address.
+- **Server:**
+  - `treatmentCourses`, `payments`, `expenses` and `discharges` are physiotherapist-only;
+  - `discharges` is append-only;
+  - migrations `20261006000001` and `20261006000002`, applied to the live project and covered by `db/supabase_test.sql`.
+- **Deliberately not built:**
+  - disease likelihood percentages;
+  - spine curvature or Q-angle from a single camera;
+  - centimetre measurements;
+  - pre-filled sign-off names;
+  - "AI recovery %";
+  - public report links;
+  - revenue split by patient gender.
+- **Open questions:**
+  - retention of financial records after a patient deletes their account (currently erased with the patient's data; tax-record rules need advice);
+  - kinesiophobia questionnaire licensing;
+  - more Indian languages (each needs clinical translation review).
+
 ## Pending human approval or real-device / clinical validation
 - **Dheepika's approval** of the claims, rules, content, validation plan, incident process and release: **pending (on hold)**. Nothing was recorded or simulated.
 - **Owner decisions:**

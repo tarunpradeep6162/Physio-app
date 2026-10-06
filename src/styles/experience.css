@@ -326,3 +326,5 @@ h2, h3 { letter-spacing: -.015em; }
 .form-grid .field .input { width: 100%; }
 .form-grid > .btn { justify-self: start; min-height: 44px; }
 .billing-stats .stat-value { font-size: clamp(1.25rem, 2.2vw, 1.75rem); white-space: nowrap; }
+.qr-card { position: absolute; right: 1rem; margin-top: 3rem; z-index: 20; align-items: center; box-shadow: 0 10px 30px rgba(15, 23, 42, .15); }
+.nowrap { white-space: nowrap; }

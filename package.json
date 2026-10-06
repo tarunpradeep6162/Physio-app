@@ -19,6 +19,7 @@
     "@mediapipe/tasks-vision": "^1.0.1",
     "@supabase/supabase-js": "^2.117.2",
     "jspdf": "^4.2.1",
+    "qrcode-generator": "^2.0.4",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",

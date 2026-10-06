@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { Notice } from '../../components/ui';
@@ -51,6 +52,9 @@ export function LibraryPage() {
         <span className="small muted">
           {items.length} items · {items.filter((i) => i.review.status === 'approved').length} published · {items.filter((i) => i.camera.status === 'camera_guided').length} camera-guided
         </span>
+        <Link className="btn secondary sm" to="/c/library/rom-guide">
+          ROM measurement guide
+        </Link>
       </div>
       <Notice>
         Content review and camera status are separate. <strong>Camera-guided</strong> appears only on items with a per-exercise camera definition and a QA record, and it states the QA level. Imported or templated items stay unpublished until a clinician approves the exact version. The starter items are drafts awaiting clinical review.
