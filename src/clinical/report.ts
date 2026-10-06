@@ -1,4 +1,4 @@
-import type { Assessment, CaptureSession, DB, ID, Report } from '../data/models';
+import type { Assessment, CaptureSession, DB, EvidenceRef, ID, Report } from '../data/models';
 import { openPauses } from './plan';
 import { activeProgram, age, fmtDate, fmtDateTime, programExercises, sessionsFor } from '../data/queries';
 import { getDefinition } from '../engine/exercises/definitions';
@@ -88,6 +88,19 @@ export function reportStatus(db: DB, id: ID): { state: ReportState; latest?: Rep
 /** Unit of a metric as recorded in the capture results (degrees for legacy rows). */
 const unitOf = (caps: (CaptureSession | undefined)[], metricId: string) => caps.flatMap((c) => c?.result.metrics ?? []).find((m) => m.id === metricId)?.unit ?? 'deg';
 const fmtMetric = (v: number | null, unit: string) => (v === null ? '—' : `${v}${unit === 'deg' ? '°' : unit === 's' ? ' s' : unit === 'pct_leg' ? '% leg' : ''}`);
+
+/** Literature the physiotherapist attached to the plan, as PubMed listed it (PMID, DOI links). */
+export function evidenceBlocks(refs: EvidenceRef[] | undefined): Block[] {
+  if (!refs?.length) return [];
+  return [
+    {
+      kind: 'table',
+      head: ['Evidence attached to this plan', 'Journal, year', 'PMID', 'DOI'],
+      rows: refs.map((e) => [e.title, [e.journal, e.year].filter(Boolean).join(', '), `PMID ${e.pmid} (${e.url})`, e.doi ? `https://doi.org/${e.doi}` : 'not listed']),
+    },
+    { kind: 'para', text: 'Records as returned by PubMed; chosen and appraised by the physiotherapist.', tone: 'muted' },
+  ];
+}
 
 export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'patient'): ReportModel {
   const a = db.assessments.find((x) => x.id === assessmentId) as Assessment;
@@ -303,6 +316,7 @@ export function buildReport(db: DB, assessmentId: ID, audience: 'clinician' | 'p
             head: ['Exercise', 'Side', 'Sets × reps', 'Target', 'Hold', 'Frequency', 'Progression'],
             rows: programExercises(db, prog.id).map((e) => [getDefinition(e.prescription.definitionId).id.replace(/_/g, ' '), e.prescription.side, `${e.prescription.sets} × ${e.prescription.reps}`, `${e.prescription.target.min}–${e.prescription.target.max}°`, `${e.prescription.holdSeconds} s`, `${e.prescription.frequencyPerWeek}/wk`, e.prescription.progression ?? '—']),
           },
+          ...evidenceBlocks(prog.evidence),
         ]
       : [{ kind: 'missing', text: 'No approved rehabilitation program.' }],
     'Clinician-approved',

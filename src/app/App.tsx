@@ -34,6 +34,7 @@ const ReportRoute = lazy(() => named(import('../features/report/ReportView'), 'R
 const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 'LibraryPage'));
 const SchedulePage = lazy(() => named(import('../features/clinic/SchedulePage'), 'SchedulePage'));
 const BillingPage = lazy(() => named(import('../features/clinic/BillingPage'), 'BillingPage'));
+const DischargePage = lazy(() => named(import('../features/clinic/DischargePage'), 'DischargePage'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
@@ -274,6 +275,7 @@ export function App() {
               <Route path="patients" element={<PatientList />} />
               <Route path="patients/:id" element={<PatientDetail />} />
               <Route path="patients/:id/assess" element={<ClinicAssessmentStart />} />
+              <Route path="patients/:id/discharge" element={<DischargePage />} />
               <Route path="patients/:id/assess/:region" element={<ClinicAssessment />} />
               <Route path="assessments" element={<AssessmentQueue />} />
               <Route path="assessments/:id" element={<AssessmentRoute />} />

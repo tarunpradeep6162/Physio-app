@@ -330,6 +330,12 @@ export function PatientDetail() {
             <p className="muted small">
               <span className="mono">{patientCode(patient.id)}</span> · {age(patient.dob) ?? '–'} y · {patient.sex ?? '–'} · {patient.phone ?? 'no phone'}
             </p>
+            {(patient.equipment || patient.minutesPerDay) && (
+              <p className="xs muted">
+                Patient-reported: {patient.equipment ? `at home — ${patient.equipment.length ? patient.equipment.join(', ') : 'nothing listed'}` : 'equipment not answered'}
+                {patient.minutesPerDay ? ` · about ${patient.minutesPerDay} min a day for exercise` : ''}
+              </p>
+            )}
           </div>
         </div>
         <div className="row wrap">
@@ -338,6 +344,9 @@ export function PatientDetail() {
           </Link>
           <Link to={`/c/programs/new?patient=${patient.id}`} className="btn secondary">
             Build program
+          </Link>
+          <Link to={`/c/patients/${patient.id}/discharge`} className="btn secondary">
+            Discharge
           </Link>
           <button className="btn secondary" onClick={() => nav(-1)}>
             {t('common.back')}

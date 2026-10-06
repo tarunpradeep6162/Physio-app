@@ -58,6 +58,8 @@ export interface ContentItem {
   precautions: string[];
   /** Clinician-only notes (e.g. when not to prescribe). */
   clinicianNotes?: string;
+  /** Where it may be done once prescribed: at home, or only supervised in the clinic (default home). */
+  supervision?: 'home' | 'in_clinic';
   defaultDosage: { sets: number; reps?: number; holdSeconds?: number; durationSeconds?: number; frequencyPerWeek: number };
   media: MediaAsset[];
   review: { status: ReviewStatus; owner: string; reviewedBy?: string; reviewedAt?: string; note?: string };
@@ -202,6 +204,7 @@ export function importItems(json: string, now: string, sourceRef: string): { ite
       alternatives: Array.isArray(r.alternatives) ? r.alternatives : [],
       precautions: Array.isArray(r.precautions) ? r.precautions.map(String) : [],
       clinicianNotes: r.clinicianNotes,
+      supervision: r.supervision === 'in_clinic' ? 'in_clinic' : 'home',
       defaultDosage: r.defaultDosage ?? { sets: 1, reps: 10, frequencyPerWeek: 3 },
       media: Array.isArray(r.media) ? r.media : [],
       review: { status: 'imported_unreviewed', owner: r.review?.owner ?? '' },

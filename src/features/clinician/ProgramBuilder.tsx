@@ -333,7 +333,7 @@ export function ProgramBuilder() {
       >
         <IconPlus width={18} /> Add exercise
       </button>
-      <LibraryPicker library={library} value={lib} onChange={setLib} />
+      <LibraryPicker library={library} value={lib} onChange={setLib} patientEquipment={patient?.equipment} minutesPerDay={patient?.minutesPerDay} />
       <label className="field">
         <span>Program notes (clinician only)</span>
         <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -439,7 +439,9 @@ export function ProgramBuilder() {
 }
 
 /** Approved (published) library items only; each carries its own dosage in this plan version. */
-function LibraryPicker({ library, value, onChange }: { library: ContentItem[]; value: LibraryRx[]; onChange: (v: LibraryRx[]) => void }) {
+function LibraryPicker({ library, value, onChange, patientEquipment, minutesPerDay }: { library: ContentItem[]; value: LibraryRx[]; onChange: (v: LibraryRx[]) => void; patientEquipment?: string[]; minutesPerDay?: number }) {
+  // Equipment the item needs that the patient did not list (only when the patient answered the question).
+  const missing = (it: ContentItem) => (patientEquipment ? it.equipment.filter((q) => q !== 'none' && !patientEquipment.includes(q)) : []);
   const [pick, setPick] = useState('');
   const set = (i: number, patch: Partial<LibraryRx>) => onChange(value.map((x, k) => (k === i ? { ...x, ...patch } : x)));
   const num = (v: string) => (v === '' ? undefined : Number(v));
@@ -450,6 +452,12 @@ function LibraryPicker({ library, value, onChange }: { library: ContentItem[]; v
         <h2>Library exercises (not camera-tracked)</h2>
         <span className="xs muted">Approved library items only · the patient reports completion</span>
       </div>
+      <p className="xs muted">
+        Patient-reported:{' '}
+        {patientEquipment ? `equipment at home — ${patientEquipment.length ? patientEquipment.join(', ').replace(/_/g, ' ') : 'none listed'}` : 'equipment not answered'}
+        {' · '}
+        {minutesPerDay ? `about ${minutesPerDay} min a day for exercise` : 'daily time not answered'}. In-clinic-only items cannot be added to a home plan.
+      </p>
       {value.map((l, i) => {
         const it = library.find((x) => x.id === l.itemId);
         return (
@@ -479,8 +487,9 @@ function LibraryPicker({ library, value, onChange }: { library: ContentItem[]; v
           <select className="input" style={{ width: 'auto' }} value={pick} onChange={(e) => setPick(e.target.value)} aria-label="Library item">
             <option value="">Choose an approved item…</option>
             {avail.map((it) => (
-              <option key={it.id} value={it.id}>
-                {it.title} (v{it.version})
+              <option key={it.id} value={it.id} disabled={it.supervision === 'in_clinic'}>
+                {it.title} (v{it.version}){it.supervision === 'in_clinic' ? ' — in clinic only' : ''}
+                {missing(it).length ? ` — needs ${missing(it).join(', ')}, not listed by patient` : ''}
               </option>
             ))}
           </select>
@@ -489,6 +498,7 @@ function LibraryPicker({ library, value, onChange }: { library: ContentItem[]; v
             disabled={!pick}
             onClick={() => {
               const it = library.find((x) => x.id === pick)!;
+              if (it.supervision === 'in_clinic') return;
               onChange([...value, { itemId: it.id, itemVersion: it.version, ...it.defaultDosage }]);
               setPick('');
             }}

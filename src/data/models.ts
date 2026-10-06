@@ -42,6 +42,10 @@ export interface Patient {
   preferredLanguage: 'en' | 'ta';
   concern?: string;
   goal?: string;
+  /** Patient-reported: equipment available at home (library equipment tags). */
+  equipment?: string[];
+  /** Patient-reported: minutes per day available for exercise. */
+  minutesPerDay?: number;
   /**
    * Validation-study split, fixed per PARTICIPANT (never per clip) so tuning and final-evaluation
    * data never share a person.
@@ -390,6 +394,7 @@ export interface EvidenceRef {
   journal: string;
   year: string;
   url: string;
+  doi?: string;
   query: string;
   retrievedAt: ISODate;
   attachedBy: ID;
@@ -508,6 +513,23 @@ export interface TreatmentCourse {
   note?: string;
   createdBy: ID;
   createdAt: ISODate;
+  isDemo?: boolean;
+}
+
+/**
+ * A signed discharge summary. Append-only: re-signing adds a new version. `fingerprint` captures the
+ * patient's data at signing; if it no longer matches, the summary is shown as preliminary again.
+ */
+export interface Discharge {
+  id: ID;
+  patientId: ID;
+  version: number;
+  summary: string;
+  advice: string;
+  followUp: string;
+  signedBy: ID; // clinician id
+  signedAt: ISODate;
+  fingerprint: string;
   isDemo?: boolean;
 }
 
@@ -717,6 +739,7 @@ export interface DB {
   treatmentCourses: TreatmentCourse[];
   payments: Payment[];
   expenses: Expense[];
+  discharges: Discharge[];
   settings: ClinicSettings;
 }
 

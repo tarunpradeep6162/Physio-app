@@ -41,6 +41,10 @@ do $$ begin
   raise exception 'SUPABASE TEST FAILED: patient created a treatment course';
 exception when insufficient_privilege then null; end $$;
 do $$ begin
+  insert into public.records (tbl, id, patient_id, data) values ('discharges', 'dc-x', 'pa', '{"patientId":"pa","summary":"self-signed"}');
+  raise exception 'SUPABASE TEST FAILED: patient signed a discharge summary';
+exception when insufficient_privilege then null; end $$;
+do $$ begin
   update public.records set data = '{"role":"clinician"}' where tbl = 'users';
   if (select data ->> 'role' from public.records where tbl = 'users') = 'clinician' then raise exception 'SUPABASE TEST FAILED: patient became clinician'; end if;
 exception when insufficient_privilege then null; end $$;
@@ -73,6 +77,11 @@ select pg_temp.expect((select count(*) from public.records where patient_id = 'p
 insert into public.records (tbl, id, patient_id, data) values ('programs', 'pg1', 'pa', '{"patientId":"pa","status":"active"}');
 select pg_temp.expect((select count(*) from public.profiles) = 3, 'physiotherapist reads the organisation''s profiles');
 -- Append-only history cannot be edited, even by the physiotherapist.
+insert into public.records (tbl, id, patient_id, data) values ('discharges', 'dc1', 'pa', '{"patientId":"pa","summary":"Goals met"}');
+do $$ begin
+  update public.records set data = '{"summary":"rewritten"}' where tbl = 'discharges' and id = 'dc1';
+  raise exception 'SUPABASE TEST FAILED: signed discharge edited';
+exception when insufficient_privilege then null; end $$;
 do $$ begin
   update public.records set data = '{"action":"edited"}' where tbl = 'audit' and id = 'ev1';
   raise exception 'SUPABASE TEST FAILED: audit edited';

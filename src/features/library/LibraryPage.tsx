@@ -116,6 +116,7 @@ export function LibraryPage() {
                 <span className="row wrap" style={{ gap: '0.3rem' }}>
                   <span className={`badge ${STATUS_TONE[it.review.status]}`}>{STATUS_TEXT[it.review.status]}</span>
                   {cam && <span className="badge review">{cam}</span>}
+                  <span className={`badge ${it.supervision === 'in_clinic' ? 'warn' : ''}`}>{it.supervision === 'in_clinic' ? 'In clinic only' : 'Home after prescription'}</span>
                   {problems.length > 0 && <span className="badge warn">{problems.length} to complete</span>}
                 </span>
               </button>
@@ -129,6 +130,7 @@ export function LibraryPage() {
                 if (kind === 'changes') act(() => requestChanges(it, user.id, note || 'Changes requested'), 'Returned to draft.');
                 if (kind === 'retire') act(() => retire(it, user.id, note || 'Retired'), 'Retired.');
                 if (kind === 'version') act(() => void newVersion(it, {}, user.id), 'New draft version created.');
+                if (kind === 'supervision') act(() => void newVersion(it, { supervision: it.supervision === 'in_clinic' ? 'home' : 'in_clinic' }, user.id), 'New draft version with the supervision level changed — review and approve it to use it.');
               }} />}
             </article>
           );
@@ -144,7 +146,7 @@ export function LibraryPage() {
   );
 }
 
-function ItemDetail({ item, problems, trail, note, setNote, onAction }: { item: ContentItem; problems: string[]; trail: { action: string; version: string; at: string; note?: string }[]; note: string; setNote: (s: string) => void; onAction: (k: 'submit' | 'approve' | 'changes' | 'retire' | 'version') => void }) {
+function ItemDetail({ item, problems, trail, note, setNote, onAction }: { item: ContentItem; problems: string[]; trail: { action: string; version: string; at: string; note?: string }[]; note: string; setNote: (s: string) => void; onAction: (k: 'submit' | 'approve' | 'changes' | 'retire' | 'version' | 'supervision') => void }) {
   const s = item.review.status;
   return (
     <div className="stack tight">
@@ -156,6 +158,14 @@ function ItemDetail({ item, problems, trail, note, setNote, onAction }: { item: 
       </ol>
       <div className="small">
         <strong>Precautions:</strong> {item.precautions.join(' ') || '—'}
+      </div>
+      <div className="small row wrap" style={{ gap: '0.5rem' }}>
+        <span>
+          <strong>Where it may be done:</strong> {item.supervision === 'in_clinic' ? 'in clinic only, supervised — cannot be added to a home plan' : 'at home once a physiotherapist prescribes it'}
+        </span>
+        <button className="btn ghost sm" onClick={() => onAction('supervision')}>
+          {item.supervision === 'in_clinic' ? 'Allow at home (new version)' : 'Make in-clinic only (new version)'}
+        </button>
       </div>
       <div className="small">
         <strong>Default dosage:</strong> {item.defaultDosage.sets} set(s){item.defaultDosage.reps ? ` × ${item.defaultDosage.reps}` : ''}

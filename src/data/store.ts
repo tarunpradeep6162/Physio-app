@@ -93,6 +93,7 @@ export function emptyDb(): DB {
     treatmentCourses: [],
     payments: [],
     expenses: [],
+    discharges: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -143,7 +144,7 @@ export function migrate(parsed: DB): DB {
   // v5 → v6: activitySamples / activityImports start empty (Phase 11).
   // v6 → v7: contentItems, contentReviews and programLibraryItems start empty (Phase 16).
   // v7 → v8: deviceMeasurements starts empty (Phase 18).
-  // v8 → v9: treatmentCourses, payments and expenses start empty (clinic back office).
+  // v8 → v9: treatmentCourses, payments, expenses and discharges start empty (clinic back office).
   return out;
 }
 
@@ -301,6 +302,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   treatmentCourses: () => true,
   payments: () => true,
   expenses: () => true,
+  discharges: () => true,
   notes: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',
@@ -310,7 +312,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
 export class AuthorizationError extends Error {}
 
 /** History tables: rows are never edited or deleted through the app (Phase 9 append-only history). */
-const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['contentReviews', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
+const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['discharges', 'contentReviews', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
 function assertAppendOnly(table: Table, op: string) {
   if (APPEND_ONLY.has(table)) throw new AuthorizationError(`${table} is append-only history; ${op} is not allowed.`);
 }

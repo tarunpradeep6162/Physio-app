@@ -19,6 +19,8 @@ export interface PubMedRef {
   journal: string;
   year: string;
   url: string;
+  /** DOI as listed in PubMed's article identifiers, when present (never constructed). */
+  doi?: string;
   /** The search that returned it and when — for provenance. */
   query: string;
   retrievedAt: string;
@@ -42,12 +44,13 @@ export function parseSummary(json: unknown, ids: string[], query: string, retrie
   if (!res) throw new PubMedError('Unexpected summary response from PubMed');
   const out: PubMedRef[] = [];
   for (const id of ids) {
-    const r = res[id] as { uid?: string; title?: unknown; fulljournalname?: unknown; source?: unknown; pubdate?: unknown; error?: unknown } | undefined;
+    const r = res[id] as { uid?: string; title?: unknown; fulljournalname?: unknown; source?: unknown; pubdate?: unknown; error?: unknown; articleids?: unknown } | undefined;
     if (!r || r.error || typeof r.title !== 'string' || !r.title.trim()) continue;
     const pmid = String(r.uid ?? id);
     const journal = typeof r.fulljournalname === 'string' && r.fulljournalname ? r.fulljournalname : typeof r.source === 'string' ? r.source : '';
     const year = typeof r.pubdate === 'string' ? (r.pubdate.match(/\d{4}/)?.[0] ?? '') : '';
-    out.push({ pmid, title: r.title, journal, year, url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, query, retrievedAt });
+    const doiRow = Array.isArray(r.articleids) ? (r.articleids as { idtype?: unknown; value?: unknown }[]).find((a) => a?.idtype === 'doi' && typeof a.value === 'string' && /^10\.\d{4,9}\/\S+$/.test(a.value)) : undefined;
+    out.push({ pmid, title: r.title, journal, year, url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, ...(doiRow ? { doi: doiRow.value as string } : {}), query, retrievedAt });
   }
   return out;
 }

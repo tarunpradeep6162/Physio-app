@@ -15,7 +15,7 @@ export interface RemoteRow {
 }
 
 /** Mirrors dl_append_only() on the server: these rows are inserted once and never updated. */
-export const APPEND_ONLY_TABLES = new Set(['audit', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments', 'contentReviews']);
+export const APPEND_ONLY_TABLES = new Set(['discharges', 'audit', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments', 'contentReviews']);
 /** The patient's own identity rows go first: the server checks other rows against them. */
 export const IDENTITY_TABLES = new Set(['users', 'patients']);
 /** Organisation-level tables with no patient. */

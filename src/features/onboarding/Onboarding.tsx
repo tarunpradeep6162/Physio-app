@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { IconCamera, IconShield } from '../../components/icons';
-import { Notice, Segmented, Steps } from '../../components/ui';
+import { ChipGroup, Notice, Segmented, Steps } from '../../components/ui';
+import { EQUIPMENT, type Equipment } from '../../content/library';
 import type { ConsentType } from '../../data/models';
 import { setPrefs } from '../../data/prefs';
 import { insert, update, uuid } from '../../data/store';
@@ -28,6 +29,8 @@ export function Onboarding() {
   const [concern, setConcern] = useState(patient?.concern ?? '');
   const [goal, setGoal] = useState(patient?.goal ?? '');
   const [area, setArea] = useState<PathwayRegion>('knee');
+  const [equipment, setEquipment] = useState<Equipment[]>((patient?.equipment ?? []) as Equipment[]);
+  const [minutes, setMinutes] = useState<string>(patient?.minutesPerDay ? String(patient.minutesPerDay) : '');
 
   if (!user || !patient) return null;
 
@@ -42,7 +45,7 @@ export function Onboarding() {
     setStep(2);
   };
   const finish = () => {
-    update('patients', patient.id, { concern, goal }, user.id, 'concern');
+    update('patients', patient.id, { concern, goal, equipment: equipment.length ? equipment : undefined, minutesPerDay: minutes ? Number(minutes) : undefined }, user.id, 'concern');
     nav(area === 'knee' ? '/p/assess' : `/p/assess/${area}`);
   };
 
@@ -164,6 +167,15 @@ export function Onboarding() {
             <span>{t('onb.concern.goal')}</span>
             <textarea className="input" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={t('onb.concern.goal_placeholder')} />
           </label>
+          <div className="stack tight">
+            <span>{t('onb.equipment')}</span>
+            <span className="xs muted">{t('onb.equipment_hint')}</span>
+            <ChipGroup<Equipment> multi label={t('onb.equipment')} value={equipment} onChange={setEquipment} options={EQUIPMENT.map((id) => ({ id, label: t(`equip.${id}`) }))} />
+          </div>
+          <div className="stack tight">
+            <span>{t('onb.minutes')}</span>
+            <Segmented<string> label={t('onb.minutes')} value={minutes} onChange={setMinutes} options={['10', '15', '20', '30', '45'].map((id) => ({ id, label: t('onb.minutes_n', { n: id }) }))} />
+          </div>
           <div className="row">
             <button className="btn secondary" onClick={() => setStep(1)}>
               {t('common.back')}
