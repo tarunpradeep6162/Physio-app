@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { regionLabel, type BodyView } from './regions';
 
-interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: () => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
+interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: (reason: 'webgl' | 'model') => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 const ROOT = 'https://raw.githubusercontent.com/JohanBellander/BodyExplorer/7d04bf3c4de2bd9cb234dd51d7e6857c099afafd/public/';
 
@@ -64,7 +64,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const el = host.current; if (!el) return;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); }
-    catch { unavailableRef.current(); return; }
+    catch { unavailableRef.current('webgl'); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -112,7 +112,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
       });
       add(anatomy, muscle, muscles); add(skeleton, bone, bones);
       setStatus(''); render();
-    }).catch(() => { if (!disposed) unavailableRef.current(); });
+    }).catch((error) => { if (!disposed) { console.error('Anatomical model could not load', error); unavailableRef.current('model'); } });
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), canvas = renderer.domElement;
     const hit = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(pointer, camera); const part = ray.intersectObjects(muscles)[0]?.object as Part | undefined; return part ? idFor(part) : null; };
     const down = (e: PointerEvent) => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false }; };
