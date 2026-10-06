@@ -6,7 +6,9 @@ import { CategoryBadge, ConfidenceBadge, DemoBadge, fmtDeg, initials, Notice, Se
 import { diffPlans, openPauses, planHistory, reassessmentDue } from '../../clinical/plan';
 import type { Alert, Appointment, DailyCheckin, DB, Patient } from '../../data/models';
 import { activeProgram, adherence, age, fmtDate, fmtDateTime, latestAssessment, openAlerts, programExercises, sessionsFor } from '../../data/queries';
-import { insert, update, useDb, uuid } from '../../data/store';
+import { insert, recordAudit, update, useDb, uuid } from '../../data/store';
+import { toCsv } from '../../clinic/backoffice';
+import { RegisterPatientForm } from '../clinic/RegisterPatient';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { MEASUREMENTS, type MeasurementType } from '../../engine/measurements';
 import { patientCode } from '../../clinical/directory';
@@ -189,10 +191,14 @@ export function ClinicianOverview() {
   );
 }
 
-type Filter = 'all' | 'review' | 'alerts' | 'low_adherence';
+type Filter = 'all' | 'review' | 'alerts' | 'low_adherence' | 'program' | 'completed';
+const PAGE = 20;
 
 export function PatientList() {
+  const user = useCurrentUser();
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(0);
+  const [registering, setRegistering] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [region, setRegion] = useState<PathwayRegion | ''>('');
   const db = useDb((d) => d);
@@ -205,25 +211,87 @@ export function PatientList() {
     .filter((p) => inRegion(p.id))
     .filter((p) => {
       const s = q.trim().toLowerCase();
-      return !s || p.name.toLowerCase().includes(s) || (p.concern ?? '').toLowerCase().includes(s) || patientCode(p.id).toLowerCase().includes(s);
+      const digits = s.replace(/\D/g, '');
+      return !s || p.name.toLowerCase().includes(s) || (p.concern ?? '').toLowerCase().includes(s) || patientCode(p.id).toLowerCase().includes(s) || (digits.length >= 4 && (p.phone ?? '').replace(/\D/g, '').includes(digits));
     })
     .filter((p) => {
       if (filter === 'review') return db.assessments.some((a) => a.patientId === p.id && (a.status === 'submitted' || a.status === 'safety_hold'));
       if (filter === 'alerts') return openAlerts(db, p.id).length > 0;
       if (filter === 'low_adherence') return (adherence(db, p.id, 28).pct ?? 1) < 0.5;
+      if (filter === 'program') return !!activeProgram(db, p.id);
+      if (filter === 'completed') return completedRehab(db, p.id);
       return true;
     });
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE));
+  const pg = Math.min(page, pages - 1);
+  const shown = rows.slice(pg * PAGE, pg * PAGE + PAGE);
+  const visits = (db.appointments ?? []).filter((a) => a.status === 'done').length;
+  const choose = (f: Filter) => {
+    setFilter(f);
+    setPage(0);
+  };
+  const exportCsv = () => {
+    if (!user) return;
+    const csv = toCsv(
+      ['Patient ID', 'Name', 'Age', 'Sex', 'Phone', 'Presenting complaint (patient words)', 'Registered', 'Active program', 'Adherence 28 d %'],
+      rows.map((p) => {
+        const a = adherence(db, p.id, 28).pct;
+        return [patientCode(p.id), p.name, age(p.dob) ?? '', p.sex ?? '', p.phone ?? '', p.concern ?? '', p.createdAt.slice(0, 10), activeProgram(db, p.id)?.title ?? '', a === null ? '' : Math.round(a * 100)];
+      }),
+    );
+    const el = document.createElement('a');
+    el.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    el.download = `patients-${new Date().toISOString().slice(0, 10)}.csv`;
+    el.click();
+    setTimeout(() => URL.revokeObjectURL(el.href), 1000);
+    recordAudit(user.id, 'export', 'patients', 'csv', `${rows.length} rows; filter ${filter}${region ? `, region ${region}` : ''}${q.trim() ? ', search' : ''}`);
+  };
   return (
     <div className="content stack loose">
       <div className="row between wrap">
         <h1>Registered patient directory</h1>
-        <span className="small muted">{db.patients.length} patient{db.patients.length === 1 ? '' : 's'}</span>
+        <div className="row wrap no-print">
+          <button className="btn primary sm" aria-expanded={registering} onClick={() => setRegistering((v) => !v)}>
+            <IconPlus width={16} /> Register patient
+          </button>
+          <button className="btn secondary sm" onClick={exportCsv} disabled={!rows.length}>
+            Export CSV
+          </button>
+          <button className="btn secondary sm" onClick={() => window.print()}>
+            Print
+          </button>
+        </div>
+      </div>
+      {registering && user && (
+        <section className="panel no-print" aria-label="Register patient">
+          <RegisterPatientForm db={db} actorId={user.id} />
+        </section>
+      )}
+      <div className="grid cols-4 directory-cards no-print">
+        {(
+          [
+            ['all', 'Total patients', db.patients.length, 'All registered'],
+            ['all', 'Visits attended', visits, 'Marked attended in the schedule'],
+            ['program', 'Active programs', db.patients.filter((p) => activeProgram(db, p.id)).length, 'Show patients'],
+            ['completed', 'Completed rehab', db.patients.filter((p) => completedRehab(db, p.id)).length, 'Discharged or course completed'],
+          ] as [Filter, string, number, string][]
+        ).map(([f, label, n, sub], i) =>
+          i === 1 ? (
+            <Link key={label} to="/c/schedule" className="panel stat-button">
+              <Stat label={label} value={n} sub={sub} />
+            </Link>
+          ) : (
+            <button key={label} type="button" className="panel stat-button" aria-pressed={filter === f} onClick={() => choose(f)}>
+              <Stat label={label} value={n} sub={sub} />
+            </button>
+          ),
+        )}
       </div>
       <div className="row wrap">
-        <input className="input grow" style={{ minWidth: 220 }} placeholder="Search by name, patient ID or complaint…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search patients" />
+        <input className="input grow" style={{ minWidth: 220 }} placeholder="Search by name, phone, patient ID or complaint…" value={q} onChange={(e) => { setQ(e.target.value); setPage(0); }} aria-label="Search patients" />
         <label className="field" style={{ margin: 0 }}>
           <span className="sr-only">Body region</span>
-          <select className="input" value={region} onChange={(e) => setRegion(e.target.value as PathwayRegion | '')} aria-label="Body region">
+          <select className="input" value={region} onChange={(e) => { setRegion(e.target.value as PathwayRegion | ''); setPage(0); }} aria-label="Body region">
             <option value="">All body regions</option>
             {PATHWAY_ORDER.map((r) => (
               <option key={r} value={r}>
@@ -235,9 +303,11 @@ export function PatientList() {
         <Segmented<Filter>
           label="Filter"
           value={filter}
-          onChange={setFilter}
+          onChange={choose}
           options={[
             { id: 'all', label: 'All' },
+            { id: 'program', label: 'On a program' },
+            { id: 'completed', label: 'Completed' },
             { id: 'review', label: 'Needs review' },
             { id: 'alerts', label: 'Alerts' },
             { id: 'low_adherence', label: 'Low adherence' },
@@ -261,7 +331,7 @@ export function PatientList() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => {
+            {shown.map((p) => {
               const prog = activeProgram(db, p.id);
               const a = adherence(db, p.id, 28);
               const last = sessionsFor(db, p.id)[0];
@@ -304,8 +374,27 @@ export function PatientList() {
         </table>
         {rows.length === 0 && <p className="muted" style={{ padding: '1rem' }}>No patients match.</p>}
       </div>
+      {rows.length > PAGE && (
+        <nav className="row between no-print" aria-label="Pages">
+          <button className="btn secondary sm" disabled={pg === 0} onClick={() => setPage(pg - 1)}>
+            Previous
+          </button>
+          <span className="small muted">
+            {pg * PAGE + 1}–{Math.min(rows.length, pg * PAGE + PAGE)} of {rows.length}
+          </span>
+          <button className="btn secondary sm" disabled={pg >= pages - 1} onClick={() => setPage(pg + 1)}>
+            Next
+          </button>
+        </nav>
+      )}
+      <p className="xs muted no-print">Exports contain the rows currently filtered and are recorded in the audit log. Handle exported files as patient records.</p>
     </div>
   );
+}
+
+/** Discharged (signed summary) or a treatment course marked completed. Counted, never inferred. */
+function completedRehab(db: DB, patientId: string): boolean {
+  return (db.discharges ?? []).some((d) => d.patientId === patientId) || (db.treatmentCourses ?? []).some((c) => c.patientId === patientId && c.status === 'completed');
 }
 
 type Tab = 'overview' | 'assessment' | 'measurements' | 'pros' | 'programs' | 'sessions' | 'progress' | 'trends' | 'devices' | 'notes';

@@ -21,6 +21,10 @@ export interface PubMedRef {
   url: string;
   /** DOI as listed in PubMed's article identifiers, when present (never constructed). */
   doi?: string;
+  /** PubMed Central id when PubMed lists one (free full text). */
+  pmcid?: string;
+  /** Publication types exactly as PubMed lists them. */
+  pubTypes?: string[];
   /** The search that returned it and when — for provenance. */
   query: string;
   retrievedAt: string;
@@ -44,13 +48,15 @@ export function parseSummary(json: unknown, ids: string[], query: string, retrie
   if (!res) throw new PubMedError('Unexpected summary response from PubMed');
   const out: PubMedRef[] = [];
   for (const id of ids) {
-    const r = res[id] as { uid?: string; title?: unknown; fulljournalname?: unknown; source?: unknown; pubdate?: unknown; error?: unknown; articleids?: unknown } | undefined;
+    const r = res[id] as { uid?: string; title?: unknown; fulljournalname?: unknown; source?: unknown; pubdate?: unknown; error?: unknown; articleids?: unknown; pubtype?: unknown } | undefined;
     if (!r || r.error || typeof r.title !== 'string' || !r.title.trim()) continue;
     const pmid = String(r.uid ?? id);
     const journal = typeof r.fulljournalname === 'string' && r.fulljournalname ? r.fulljournalname : typeof r.source === 'string' ? r.source : '';
     const year = typeof r.pubdate === 'string' ? (r.pubdate.match(/\d{4}/)?.[0] ?? '') : '';
     const doiRow = Array.isArray(r.articleids) ? (r.articleids as { idtype?: unknown; value?: unknown }[]).find((a) => a?.idtype === 'doi' && typeof a.value === 'string' && /^10\.\d{4,9}\/\S+$/.test(a.value)) : undefined;
-    out.push({ pmid, title: r.title, journal, year, url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, ...(doiRow ? { doi: doiRow.value as string } : {}), query, retrievedAt });
+    const pmcRow = Array.isArray(r.articleids) ? (r.articleids as { idtype?: unknown; value?: unknown }[]).find((a) => a?.idtype === 'pmc' && typeof a.value === 'string' && /^PMC\d+$/.test(a.value)) : undefined;
+    const pubTypes = Array.isArray(r.pubtype) ? (r.pubtype as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    out.push({ pmid, title: r.title, journal, year, url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`, ...(doiRow ? { doi: doiRow.value as string } : {}), ...(pmcRow ? { pmcid: pmcRow.value as string } : {}), ...(pubTypes.length ? { pubTypes } : {}), query, retrievedAt });
   }
   return out;
 }
@@ -74,4 +80,60 @@ export async function searchPubMed(query: string, opts: { retmax?: number; fetch
   if (!s.ids.length) return { count: s.count, refs: [] };
   const summary = await get(`${EUTILS}/esummary.fcgi?${common}&id=${s.ids.join(',')}`);
   return { count: s.count, refs: parseSummary(summary, s.ids, term, (opts.now ?? (() => new Date().toISOString()))()) };
+}
+
+/** PubMed's own filters, appended to the clinician's terms. Names describe the filter, not quality. */
+export const RESEARCH_FILTERS = {
+  systematic: { label: 'Systematic reviews', term: 'systematic[sb]' },
+  guideline: { label: 'Guidelines', term: '(guideline[pt] OR practice guideline[pt])' },
+  rct: { label: 'Randomised controlled trials', term: 'randomized controlled trial[pt]' },
+  free: { label: 'Free full text', term: 'free full text[sb]' },
+  recent: { label: 'Last 5 years', term: '"last 5 years"[dp]' },
+} as const;
+export type ResearchFilter = keyof typeof RESEARCH_FILTERS;
+
+export function buildQuery(terms: string, filters: ResearchFilter[]): string {
+  const t = terms.trim();
+  if (!t) return '';
+  return [`(${t})`, ...filters.map((f) => RESEARCH_FILTERS[f].term)].join(' AND ');
+}
+
+export interface AbstractSection {
+  label?: string;
+  text: string;
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const decode = (s: string) =>
+  s
+    .replace(/<[^>]+>/g, '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|lt|gt|quot|apos);/g, (_, e) => ENTITIES[e])
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Abstract sections from an efetch XML record, verbatim (markup removed). Empty when PubMed has no abstract. */
+export function parseAbstractXml(xml: string): AbstractSection[] {
+  const out: AbstractSection[] = [];
+  const re = /<AbstractText(\s[^>]*)?>([\s\S]*?)<\/AbstractText>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml))) {
+    const label = m[1]?.match(/Label="([^"]*)"/)?.[1];
+    const text = decode(m[2]);
+    if (text) out.push({ ...(label ? { label: decode(label) } : {}), text });
+  }
+  return out;
+}
+
+export async function fetchAbstract(pmid: string, fetchImpl: typeof fetch = fetch): Promise<AbstractSection[]> {
+  if (!/^\d+$/.test(pmid)) throw new PubMedError('Invalid PMID');
+  let res: Response;
+  try {
+    res = await fetchImpl(`${EUTILS}/efetch.fcgi?db=pubmed&retmode=xml&rettype=abstract&tool=${TOOL}&id=${pmid}`);
+  } catch {
+    throw new PubMedError('PubMed could not be reached. Check the connection and try again.');
+  }
+  if (!res.ok) throw new PubMedError(`PubMed returned an error (${res.status}). Try again shortly.`);
+  return parseAbstractXml(await res.text());
 }

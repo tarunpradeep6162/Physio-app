@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSearch, parseSummary, PubMedError, searchPubMed } from './pubmed';
+import { buildQuery, fetchAbstract, parseAbstractXml, parseSearch, parseSummary, PubMedError, searchPubMed } from './pubmed';
 
 // Shapes copied from real E-utilities responses (PMIDs checked against PubMed on 30 Sep 2026).
 const SEARCH = { esearchresult: { count: '2', retmax: '2', idlist: ['25629215', '28666405'] } };
@@ -58,5 +58,25 @@ describe('PubMed evidence lookup — records exactly as PubMed returns them', ()
     await expect(searchPubMed('x', { fetchImpl: f })).rejects.toBeInstanceOf(PubMedError);
     const bad = (async () => ({ ok: false, status: 429, json: async () => ({}) })) as unknown as typeof fetch;
     await expect(searchPubMed('x', { fetchImpl: bad })).rejects.toThrow(/429/);
+  });
+});
+
+describe('research: filters, abstracts and free full text', () => {
+  it('appends PubMed filters to the terms', () => {
+    expect(buildQuery(' knee osteoarthritis exercise ', ['systematic', 'free'])).toBe('(knee osteoarthritis exercise) AND systematic[sb] AND free full text[sb]');
+    expect(buildQuery('  ', ['free'])).toBe('');
+  });
+  it('parses structured abstracts verbatim, without markup', () => {
+    const xml = '<Abstract><AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Knee pain &amp; <i>function</i>.</AbstractText><AbstractText Label="RESULTS">n = 120; p &lt; 0.05</AbstractText></Abstract>';
+    expect(parseAbstractXml(xml)).toEqual([
+      { label: 'BACKGROUND', text: 'Knee pain & function.' },
+      { label: 'RESULTS', text: 'n = 120; p < 0.05' },
+    ]);
+    expect(parseAbstractXml('<PubmedArticle></PubmedArticle>')).toEqual([]);
+  });
+  it('returns an error rather than placeholder text when PubMed fails', async () => {
+    const fail = (async () => new Response('x', { status: 503 })) as unknown as typeof fetch;
+    await expect(fetchAbstract('123', fail)).rejects.toThrow('503');
+    await expect(fetchAbstract('abc', fail)).rejects.toThrow('Invalid PMID');
   });
 });

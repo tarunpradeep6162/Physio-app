@@ -135,7 +135,7 @@ export function LibraryPage() {
                 if (kind === 'retire') act(() => retire(it, user.id, note || 'Retired'), 'Retired.');
                 if (kind === 'version') act(() => void newVersion(it, {}, user.id), 'New draft version created.');
                 if (kind === 'supervision') act(() => void newVersion(it, { supervision: it.supervision === 'in_clinic' ? 'home' : 'in_clinic' }, user.id), 'New draft version with the supervision level changed — review and approve it to use it.');
-              }} />}
+              }} onCoaching={(cues, mistakes) => act(() => void newVersion(it, { cues: cues.length ? cues : undefined, commonMistakes: mistakes.length ? mistakes : undefined }, user.id), 'Saved as a draft version — review and approve it before patients see the change.')} />}
             </article>
           );
         })}
@@ -150,7 +150,7 @@ export function LibraryPage() {
   );
 }
 
-function ItemDetail({ item, problems, trail, note, setNote, onAction }: { item: ContentItem; problems: string[]; trail: { action: string; version: string; at: string; note?: string }[]; note: string; setNote: (s: string) => void; onAction: (k: 'submit' | 'approve' | 'changes' | 'retire' | 'version' | 'supervision') => void }) {
+function ItemDetail({ item, problems, trail, note, setNote, onAction, onCoaching }: { item: ContentItem; problems: string[]; trail: { action: string; version: string; at: string; note?: string }[]; note: string; setNote: (s: string) => void; onAction: (k: 'submit' | 'approve' | 'changes' | 'retire' | 'version' | 'supervision') => void; onCoaching: (cues: string[], mistakes: string[]) => void }) {
   const s = item.review.status;
   return (
     <div className="stack tight">
@@ -163,6 +163,7 @@ function ItemDetail({ item, problems, trail, note, setNote, onAction }: { item: 
       <div className="small">
         <strong>Precautions:</strong> {item.precautions.join(' ') || '—'}
       </div>
+      <CoachingEditor item={item} onSave={onCoaching} />
       <div className="small row wrap" style={{ gap: '0.5rem' }}>
         <span>
           <strong>Where it may be done:</strong> {item.supervision === 'in_clinic' ? 'in clinic only, supervised — cannot be added to a home plan' : 'at home once a physiotherapist prescribes it'}
@@ -257,5 +258,53 @@ function ImportPanel({ onImport }: { onImport: (json: string, name: string) => v
         }}
       />
     </section>
+  );
+}
+
+/** Coaching cues and common mistakes (one per line). Saving creates a draft version for review. */
+function CoachingEditor({ item, onSave }: { item: ContentItem; onSave: (cues: string[], mistakes: string[]) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [cues, setCues] = useState((item.cues ?? []).join('\n'));
+  const [mistakes, setMistakes] = useState((item.commonMistakes ?? []).join('\n'));
+  const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+  return (
+    <div className="small stack tight">
+      <div>
+        <strong>Cues:</strong> {item.cues?.length ? item.cues.join(' · ') : '—'}
+      </div>
+      <div>
+        <strong>Common mistakes:</strong> {item.commonMistakes?.length ? item.commonMistakes.join(' · ') : '—'}
+      </div>
+      {!editing ? (
+        <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }} onClick={() => setEditing(true)}>
+          Edit cues and common mistakes
+        </button>
+      ) : (
+        <div className="stack tight">
+          <label className="field">
+            <span>Cues (one per line)</span>
+            <textarea className="input" rows={3} value={cues} onChange={(e) => setCues(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Common mistakes (one per line)</span>
+            <textarea className="input" rows={3} value={mistakes} onChange={(e) => setMistakes(e.target.value)} />
+          </label>
+          <div className="row">
+            <button
+              className="btn primary sm"
+              onClick={() => {
+                onSave(lines(cues), lines(mistakes));
+                setEditing(false);
+              }}
+            >
+              Save as draft version
+            </button>
+            <button className="btn ghost sm" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

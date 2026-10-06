@@ -105,6 +105,10 @@ export interface PublishInput {
   startDate: string;
   endDate: string;
   notes?: string;
+  /** Shown to the patient: home advice (e.g. ice or heat, activity pacing) in the clinician's words. */
+  patientAdvice?: string;
+  /** Shown to the patient: when to stop and what to avoid. */
+  patientPrecautions?: string;
   changeReason?: string;
   reassessAfterDays?: number;
   reassessTriggers?: ReassessTrigger[];
@@ -169,6 +173,8 @@ export function preparePublish(db: DB, input: PublishInput, now: string, newId: 
     approvedAt: now,
     approvedBy: input.clinicianId,
     notes: input.notes?.trim() || undefined,
+    patientAdvice: input.patientAdvice?.trim() || undefined,
+    patientPrecautions: input.patientPrecautions?.trim() || undefined,
     createdAt: now,
     version: (previous?.version ?? versionCount(db, input.patientId)) + 1,
     supersedes: previous?.id,

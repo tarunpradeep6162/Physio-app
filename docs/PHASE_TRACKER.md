@@ -231,3 +231,19 @@ Features were chosen after reviewing a competitor's public pages. They are built
 | Desk posture check (`/p/desk`, `/c/patients/:id/desk`): seated side view; ear–shoulder line, trunk lean, hip angle (withheld when the knee is hidden); 3 s median; saved as camera estimates pending review; no ideal values | Done (`desk-check-1.0.0`, unvalidated) |
 | Kinesiophobia questionnaire (e.g. Tampa Scale) | Blocked: licence/permission must be confirmed first |
 | Tamil and other Indian-language translations | Blocked: needs a clinician-reviewed translator |
+
+## Oct 2026 — second pass over the iKinetec pages (home, patients, anatomy, research, results, CRM, schedules)
+
+| iKinetec feature | Dheepika Lab | Status |
+|---|---|---|
+| Patients: summary cards with click-through | Total patients, visits attended, active programs, completed rehab — counted from records; cards filter the directory | Done |
+| Patients: register a patient (walk-in) | Staff registration: name, mobile (normalised, duplicate check), DOB, sex, complaint in patient's words; no login, no default diagnosis or score | Done |
+| Patients: search by phone, pages of 20, export, print | Phone search, paging, audited CSV of the filtered rows, print | Done |
+| Schedules: walk-ins | "Walk-in now (attended)" and inline registration in the booking form | Done |
+| Research: PubMed search, quick topics, abstracts, free full text | `/c/research`: PubMed filters (systematic reviews, guidelines, RCTs, free full text, last 5 years), editable quick topics, verbatim abstracts, PubMed Central and DOI links | Done |
+| Research: AI "evidence synthesis" | Not adopted — generated summaries can misstate papers; abstracts are shown unedited | By design |
+| Results: home advice, precautions, PDF, voice narration | Clinician-written home advice and precautions on each plan version; patient can print/save the plan as PDF and have it read aloud on the device | Done |
+| Anatomy: exercise cues and common mistakes | Clinician-authored cues and mistakes per library item, saved as a draft version for review; shown to patients after approval | Done |
+| Anatomy: condition atlas (627 conditions), likely causes | Not adopted — needs clinician-authored, referenced content; the app does not generate diagnoses | Needs clinical author |
+| Fixed likelihood %, default diagnosis/score, pre-filled sign-off, public report links, revenue by gender, spine curves / Q-angle / cm, "ideal" ghost skeleton, device-bound licence | Not adopted (see the review for reasons) | By design |
+| 3D body model, female/child body map | Map stays 2D and labelled interim until an accessible 3D model works | Open |

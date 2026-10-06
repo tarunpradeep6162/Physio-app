@@ -55,6 +55,8 @@ export function ProgramBuilder() {
   const [start, setStart] = useState(today);
   const [end, setEnd] = useState(new Date(Date.now() + 42 * 86_400_000).toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
+  const [advice, setAdvice] = useState(existing?.patientAdvice ?? '');
+  const [precautions, setPrecautions] = useState(existing?.patientPrecautions ?? '');
   const [changeReason, setChangeReason] = useState('');
   const [reassessDays, setReassessDays] = useState<string>(existing?.reassessAfterDays ? String(existing.reassessAfterDays) : '28');
   const [triggers, setTriggers] = useState<ReassessTrigger[]>(existing?.reassessTriggers ?? ['pain_stop', 'patient_pause']);
@@ -106,6 +108,8 @@ export function ProgramBuilder() {
         startDate: start,
         endDate: end,
         notes,
+        patientAdvice: advice,
+        patientPrecautions: precautions,
         changeReason,
         reassessAfterDays: reassessDays === '' ? undefined : Number(reassessDays),
         reassessTriggers: triggers,
@@ -334,6 +338,14 @@ export function ProgramBuilder() {
         <IconPlus width={18} /> Add exercise
       </button>
       <LibraryPicker library={library} value={lib} onChange={setLib} patientEquipment={patient?.equipment} minutesPerDay={patient?.minutesPerDay} />
+      <label className="field">
+        <span>Home advice for the patient (shown in their app, e.g. ice or heat, pacing)</span>
+        <textarea className="input" value={advice} onChange={(e) => setAdvice(e.target.value)} />
+      </label>
+      <label className="field">
+        <span>Precautions for the patient (when to stop, what to avoid)</span>
+        <textarea className="input" value={precautions} onChange={(e) => setPrecautions(e.target.value)} />
+      </label>
       <label className="field">
         <span>Program notes (clinician only)</span>
         <textarea className="input" value={notes} onChange={(e) => setNotes(e.target.value)} />

@@ -395,6 +395,8 @@ export interface EvidenceRef {
   year: string;
   url: string;
   doi?: string;
+  pmcid?: string;
+  pubTypes?: string[];
   query: string;
   retrievedAt: ISODate;
   attachedBy: ID;
@@ -412,6 +414,9 @@ export interface Program {
   approvedAt?: ISODate;
   approvedBy?: ID;
   notes?: string;
+  /** Patient-facing home advice and precautions, written by the clinician (never generated). */
+  patientAdvice?: string;
+  patientPrecautions?: string;
   createdAt: ISODate;
   /** Plan version per patient (1, 2, …) and the version it replaced (Phase 9). */
   version?: number;

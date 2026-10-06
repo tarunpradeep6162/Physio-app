@@ -1,5 +1,5 @@
 import { PATHWAY_ORDER, PATHWAYS, type PathwayRegion } from '../../clinical/pathways';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCurrentPatient, useCurrentUser } from '../../app/hooks';
 import { IconChevron, IconPlay, IconScan } from '../../components/icons';
@@ -12,7 +12,7 @@ import { activeProgram, adherence, fmtDate, fmtDateTime, programExercises, sessi
 import { getDb, insert, replaceDb, useDb, uuid } from '../../data/store';
 import { getDefinition } from '../../engine/exercises/definitions';
 import { reportStatus } from '../../clinical/report';
-import { LOCALES, useT } from '../../i18n';
+import { LOCALES, speechLang, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
 import { DailyCompanion } from './DailyCompanion';
@@ -138,6 +138,16 @@ function PlanLibrary({ programId }: { programId: string }) {
                   ))}
                 </ol>
               )}
+              {it?.cues?.length ? (
+                <p className="xs" style={{ margin: 0 }}>
+                  <strong>{t('train.cues')}:</strong> {it.cues.join(' · ')}
+                </p>
+              ) : null}
+              {it?.commonMistakes?.length ? (
+                <p className="xs" style={{ margin: 0 }}>
+                  <strong>{t('train.mistakes')}:</strong> {it.commonMistakes.join(' · ')}
+                </p>
+              ) : null}
               {it?.precautions.map((x) => (
                 <p key={x} className="xs muted">
                   ⚠ {x}
@@ -148,6 +158,35 @@ function PlanLibrary({ programId }: { programId: string }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** Reads the clinician-approved plan aloud with the device's speech engine (nothing is sent anywhere). */
+function ReadPlanAloud({ text }: { text: string }) {
+  const { t, locale } = useT();
+  const [speaking, setSpeaking] = useState(false);
+  useEffect(() => () => window.speechSynthesis?.cancel(), []);
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+  const toggle = () => {
+    const synth = window.speechSynthesis;
+    if (speaking) {
+      synth.cancel();
+      setSpeaking(false);
+      return;
+    }
+    synth.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = speechLang(locale);
+    u.rate = 0.95;
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    synth.speak(u);
+  };
+  return (
+    <button className="btn secondary" aria-pressed={speaking} onClick={toggle}>
+      {speaking ? t('train.stop_reading') : t('train.read_aloud')}
+    </button>
   );
 }
 
@@ -281,8 +320,43 @@ export function PatientTrain() {
               );
             })}
           </div>
+          {(program.patientAdvice || program.patientPrecautions) && (
+            <div className="grid cols-2">
+              {program.patientAdvice && (
+                <article className="panel stack tight">
+                  <h3>{t('train.advice')}</h3>
+                  <p className="small" style={{ whiteSpace: 'pre-line', margin: 0 }}>{program.patientAdvice}</p>
+                </article>
+              )}
+              {program.patientPrecautions && (
+                <article className="panel stack tight" style={{ borderColor: 'var(--amber, #d97706)' }}>
+                  <h3>{t('train.precautions')}</h3>
+                  <p className="small" style={{ whiteSpace: 'pre-line', margin: 0 }}>{program.patientPrecautions}</p>
+                </article>
+              )}
+            </div>
+          )}
           <PlanLibrary programId={program.id} />
-          <Link to="/p/session" className="btn primary lg">
+          <div className="row wrap no-print">
+            <ReadPlanAloud
+              text={[
+                program.title,
+                ...exs.map((e) => {
+                  const d = getDefinition(e.prescription.definitionId, e.prescription.definitionVersion);
+                  const rx = e.prescription;
+                  return `${t(d.nameKey)}. ${t('train.sets_reps', { sets: rx.sets, reps: rx.reps })}. ${rx.holdSeconds > 0 ? `${t('train.hold_s', { s: rx.holdSeconds })}. ` : ''}${t('train.frequency', { n: rx.frequencyPerWeek })}.${rx.instructions ? ` ${rx.instructions}` : ''}`;
+                }),
+                program.patientAdvice ? `${t('train.advice')}. ${program.patientAdvice}` : '',
+                program.patientPrecautions ? `${t('train.precautions')}. ${program.patientPrecautions}` : '',
+              ]
+                .filter(Boolean)
+                .join('\n')}
+            />
+            <button className="btn secondary" onClick={() => window.print()}>
+              {t('train.print_plan')}
+            </button>
+          </div>
+          <Link to="/p/session" className="btn primary lg no-print">
             <IconPlay width={20} /> {t('session.start')}
           </Link>
         </section>
@@ -290,7 +364,7 @@ export function PatientTrain() {
         <Notice>{t('home.no_program')}</Notice>
       )}
 
-      <section className="stack">
+      <section className="stack no-print">
         <h2>{t('train.history')}</h2>
         {sessions.length === 0 && <p className="muted">{t('train.no_history')}</p>}
         <div className="panel list">

@@ -130,7 +130,7 @@ export function buildDemoDb(): DB {
   db.reports.push({ id: uuid(), assessmentId: base.id, version: 1, status: 'clinician_reviewed', generatedAt: iso(29 * DAY - 60_000), generatedBy: clinUser.id, approvedBy: clin.id, approvedAt: iso(29 * DAY - 60_000), templateVersion: REPORT_TEMPLATE_VERSION, isDemo: true });
 
   // Program + engine-derived sessions.
-  const program = { id: uuid(), patientId: p1.id, clinicianId: clin.id, title: 'Phase 1 — knee range and control', status: 'active' as const, startDate: iso(28 * DAY).slice(0, 10), endDate: iso(-14 * DAY).slice(0, 10), approvedAt: iso(28 * DAY), approvedBy: clin.id, notes: 'Demo program', createdAt: iso(28 * DAY), version: 1, reassessAfterDays: 28, reassessTriggers: ['pain_stop' as const, 'patient_pause' as const], pauseOnPainStop: true, isDemo: true };
+  const program = { id: uuid(), patientId: p1.id, clinicianId: clin.id, title: 'Phase 1 — knee range and control', status: 'active' as const, startDate: iso(28 * DAY).slice(0, 10), endDate: iso(-14 * DAY).slice(0, 10), approvedAt: iso(28 * DAY), approvedBy: clin.id, notes: 'Demo program', patientAdvice: 'SIMULATED DEMO TEXT — written by the demo physiotherapist, not clinical advice. Spread the exercises through the day and keep a short walk in your routine.', patientPrecautions: 'SIMULATED DEMO TEXT. Stop and contact the clinic if pain stays more than 2 points higher the next morning.', createdAt: iso(28 * DAY), version: 1, reassessAfterDays: 28, reassessTriggers: ['pain_stop' as const, 'patient_pause' as const], pauseOnPainStop: true, isDemo: true };
   db.programs.push(program);
   const rxs: ExercisePrescription[] = [
     { ...defaultPrescription('knee_flexion', 'left'), target: { min: 90, max: 110 }, sets: 1, reps: 6, holdSeconds: 2, painStopAt: 7, painRiseStop: 3, progression: 'Raise target 10° when pain ≤ 3/10 and target met in 2 consecutive sessions (clinician decision at review).' },
@@ -253,7 +253,7 @@ export function buildDemoDb(): DB {
 }
 
 /** Bump when the demo fixture changes: returning browsers then get the new demo in place of the old one. */
-export const DEMO_FIXTURE_VERSION = '2026-10-06';
+export const DEMO_FIXTURE_VERSION = '2026-10-07';
 const DEMO_VERSION_KEY = 'physiovision.demo.version';
 
 /** The database without any demonstration rows, including rows linked to demo patients that carry no flag. */

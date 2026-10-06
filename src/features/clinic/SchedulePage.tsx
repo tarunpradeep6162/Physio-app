@@ -6,6 +6,7 @@ import { patientCode } from '../../clinical/directory';
 import { appointmentMessage, appointmentsOn, courseProgress, daySlots, localDay, localTime, monthGrid, slotTaken, whatsappLink } from '../../clinic/backoffice';
 import type { Appointment, Clinician, DB } from '../../data/models';
 import { insert, update, useDb, uuid } from '../../data/store';
+import { RegisterPatientForm } from './RegisterPatient';
 
 /**
  * Clinic schedule: a month calendar, the selected day's agenda, booking, and the staff list.
@@ -273,6 +274,28 @@ function BookingForm({ db, day, actorId, onBooked }: { db: DB; day: string; acto
         >
           Book
         </button>
+      </div>
+      <div className="row wrap" style={{ gap: '0.5rem' }}>
+        <button
+          className="btn secondary sm"
+          disabled={!patient || !staffId}
+          title="Records a visit happening now, already marked attended"
+          onClick={() => {
+            const now = new Date().toISOString();
+            insert('appointments', { id: uuid(), patientId, clinicianId: staffId, at: now, kind, courseId: courseId || undefined, note: ['Walk-in', note.trim()].filter(Boolean).join(' · '), status: 'done', createdBy: actorId, createdAt: now, isDemo: patient?.isDemo }, actorId, 'appointment');
+            setMsg(`Walk-in recorded for ${patient!.name} now, marked attended.`);
+            setNote('');
+            onBooked(localDay(now));
+          }}
+        >
+          Walk-in now (attended)
+        </button>
+        <details className="grow">
+          <summary className="small" style={{ cursor: 'pointer' }}>
+            New patient? Register them here
+          </summary>
+          <RegisterPatientForm db={db} actorId={actorId} compact onRegistered={(p) => setPatientId(p.id)} />
+        </details>
       </div>
       {taken && <Notice tone="warn">This staff member already has a booking at {time} on {date}.</Notice>}
       {msg && <p className="small" role="status">{msg}</p>}

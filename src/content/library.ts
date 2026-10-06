@@ -56,6 +56,10 @@ export interface ContentItem {
   alternatives: { itemId: string; reason: string }[];
   /** Shown to the patient. */
   precautions: string[];
+  /** Short coaching cues shown to the patient (clinician-authored). */
+  cues?: string[];
+  /** Common mistakes to avoid, shown to the patient (clinician-authored). */
+  commonMistakes?: string[];
   /** Clinician-only notes (e.g. when not to prescribe). */
   clinicianNotes?: string;
   /** Where it may be done once prescribed: at home, or only supervised in the clinic (default home). */
@@ -203,6 +207,8 @@ export function importItems(json: string, now: string, sourceRef: string): { ite
       accessibility: (r.accessibility ?? []).filter((g): g is AccessTag => (ACCESS_TAGS as readonly string[]).includes(g)),
       alternatives: Array.isArray(r.alternatives) ? r.alternatives : [],
       precautions: Array.isArray(r.precautions) ? r.precautions.map(String) : [],
+      ...(Array.isArray(r.cues) && r.cues.length ? { cues: r.cues.map(String) } : {}),
+      ...(Array.isArray(r.commonMistakes) && r.commonMistakes.length ? { commonMistakes: r.commonMistakes.map(String) } : {}),
       clinicianNotes: r.clinicianNotes,
       supervision: r.supervision === 'in_clinic' ? 'in_clinic' : 'home',
       defaultDosage: r.defaultDosage ?? { sets: 1, reps: 10, frequencyPerWeek: 3 },
