@@ -10,7 +10,7 @@ import type { DB, ID } from './models';
 type Row = Record<string, unknown> & { id?: unknown };
 const LINKS = ['patientId', 'assessmentId', 'programId', 'sessionId', 'captureId', 'scanId', 'importId', 'pauseId', 'measurementId'] as const;
 /** Organisation-level tables that are never patient data. */
-const ORG_TABLES = new Set(['clinicians', 'contentItems', 'contentReviews']);
+const ORG_TABLES = new Set(['clinicians', 'contentItems', 'contentReviews', 'expenses']);
 
 export function patientLinkedIds(db: DB, patientId: ID): Set<string> {
   const ids = new Set<string>([patientId]);

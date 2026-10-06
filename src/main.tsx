@@ -1,12 +1,3 @@
-import '@fontsource/outfit/latin-400.css';
-import '@fontsource/outfit/latin-600.css';
-import '@fontsource/outfit/latin-700.css';
-import '@fontsource/instrument-sans/latin-400.css';
-import '@fontsource/instrument-sans/latin-600.css';
-import '@fontsource/instrument-sans/latin-700.css';
-import '@fontsource/work-sans/latin-400.css';
-import '@fontsource/work-sans/latin-500.css';
-import '@fontsource/work-sans/latin-600.css';
 import '@fontsource/noto-sans-tamil/tamil-400.css';
 import '@fontsource/noto-sans-tamil/tamil-600.css';
 import { StrictMode } from 'react';

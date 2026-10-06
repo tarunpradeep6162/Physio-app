@@ -13,7 +13,7 @@ import { mergeReplicas, type SyncConflict } from './sync';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -90,6 +90,9 @@ export function emptyDb(): DB {
     contentReviews: [],
     programLibraryItems: [],
     deviceMeasurements: [],
+    treatmentCourses: [],
+    payments: [],
+    expenses: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -140,6 +143,7 @@ export function migrate(parsed: DB): DB {
   // v5 → v6: activitySamples / activityImports start empty (Phase 11).
   // v6 → v7: contentItems, contentReviews and programLibraryItems start empty (Phase 16).
   // v7 → v8: deviceMeasurements starts empty (Phase 18).
+  // v8 → v9: treatmentCourses, payments and expenses start empty (clinic back office).
   return out;
 }
 
@@ -294,6 +298,9 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   contentReviews: () => true,
   programLibraryItems: () => true,
   deviceMeasurements: () => true,
+  treatmentCourses: () => true,
+  payments: () => true,
+  expenses: () => true,
   notes: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',

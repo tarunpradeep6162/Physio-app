@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, NavLink, Outlet, Route, Routes } from 'react-router-dom';
-import { BrandMark, IconChart, IconClipboard, IconFlask, IconGrid, IconHome, IconList, IconProgress, IconScan, IconSettings, IconTrain, IconUser, IconUsers } from '../components/icons';
+import { BrandMark, IconCalendar, IconChart, IconClipboard, IconFlask, IconGrid, IconHome, IconList, IconProgress, IconScan, IconSettings, IconTrain, IconUser, IconUsers, IconWallet } from '../components/icons';
 import { Loader } from '../components/ui';
 import { signOut } from '../data/auth';
 import { usePrefs } from '../data/prefs';
@@ -32,6 +32,8 @@ const AssessmentQueue = lazy(() => named(import('../features/clinician/Assessmen
 const AssessmentRoute = lazy(() => named(import('../features/knee/AssessmentRoute'), 'AssessmentRoute'));
 const ReportRoute = lazy(() => named(import('../features/report/ReportView'), 'ReportRoute'));
 const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 'LibraryPage'));
+const SchedulePage = lazy(() => named(import('../features/clinic/SchedulePage'), 'SchedulePage'));
+const BillingPage = lazy(() => named(import('../features/clinic/BillingPage'), 'BillingPage'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
@@ -162,6 +164,8 @@ function ClinicianLayout() {
     { to: '/c/overview', label: t('nav.overview'), icon: IconGrid },
     { to: '/c/patients', label: t('nav.patients'), icon: IconUsers },
     { to: '/c/assessments', label: t('nav.assessments'), icon: IconClipboard },
+    { to: '/c/schedule', label: t('nav.schedule'), icon: IconCalendar },
+    { to: '/c/billing', label: t('nav.billing'), icon: IconWallet },
     { to: '/c/programs', label: t('nav.programs'), icon: IconList },
     { to: '/c/library', label: t('nav.library'), icon: IconList },
     { to: '/c/analytics', label: t('nav.analytics'), icon: IconChart },
@@ -276,6 +280,8 @@ export function App() {
               <Route path="programs" element={<ProgramsIndex />} />
               <Route path="programs/new" element={<ProgramBuilder />} />
               <Route path="library" element={<LibraryPage />} />
+              <Route path="schedule" element={<SchedulePage />} />
+              <Route path="billing" element={<BillingPage />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<ClinicSettingsPage />} />
             </Route>

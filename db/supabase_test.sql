@@ -33,6 +33,14 @@ do $$ begin
   raise exception 'SUPABASE TEST FAILED: patient wrote a plan';
 exception when insufficient_privilege then null; end $$;
 do $$ begin
+  insert into public.records (tbl, id, patient_id, data) values ('payments', 'pay-x', 'pa', '{"patientId":"pa","amountPaise":100}');
+  raise exception 'SUPABASE TEST FAILED: patient recorded a payment';
+exception when insufficient_privilege then null; end $$;
+do $$ begin
+  insert into public.records (tbl, id, patient_id, data) values ('treatmentCourses', 'tc-x', 'pa', '{"patientId":"pa","feePaise":0}');
+  raise exception 'SUPABASE TEST FAILED: patient created a treatment course';
+exception when insufficient_privilege then null; end $$;
+do $$ begin
   update public.records set data = '{"role":"clinician"}' where tbl = 'users';
   if (select data ->> 'role' from public.records where tbl = 'users') = 'clinician' then raise exception 'SUPABASE TEST FAILED: patient became clinician'; end if;
 exception when insufficient_privilege then null; end $$;

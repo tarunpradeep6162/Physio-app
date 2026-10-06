@@ -57,6 +57,8 @@ export interface Clinician {
   name: string;
   title: string;
   clinic: string;
+  /** Staff listed for scheduling; false = no new bookings (existing ones are kept). */
+  active?: boolean;
   createdAt: ISODate;
   isDemo?: boolean;
 }
@@ -478,9 +480,63 @@ export interface Appointment {
   patientId: ID;
   clinicianId: ID;
   at: ISODate;
-  kind: 'reassessment' | 'review' | 'call';
+  kind: 'reassessment' | 'review' | 'call' | 'session' | 'assessment';
   note?: string;
-  status: 'scheduled' | 'cancelled' | 'done';
+  /** 'done' = the patient attended; 'missed' = booked but did not attend. */
+  status: 'scheduled' | 'cancelled' | 'done' | 'missed';
+  /** The treatment course this visit counts towards (back office). */
+  courseId?: ID;
+  createdBy: ID;
+  createdAt: ISODate;
+  isDemo?: boolean;
+}
+
+/**
+ * Clinic back office (Oct 2026). A treatment course is the number of sessions and the fee agreed with
+ * the patient. Attended sessions are counted from appointments marked 'done'; nothing is estimated.
+ * Money is stored in paise (integer) to avoid rounding.
+ */
+export interface TreatmentCourse {
+  id: ID;
+  patientId: ID;
+  title: string;
+  plannedSessions: number;
+  /** Agreed fee for the whole course, in paise. */
+  feePaise: number;
+  startDate: string; // YYYY-MM-DD
+  status: 'active' | 'completed' | 'stopped';
+  note?: string;
+  createdBy: ID;
+  createdAt: ISODate;
+  isDemo?: boolean;
+}
+
+export type PaymentMethod = 'cash' | 'upi' | 'card' | 'bank';
+
+export interface Payment {
+  id: ID;
+  patientId: ID;
+  courseId?: ID;
+  amountPaise: number;
+  method: PaymentMethod;
+  date: string; // YYYY-MM-DD
+  reference?: string;
+  note?: string;
+  createdBy: ID;
+  createdAt: ISODate;
+  isDemo?: boolean;
+}
+
+export type ExpenseCategory = 'rent' | 'salaries' | 'utilities' | 'equipment' | 'supplies' | 'software' | 'other';
+
+export interface Expense {
+  id: ID;
+  category: ExpenseCategory;
+  title: string;
+  amountPaise: number;
+  date: string; // YYYY-MM-DD
+  vendor?: string;
+  method?: PaymentMethod;
   createdBy: ID;
   createdAt: ISODate;
   isDemo?: boolean;
@@ -658,6 +714,9 @@ export interface DB {
   contentReviews: ContentReview[];
   programLibraryItems: ProgramLibraryItem[];
   deviceMeasurements: DeviceMeasurement[];
+  treatmentCourses: TreatmentCourse[];
+  payments: Payment[];
+  expenses: Expense[];
   settings: ClinicSettings;
 }
 

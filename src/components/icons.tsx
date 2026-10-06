@@ -69,6 +69,18 @@ export const IconChart = (p: P) => (
     <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
   </svg>
 );
+export const IconCalendar = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="5" width="18" height="16" rx="2" />
+    <path d="M3 10h18M8 3v4M16 3v4" />
+  </svg>
+);
+export const IconWallet = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="3" y="6" width="18" height="14" rx="2" />
+    <path d="M3 10h18M16 15h2" />
+  </svg>
+);
 export const IconSettings = (p: P) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="3" />

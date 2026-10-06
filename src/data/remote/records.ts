@@ -19,7 +19,7 @@ export const APPEND_ONLY_TABLES = new Set(['audit', 'planPauses', 'planResumes',
 /** The patient's own identity rows go first: the server checks other rows against them. */
 export const IDENTITY_TABLES = new Set(['users', 'patients']);
 /** Organisation-level tables with no patient. */
-const ORG_TABLES = new Set(['clinicians', 'settings', 'contentItems', 'contentReviews']);
+const ORG_TABLES = new Set(['clinicians', 'settings', 'contentItems', 'contentReviews', 'expenses']);
 
 const PARENTS: [string, keyof DB][] = [
   ['assessmentId', 'assessments'],

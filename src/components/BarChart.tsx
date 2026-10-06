@@ -21,16 +21,20 @@ export interface BarChartProps {
   /** values[seriesIndex][categoryIndex] */
   values: number[][];
   height?: number;
+  /** Formats tick and bar labels (default: the plain number). */
+  format?: (v: number) => string;
 }
 
 const W = 560;
-const PAD = { l: 34, r: 10, t: 18, b: 30 };
+const PAD_BASE = { l: 34, r: 10, t: 18, b: 30 };
 
-export function BarChart({ title, categories, series, values, height = 220 }: BarChartProps) {
+export function BarChart({ title, categories, series, values, height = 220, format = String }: BarChartProps) {
   const id = `bc${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [table, setTable] = useState(false);
   const max = Math.max(1, ...values.flat());
   const niceMax = Math.ceil(max / 5) * 5 || 5;
+  // Room for the widest tick label (about 6.5 units per character at font size 11).
+  const PAD = { ...PAD_BASE, l: Math.max(PAD_BASE.l, 10 + 6.5 * format(niceMax).length) };
   const plotW = W - PAD.l - PAD.r;
   const plotH = height - PAD.t - PAD.b;
   const groupW = plotW / Math.max(1, categories.length);
@@ -38,7 +42,7 @@ export function BarChart({ title, categories, series, values, height = 220 }: Ba
   const y = (v: number) => PAD.t + plotH - (v / niceMax) * plotH;
   // Counts: whole-number ticks only.
   const ticks = [...new Set([0, Math.round(niceMax / 2), niceMax])];
-  const summary = categories.map((c, ci) => `${c}: ${series.map((s, si) => `${s.label} ${values[si][ci]}`).join(', ')}`).join('; ');
+  const summary = categories.map((c, ci) => `${c}: ${series.map((s, si) => `${s.label} ${format(values[si][ci])}`).join(', ')}`).join('; ');
 
   return (
     <figure className="stack tight" style={{ margin: 0 }}>
@@ -78,7 +82,7 @@ export function BarChart({ title, categories, series, values, height = 220 }: Ba
                   <td>{c}</td>
                   {series.map((s, si) => (
                     <td key={s.id} className="num">
-                      {values[si][ci]}
+                      {format(values[si][ci])}
                     </td>
                   ))}
                 </tr>
@@ -93,7 +97,7 @@ export function BarChart({ title, categories, series, values, height = 220 }: Ba
             <g key={tv}>
               <line x1={PAD.l} x2={W - PAD.r} y1={y(tv)} y2={y(tv)} stroke="var(--line)" strokeWidth={1} />
               <text x={PAD.l - 6} y={y(tv)} textAnchor="end" dominantBaseline="middle" fontSize="11" fill="var(--ink-3)">
-                {tv}
+                {format(tv)}
               </text>
             </g>
           ))}
@@ -109,7 +113,7 @@ export function BarChart({ title, categories, series, values, height = 220 }: Ba
                       <rect x={gx + si * barW} y={top} width={barW - 2} height={Math.max(0, PAD.t + plotH - top)} fill={s.hatched ? `url(#${id}-h-${s.id})` : s.color} stroke={s.color} strokeWidth={1} rx={2} />
                       {v > 0 && (
                         <text x={gx + si * barW + (barW - 2) / 2} y={top - 4} textAnchor="middle" fontSize="10" fill="var(--ink-2)">
-                          {v}
+                          {format(v)}
                         </text>
                       )}
                     </g>
