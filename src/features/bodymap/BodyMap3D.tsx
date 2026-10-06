@@ -95,10 +95,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const resize = () => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); render(); };
     const observer = new ResizeObserver(resize); observer.observe(el); resize();
     const loader = new GLTFLoader();
-    Promise.all([
-      load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 70)}%`)),
-      load(loader, ROOT + 'skeleton.glb'),
-    ]).then(([anatomy, skeleton]) => {
+    load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`)).then((anatomy) => {
       if (disposed) return;
       const box = new THREE.Box3().setFromObject(anatomy), center = box.getCenter(new THREE.Vector3());
       const scale = 8.7 / box.getSize(new THREE.Vector3()).z;
@@ -110,8 +107,14 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         part.userData.tendon = /tendon|ligament|retinaculum|membrane/i.test(part.name);
         figure.add(part); target.push(part);
       });
-      add(anatomy, muscle, muscles); add(skeleton, bone, bones);
+      add(anatomy, muscle, muscles);
       setStatus(''); render();
+      // The skeleton is decorative context. A failed optional download must not hide usable anatomy.
+      load(loader, ROOT + 'skeleton.glb').then((skeleton) => {
+        if (disposed) return;
+        add(skeleton, bone, bones);
+        render();
+      }).catch((error) => { if (!disposed) console.warn('Optional anatomical skeleton could not load', error); });
     }).catch((error) => { if (!disposed) { console.error('Anatomical model could not load', error); unavailableRef.current('model'); } });
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), canvas = renderer.domElement;
     const hit = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(pointer, camera); const part = ray.intersectObjects(muscles)[0]?.object as Part | undefined; return part ? idFor(part) : null; };
