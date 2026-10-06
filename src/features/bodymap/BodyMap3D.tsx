@@ -1,49 +1,59 @@
-import { useEffect, useRef, useState } from 'react';
-import { recordIncident } from '../../app/incidents';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { recordIncident } from '../../app/incidents';
+import { classifyMesh, regionAt } from './anatomyRegions';
 import { regionLabel, type BodyView } from './regions';
 
-interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: (reason: 'webgl' | 'model') => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
+interface Props {
+  selected: string[];
+  onToggle: (id: string) => void;
+  onUnavailable: (reason: 'webgl' | 'model') => void;
+  readOnly?: boolean;
+  initialView: BodyView;
+  compact?: boolean;
+}
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 const ROOT = '/anatomy/';
 
-// BodyParts3D is Z-up with Y as depth. Adapt the geometries to Three.js Y-up.
+const VIEW_ANGLE: Record<BodyView, number> = { front: 0, back: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
+const VIEW_LABEL: Record<BodyView, string> = { front: 'Front', back: 'Back', left: 'Left side', right: 'Right side' };
+const ZOOM = { min: 10, max: 25, step: 2 } as const;
+
+// Tissue colours, written as sRGB and stored LINEAR (vertex colours are linear in the renderer).
+const lin = (c: number) => Math.round(255 * new THREE.Color().setRGB(c / 255, 0, 0, THREE.SRGBColorSpace).r);
+const rgb = (r: number, g: number, b: number) => [lin(r), lin(g), lin(b)] as const;
+const RGB = { muscle: rgb(173, 80, 58), tendon: rgb(228, 203, 174), bone: rgb(216, 204, 181), hover: rgb(251, 191, 36), selected: rgb(56, 189, 248) };
+
+/**
+ * Region ids are stored per VERTEX, computed once from the model's own coordinates (see
+ * anatomyRegions.ts). Selection never depends on the camera angle, a long muscle can be selected by
+ * part, and highlighting shows exactly the selected region.
+ */
+interface Tagged {
+  mesh: Part;
+  /** Index into `ids` for each vertex. */
+  region: Uint16Array;
+  base: readonly number[];
+}
+
+// BodyParts3D is Z-up with −Y anterior. Adapt in place to Three.js Y-up, facing +Z (the camera).
 function orient(geometry: THREE.BufferGeometry, origin: THREE.Vector3, scale: number) {
   const p = geometry.getAttribute('position') as THREE.BufferAttribute;
   const n = geometry.getAttribute('normal') as THREE.BufferAttribute | undefined;
-  for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); p.setXYZ(i, (x - origin.x) * scale, (z - origin.z) * scale, -(y - origin.y) * scale); }
-  if (n) for (let i = 0; i < n.count; i++) { const x = n.getX(i), y = n.getY(i), z = n.getZ(i); n.setXYZ(i, x, z, -y); }
-  p.needsUpdate = true; if (n) n.needsUpdate = true;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    p.setXYZ(i, (x - origin.x) * scale, (z - origin.z) * scale, -(y - origin.y) * scale);
+  }
+  if (n) for (let i = 0; i < n.count; i++) {
+    const x = n.getX(i), y = n.getY(i), z = n.getZ(i);
+    n.setXYZ(i, x, z, -y);
+  }
+  p.needsUpdate = true;
+  if (n) n.needsUpdate = true;
+  // The loader stored bounds in the source frame; stale bounds make ray tests (taps) miss.
+  geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-}
-
-function region(name: string, point: THREE.Vector3, back: boolean) {
-  const n = name.toLowerCase().replaceAll('_', ' ');
-  const side = /\bleft\b/.test(n) ? 'left' : /\bright\b/.test(n) ? 'right' : point.x > 0 ? 'left' : 'right';
-  const suffix = back ? '_back' : '';
-  if (/head|face|occipit|temporalis|masseter/.test(n) || point.y > 3.35) return back ? 'head_back' : 'head';
-  if (/neck|sternocleidomastoid|scalen|splenius/.test(n) || point.y > 2.85 && Math.abs(point.x) < 0.3) return back ? 'neck_back' : 'neck_front';
-  if (/deltoid|supraspinatus|infraspinatus|teres|subscapular/.test(n)) return `shoulder_${side}${suffix}`;
-  if (/trapezius|rhomboid|latissimus|erector spinae|multifidus/.test(n)) return back ? `upper_back_${side}` : `chest_${side}`;
-  if (/pectoral|serratus|intercostal/.test(n)) return back ? `upper_back_${side}` : `chest_${side}`;
-  if (/biceps brachii|brachialis|triceps|coracobrachialis/.test(n)) return `upper_arm_${side}${suffix}`;
-  if (/brachioradialis|pronator|supinator|flexor|extensor|palmaris/.test(n) && point.y > -0.4) return `forearm_${side}${suffix}`;
-  if (/hand|pollicis|digiti|lumbrical|interosseous/.test(n) && Math.abs(point.x) > 0.6) return `hand_${side}${suffix}`;
-  if (/gluteus|piriformis/.test(n)) return back ? `buttock_${side}` : `groin_${side}`;
-  if (/rectus abdominis|oblique|transversus abdominis/.test(n)) return back ? 'lower_back_center' : point.y > 0.3 ? 'abdomen_upper' : 'abdomen_lower';
-  if (/quadriceps|rectus femoris|vastus|sartorius|adductor|hamstring|biceps femoris|semitendinosus|semimembranosus/.test(n)) return `thigh_${side}_${back ? 'back' : 'front'}`;
-  if (/patella|patellar|popliteus/.test(n)) return `knee_${side}${suffix}`;
-  if (/gastrocnemius|soleus|tibialis|peroneus|fibularis/.test(n)) return back ? `calf_${side}` : `shin_${side}`;
-  if (/achilles|calcaneal/.test(n)) return back ? `achilles_${side}` : `ankle_${side}`;
-  if (/foot|plantar|hallucis/.test(n)) return back ? `heel_${side}` : `foot_${side}`;
-  if (point.y > 2) return Math.abs(point.x) > 0.55 ? `shoulder_${side}${suffix}` : back ? `upper_back_${side}` : `chest_${side}`;
-  if (point.y > 0.3) return Math.abs(point.x) > 0.8 ? `upper_arm_${side}${suffix}` : back ? 'mid_back_center' : 'abdomen_upper';
-  if (point.y > -0.4) return Math.abs(point.x) > 0.9 ? `forearm_${side}${suffix}` : back ? 'lower_back_center' : 'abdomen_lower';
-  if (point.y > -2) return `thigh_${side}_${back ? 'back' : 'front'}`;
-  if (point.y > -2.6) return `knee_${side}${suffix}`;
-  if (point.y > -3.8) return back ? `calf_${side}` : `shin_${side}`;
-  return back ? `heel_${side}` : `foot_${side}`;
 }
 
 function load(loader: GLTFLoader, url: string, progress?: (f: number) => void) {
@@ -53,86 +63,299 @@ function load(loader: GLTFLoader, url: string, progress?: (f: number) => void) {
 /** A licensed anatomical atlas, not a rendering or diagnosis of the patient. */
 export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact }: Props) {
   const host = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef(selected), toggleRef = useRef(onToggle);
-  const unavailableRef = useRef(onUnavailable);
-  const rotateRef = useRef<((a: number) => void) | null>(null), drawRef = useRef<(() => void) | null>(null);
+  const selectedRef = useRef(selected), toggleRef = useRef(onToggle), unavailableRef = useRef(onUnavailable);
+  const api = useRef<{ rotateTo: (a: number) => void; rotateBy: (d: number) => void; zoom: (d: number) => void; draw: () => void } | null>(null);
   const [status, setStatus] = useState('Loading anatomical model…');
   const [hover, setHover] = useState<string | null>(null);
-  selectedRef.current = selected; toggleRef.current = onToggle; unavailableRef.current = onUnavailable;
-  useEffect(() => { drawRef.current?.(); }, [selected]);
+  const [view, setView] = useState<BodyView | null>(initialView);
+  selectedRef.current = selected;
+  toggleRef.current = onToggle;
+  unavailableRef.current = onUnavailable;
+  useEffect(() => api.current?.draw(), [selected]);
 
   useEffect(() => {
-    const el = host.current; if (!el) return;
+    const el = host.current;
+    if (!el) return;
     let renderer: THREE.WebGLRenderer;
-    try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); }
-    catch { unavailableRef.current('webgl'); return; }
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
+    } catch {
+      unavailableRef.current('webgl');
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.7;
     el.appendChild(renderer.domElement);
-    const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(31, 1, 0.1, 80);
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 80);
     camera.position.set(0, 0, 17.5);
     scene.add(new THREE.HemisphereLight(0xffe9d9, 0x403030, 2.5));
-    const key = new THREE.DirectionalLight(0xffdfc5, 3); key.position.set(-4, 6, 8); scene.add(key);
-    const rim = new THREE.DirectionalLight(0x8ebfbd, 1.5); rim.position.set(5, 3, -6); scene.add(rim);
-    const figure = new THREE.Group(); scene.add(figure);
-    figure.rotation.y = initialView === 'back' ? Math.PI : initialView === 'left' ? -Math.PI / 2 : initialView === 'right' ? Math.PI / 2 : 0;
-    const muscle = new THREE.MeshStandardMaterial({ color: 0xad503a, roughness: 0.63, side: THREE.DoubleSide });
-    const tendon = new THREE.MeshStandardMaterial({ color: 0xe4cbae, roughness: 0.72, side: THREE.DoubleSide });
-    const bone = new THREE.MeshStandardMaterial({ color: 0xd8ccb5, roughness: 0.76, side: THREE.DoubleSide });
-    const active = new THREE.MeshStandardMaterial({ color: 0xf5b084, emissive: 0x552015, roughness: 0.5, side: THREE.DoubleSide });
-    const hovered = new THREE.MeshStandardMaterial({ color: 0xd8795b, roughness: 0.55, side: THREE.DoubleSide });
-    const muscles: Part[] = [], bones: Part[] = [];
-    let disposed = false, frame = 0, drag: { x: number; y: number; a: number; moved: boolean } | null = null, hoverId: string | null = null;
-    const front = () => Math.cos(figure.rotation.y) >= 0;
-    const idFor = (m: Part) => region(m.name, m.geometry.boundingSphere!.center, !front());
-    const render = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => {
-      for (const m of muscles) { const id = idFor(m); m.material = selectedRef.current.includes(id) ? active : id === hoverId ? hovered : m.userData.tendon ? tendon : muscle; }
-      renderer.render(scene, camera);
-    }); };
-    drawRef.current = render;
-    rotateRef.current = (a) => { figure.rotation.y = a; render(); };
-    const resize = () => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); render(); };
-    const observer = new ResizeObserver(resize); observer.observe(el); resize();
-    const loader = new GLTFLoader();
-    load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`)).then((anatomy) => {
-      if (disposed) return;
-      const box = new THREE.Box3().setFromObject(anatomy), center = box.getCenter(new THREE.Vector3());
-      const scale = 8.7 / box.getSize(new THREE.Vector3()).z;
-      const add = (root: THREE.Group, material: THREE.MeshStandardMaterial, target: Part[]) => root.traverse((node) => {
-        if (!(node instanceof THREE.Mesh)) return;
-        const geometry = (node.geometry as THREE.BufferGeometry).clone(); orient(geometry, center, scale);
-        const part = new THREE.Mesh(geometry, material) as Part;
-        part.name = node.name || 'anatomical structure';
-        part.userData.tendon = /tendon|ligament|retinaculum|membrane/i.test(part.name);
-        figure.add(part); target.push(part);
+    const key = new THREE.DirectionalLight(0xffdfc5, 3);
+    key.position.set(-4, 6, 8);
+    scene.add(key);
+    const rim = new THREE.DirectionalLight(0x8ebfbd, 1.5);
+    rim.position.set(5, 3, -6);
+    scene.add(rim);
+    const figure = new THREE.Group();
+    scene.add(figure);
+    figure.rotation.y = VIEW_ANGLE[initialView];
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, side: THREE.DoubleSide });
+
+    const ids: string[] = [];
+    const idIndex = new Map<string, number>();
+    const indexOf = (id: string) => {
+      let i = idIndex.get(id);
+      if (i === undefined) {
+        i = ids.length;
+        ids.push(id);
+        idIndex.set(id, i);
+      }
+      return i;
+    };
+    const parts: Tagged[] = [];
+    let disposed = false, frame = 0, hoverIdx = -1;
+    let lastColoured: { sel: string; hover: number } | null = null;
+    let origin: THREE.Vector3 | null = null, scale = 1;
+
+    const colour = () => {
+      const sel = selectedRef.current;
+      const key = sel.join('|');
+      if (lastColoured && lastColoured.sel === key && lastColoured.hover === hoverIdx) return;
+      lastColoured = { sel: key, hover: hoverIdx };
+      const selectedIdx = new Set(sel.map((s) => idIndex.get(s)).filter((i): i is number => i !== undefined));
+      for (const t of parts) {
+        const c = t.mesh.geometry.getAttribute('color') as THREE.BufferAttribute;
+        const arr = c.array as Uint8Array;
+        for (let v = 0; v < t.region.length; v++) {
+          const r = t.region[v];
+          const rgb = selectedIdx.has(r) ? RGB.selected : r === hoverIdx ? RGB.hover : t.base;
+          arr[v * 3] = rgb[0];
+          arr[v * 3 + 1] = rgb[1];
+          arr[v * 3 + 2] = rgb[2];
+        }
+        c.needsUpdate = true;
+      }
+    };
+    const render = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        colour();
+        renderer.render(scene, camera);
       });
-      add(anatomy, muscle, muscles);
-      setStatus(''); render();
-      // The skeleton is decorative context. A failed optional download must not hide usable anatomy.
-      load(loader, ROOT + 'skeleton.glb').then((skeleton) => {
+    };
+    const snapView = () => {
+      const a = ((figure.rotation.y % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      const near = (t: number) => Math.min(Math.abs(a - t), 2 * Math.PI - Math.abs(a - t)) < 0.05;
+      setView(near(0) ? 'front' : near(Math.PI) ? 'back' : near((3 * Math.PI) / 2) ? 'left' : near(Math.PI / 2) ? 'right' : null);
+    };
+    api.current = {
+      rotateTo: (a) => { figure.rotation.y = a; snapView(); render(); },
+      rotateBy: (d) => { figure.rotation.y += d; snapView(); render(); },
+      zoom: (d) => { camera.position.z = THREE.MathUtils.clamp(camera.position.z + d, ZOOM.min, ZOOM.max); render(); },
+      draw: () => { lastColoured = null; render(); },
+    };
+    const resize = () => {
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      renderer.setSize(r.width, r.height, false);
+      camera.aspect = r.width / r.height;
+      camera.updateProjectionMatrix();
+      render();
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(el);
+    resize();
+
+    /** Tags every vertex with its region (source coordinates), then orients the geometry in place. */
+    const seen = new WeakSet<THREE.BufferGeometry>();
+    const add = (root: THREE.Group, kind: 'muscle' | 'bone') =>
+      root.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        const geometry = node.geometry as THREE.BufferGeometry;
+        // Oriented in place: a geometry shared by two nodes must only be processed once.
+        if (seen.has(geometry)) return;
+        seen.add(geometry);
+        const info = classifyMesh(node.name || '');
+        const p = geometry.getAttribute('position');
+        const region = new Uint16Array(p.count);
+        for (let v = 0; v < p.count; v++) region[v] = indexOf(regionAt(info, p.getX(v), p.getY(v), p.getZ(v)));
+        geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(p.count * 3), 3, true));
+        orient(geometry, origin!, scale);
+        const mesh = new THREE.Mesh(geometry, material) as Part;
+        mesh.name = node.name || 'anatomical structure';
+        const tendon = /tendon|ligament|retinaculum|membrane|fascia|tract/i.test(mesh.name);
+        figure.add(mesh);
+        parts.push({ mesh, region, base: kind === 'bone' ? RGB.bone : tendon ? RGB.tendon : RGB.muscle });
+      });
+
+    const loader = new GLTFLoader();
+    load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`))
+      .then((anatomy) => {
         if (disposed) return;
-        add(skeleton, bone, bones);
+        const box = new THREE.Box3().setFromObject(anatomy);
+        origin = box.getCenter(new THREE.Vector3());
+        scale = 8.7 / box.getSize(new THREE.Vector3()).z;
+        add(anatomy, 'muscle');
+        setStatus('');
         render();
-      }).catch((error) => { if (!disposed) recordIncident('error', error); });
-    }).catch((error) => { if (!disposed) { recordIncident('error', error); unavailableRef.current('model'); } });
+        // The skeleton adds context and lets bony landmarks (kneecap, shin, collarbone) be tapped.
+        // A failed optional download must not hide usable anatomy.
+        load(loader, ROOT + 'skeleton.glb')
+          .then((skeleton) => {
+            if (disposed) return;
+            add(skeleton, 'bone');
+            api.current?.draw();
+          })
+          .catch((error) => { if (!disposed) recordIncident('error', error); });
+      })
+      .catch((error) => {
+        if (!disposed) {
+          recordIncident('error', error);
+          unavailableRef.current('model');
+        }
+      });
+
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), canvas = renderer.domElement;
-    const hit = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(pointer, camera); const part = ray.intersectObjects(muscles)[0]?.object as Part | undefined; return part ? idFor(part) : null; };
-    const down = (e: PointerEvent) => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false }; };
-    const move = (e: PointerEvent) => { if (drag) { const dx = e.clientX - drag.x; if (Math.abs(dx) > 5 || Math.abs(e.clientY - drag.y) > 5) drag.moved = true; if (drag.moved) { figure.rotation.y = drag.a + dx * 0.012; render(); } } else { const id = hit(e); if (id !== hoverId) { hoverId = id; setHover(id); render(); } } };
-    const up = (e: PointerEvent) => { if (drag && !drag.moved && !readOnly) { const id = hit(e); if (id) toggleRef.current(id); } drag = null; };
-    const wheel = (e: WheelEvent) => { e.preventDefault(); camera.position.z = THREE.MathUtils.clamp(camera.position.z + e.deltaY * 0.01, 10, 25); render(); };
-    canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up); canvas.addEventListener('wheel', wheel, { passive: false });
-    return () => { disposed = true; cancelAnimationFrame(frame); observer.disconnect(); canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('wheel', wheel); canvas.remove(); renderer.dispose(); for (const m of [...muscles, ...bones]) m.geometry.dispose(); for (const m of [muscle, tendon, bone, active, hovered]) m.dispose(); drawRef.current = null; rotateRef.current = null; };
+    /** Region under the pointer: the first surface hit, bone or muscle, and the vertex nearest the hit. */
+    const hit = (clientX: number, clientY: number): number => {
+      const r = canvas.getBoundingClientRect();
+      pointer.set(((clientX - r.left) / r.width) * 2 - 1, (-(clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(pointer, camera);
+      const h = ray.intersectObjects(parts.map((t) => t.mesh), false)[0];
+      if (!h?.face) return -1;
+      const t = parts.find((x) => x.mesh === h.object);
+      if (!t) return -1;
+      const local = t.mesh.worldToLocal(h.point.clone());
+      const pos = t.mesh.geometry.getAttribute('position');
+      let best = h.face.a, bestD = Infinity;
+      for (const v of [h.face.a, h.face.b, h.face.c]) {
+        const d = (pos.getX(v) - local.x) ** 2 + (pos.getY(v) - local.y) ** 2 + (pos.getZ(v) - local.z) ** 2;
+        if (d < bestD) { bestD = d; best = v; }
+      }
+      return t.region[best];
+    };
+    let drag: { x: number; y: number; a: number; moved: boolean } | null = null;
+    let hoverQueued = false;
+    const down = (e: PointerEvent) => {
+      canvas.setPointerCapture(e.pointerId);
+      drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false };
+    };
+    const move = (e: PointerEvent) => {
+      if (drag) {
+        const dx = e.clientX - drag.x;
+        if (Math.abs(dx) > 6) drag.moved = true;
+        if (drag.moved) {
+          figure.rotation.y = drag.a + dx * 0.012;
+          render();
+        }
+        return;
+      }
+      // Hover feedback is for mice only, at most once per frame (ray tests are not free on phones).
+      if (e.pointerType !== 'mouse' || hoverQueued) return;
+      hoverQueued = true;
+      requestAnimationFrame(() => {
+        hoverQueued = false;
+        const i = hit(e.clientX, e.clientY);
+        if (i !== hoverIdx) {
+          hoverIdx = i;
+          setHover(i >= 0 ? ids[i] : null);
+          render();
+        }
+      });
+    };
+    const up = (e: PointerEvent) => {
+      if (drag && !drag.moved && !readOnly) {
+        const i = hit(e.clientX, e.clientY);
+        if (i >= 0) toggleRef.current(ids[i]);
+      }
+      if (drag?.moved) snapView();
+      drag = null;
+    };
+    const leave = () => {
+      if (hoverIdx !== -1) {
+        hoverIdx = -1;
+        setHover(null);
+        render();
+      }
+    };
+    // Plain scrolling scrolls the page; pinch (or Ctrl + scroll) zooms the model.
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      api.current?.zoom(e.deltaY * 0.01);
+    };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', () => (drag = null));
+    canvas.addEventListener('pointerleave', leave);
+    canvas.addEventListener('wheel', wheel, { passive: false });
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      canvas.removeEventListener('pointerdown', down);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', up);
+      canvas.removeEventListener('pointerleave', leave);
+      canvas.removeEventListener('wheel', wheel);
+      canvas.remove();
+      for (const t of parts) t.mesh.geometry.dispose();
+      material.dispose();
+      renderer.dispose();
+      api.current = null;
+    };
   }, [initialView, readOnly]);
 
-  return <div className="bodymap-3d-wrap">
-    <div ref={host} className={`bodymap-3d ${compact ? 'compact' : ''}`} role="img" aria-label="Rotatable three-dimensional anatomical muscle model" />
-    {status && <div className="bodymap-3d-status" role="status">{status}</div>}
-    <div className="bodymap-3d-caption">Drag to rotate · Tap a region · Anatomical reference model</div>
-    <div className="bodymap-3d-views" role="group" aria-label="Body view"><button type="button" onClick={() => rotateRef.current?.(0)}>Front</button><button type="button" onClick={() => rotateRef.current?.(Math.PI)}>Back</button><button type="button" onClick={() => rotateRef.current?.(-Math.PI / 2)}>Side</button></div>
-    <div className="bodymap-3d-selected" aria-live="polite">{hover ? regionLabel(hover) : selected.length ? selected.map(regionLabel).join(' · ') : 'Select where you feel symptoms'}</div>
-    <p className="bodymap-3d-credit">Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan · <a href="/anatomy/SOURCE_ATTRIBUTION.md" target="_blank" rel="noopener noreferrer">Model credits</a></p>
-  </div>;
+  const onKey = (e: KeyboardEvent) => {
+    const a = api.current;
+    if (!a) return;
+    if (e.key === 'ArrowLeft') a.rotateBy(-Math.PI / 12);
+    else if (e.key === 'ArrowRight') a.rotateBy(Math.PI / 12);
+    else if (e.key === '+' || e.key === '=') a.zoom(-ZOOM.step);
+    else if (e.key === '-') a.zoom(ZOOM.step);
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    <div className="bodymap-3d-outer">
+      <div className="bodymap-3d-wrap">
+        <div
+          ref={host}
+          className={`bodymap-3d ${compact ? 'compact' : ''}`}
+          role="img"
+          tabIndex={0}
+          onKeyDown={onKey}
+          aria-label={`Rotatable 3D anatomical model, ${view ? VIEW_LABEL[view].toLowerCase() : 'turned'} view. Left and right arrow keys rotate, plus and minus zoom. Choose regions with the list below the model.${selected.length ? ` Selected: ${selected.map(regionLabel).join(', ')}.` : ''}`}
+        />
+        {status && <div className="bodymap-3d-status" role="status">{status}</div>}
+        <div className="bodymap-3d-caption" aria-hidden="true">{readOnly ? 'Drag to rotate' : 'Drag to rotate · Tap where you feel it'}</div>
+        <div className="bodymap-3d-views" role="group" aria-label="Body view">
+          {(Object.keys(VIEW_ANGLE) as BodyView[]).map((v) => (
+            <button key={v} type="button" aria-pressed={view === v} onClick={() => api.current?.rotateTo(VIEW_ANGLE[v])}>
+              {VIEW_LABEL[v]}
+            </button>
+          ))}
+        </div>
+        <div className="bodymap-3d-zoom" role="group" aria-label="Zoom">
+          <button type="button" aria-label="Zoom in" onClick={() => api.current?.zoom(-ZOOM.step)}>+</button>
+          <button type="button" aria-label="Zoom out" onClick={() => api.current?.zoom(ZOOM.step)}>−</button>
+        </div>
+      </div>
+      <div className="bodymap-3d-footer">
+        <div className="bodymap-3d-selected" aria-live="polite">
+          {hover ? `${regionLabel(hover)}${selected.includes(hover) ? ' · selected' : ''}` : selected.length ? selected.map(regionLabel).join(' · ') : readOnly ? 'No locations marked' : 'Tap where you feel symptoms'}
+        </div>
+        <p className="bodymap-3d-credit">
+          Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan ·{' '}
+          <a href="/anatomy/SOURCE_ATTRIBUTION.md" target="_blank" rel="noopener noreferrer">
+            Model credits
+          </a>
+        </p>
+      </div>
+    </div>
+  );
 }

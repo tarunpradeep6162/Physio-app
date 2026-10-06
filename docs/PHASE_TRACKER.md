@@ -246,4 +246,18 @@ Features were chosen after reviewing a competitor's public pages. They are built
 | Anatomy: exercise cues and common mistakes | Clinician-authored cues and mistakes per library item, saved as a draft version for review; shown to patients after approval | Done |
 | Anatomy: condition atlas (627 conditions), likely causes | Not adopted — needs clinician-authored, referenced content; the app does not generate diagnoses | Needs clinical author |
 | Fixed likelihood %, default diagnosis/score, pre-filled sign-off, public report links, revenue by gender, spine curves / Q-angle / cm, "ideal" ghost skeleton, device-bound licence | Not adopted (see the review for reasons) | By design |
-| 3D body model, female/child body map | A 3D anatomy view with a 2D fallback was added in a parallel session (`/c/anatomy`, `BodyMap3D.tsx`); keyboard/screen-reader use and target-phone testing still to confirm. No female/child body variants | Partly done |
+| 3D body model, female/child body map | 3D map (`BodyMap3D.tsx`) fixed and tested: regions per vertex from the model's own landmarks (`anatomyRegions.ts`, checked over every vertex), selections fixed to tissue (not camera angle), bones tappable, 4 views, keyboard + full region list, page scroll not hijacked, 2D by default on phones/data-saver (≈20 MB download shown). Still to do: target-phone testing, female/child body variants | Mostly done |
+
+### 3D / 2D body map fixes (Oct 2026)
+
+| Problem | Fix |
+|---|---|
+| Taps often missed the 3D model | Bounds were left in the model's millimetre frame after re-orienting; recomputed |
+| A selection changed or vanished when the model rotated (calf ↔ shin) | Region fixed per vertex from anatomy and position, never from camera angle |
+| Tapping a bone (kneecap, shin, collarbone) selected the muscle behind it | Bones are tappable and mapped like muscles |
+| One region per whole muscle; several ids missing from the 2D map | Per-vertex mapping; test proves every vertex of both models maps to an existing 2D region |
+| No keyboard / screen-reader selection; no right-side view | Focusable model (arrows rotate, +/− zoom), full region list in 3D, Front/Back/Left/Right |
+| Page scroll was captured by the model; maps blocked scrolling on phones | Plain scroll scrolls the page (Ctrl/pinch zooms); `touch-action: pan-y` on both maps |
+| ≈20 MB downloaded for every patient | 2D by default on phones and data-saver; size shown on the 3D button; choice remembered |
+| 2D hid regions picked in another view; read-only reports could hide side-only regions | "Also selected, shown in other views" with a link; read-only maps open on the view showing most selections |
+| Selected colour looked like tendon; overlays covered the face and feet | Distinct selected/hover colours; selection bar and credits moved below the model |

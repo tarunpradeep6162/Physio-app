@@ -19,6 +19,8 @@ export interface Prefs {
   inferenceThread: 'auto' | 'main';
   /** Posture scan camera image tone (display only). */
   scanTone: ImageTone;
+  /** Body map display chosen by this person; unset = decided by screen size and data saver. */
+  bodyMapMode?: '3d' | '2d';
 }
 
 const KEY = 'physiovision.prefs';
