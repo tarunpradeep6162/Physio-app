@@ -5,7 +5,7 @@ import { regionLabel, type BodyView } from './regions';
 
 interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: (reason: 'webgl' | 'model') => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-const ROOT = 'https://raw.githubusercontent.com/JohanBellander/BodyExplorer/7d04bf3c4de2bd9cb234dd51d7e6857c099afafd/public/';
+const ROOT = '/anatomy/';
 
 // BodyParts3D is Z-up with Y as depth. Adapt the geometries to Three.js Y-up.
 function orient(geometry: THREE.BufferGeometry, origin: THREE.Vector3, scale: number) {
@@ -132,6 +132,6 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     <div className="bodymap-3d-caption">Drag to rotate · Tap a region · Anatomical reference model</div>
     <div className="bodymap-3d-views" role="group" aria-label="Body view"><button type="button" onClick={() => rotateRef.current?.(0)}>Front</button><button type="button" onClick={() => rotateRef.current?.(Math.PI)}>Back</button><button type="button" onClick={() => rotateRef.current?.(-Math.PI / 2)}>Side</button></div>
     <div className="bodymap-3d-selected" aria-live="polite">{hover ? regionLabel(hover) : selected.length ? selected.map(regionLabel).join(' · ') : 'Select where you feel symptoms'}</div>
-    <p className="bodymap-3d-credit">Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan</p>
+    <p className="bodymap-3d-credit">Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan · <a href="/anatomy/SOURCE_ATTRIBUTION.md" target="_blank" rel="noopener noreferrer">Model credits</a></p>
   </div>;
 }
