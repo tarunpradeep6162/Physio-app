@@ -21,6 +21,88 @@ import { BarChart } from '../../components/BarChart';
 import { monthlyVolume } from '../../clinical/directory';
 import { clearIncidents, readIncidents } from '../../app/incidents';
 import { INTENDED_USES, releaseGate } from '../../release/intendedUses';
+import { activeCourseFollowUp, attendanceByMonth, localDay } from '../../clinic/backoffice';
+import { patientCode } from '../../clinical/directory';
+
+/** Attendance and follow-up, counted from appointment records only (back office). */
+function AttendancePanel() {
+  const db = useDb((d) => d);
+  const now = new Date();
+  const months = attendanceByMonth(db, now, 6);
+  const follow = activeCourseFollowUp(db, now);
+  const noNext = follow.filter((r) => !r.nextBooking);
+  const totals = months.reduce((a, m) => ({ attended: a.attended + m.attended, missed: a.missed + m.missed, unrecorded: a.unrecorded + m.unrecorded }), { attended: 0, missed: 0, unrecorded: 0 });
+  const rate = totals.attended + totals.missed ? totals.attended / (totals.attended + totals.missed) : null;
+  const name = (id: string) => db.patients.find((p) => p.id === id)?.name ?? '—';
+  const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' });
+  return (
+    <section className="panel stack" aria-labelledby="attendance-h">
+      <div className="row between wrap">
+        <h2 id="attendance-h">Attendance and follow-up (last 6 months)</h2>
+        <Link to="/c/schedule" className="small">
+          Open schedule
+        </Link>
+      </div>
+      <div className="grid cols-4">
+        <Stat label="Attendance rate" value={rate === null ? '–' : `${Math.round(rate * 100)}%`} sub="attended ÷ (attended + missed)" />
+        <Stat label="Missed visits" value={totals.missed} />
+        <Stat label="Active treatment courses" value={follow.length} />
+        <Stat label="Active, no next booking" value={noNext.length} />
+      </div>
+      <BarChart
+        title="Visits per month by recorded outcome"
+        categories={months.map((m) => monthLabel(m.month))}
+        series={[
+          { id: 'attended', label: 'Attended', color: '#0D9488' },
+          { id: 'missed', label: 'Missed', color: '#DC2626', hatched: true },
+          { id: 'cancelled', label: 'Cancelled', color: '#64748B' },
+        ]}
+        values={[months.map((m) => m.attended), months.map((m) => m.missed), months.map((m) => m.cancelled)]}
+      />
+      {totals.unrecorded > 0 && (
+        <Notice tone="warn">
+          {totals.unrecorded} past visit{totals.unrecorded === 1 ? ' is' : 's are'} still marked “scheduled”. Mark them attended or missed in the schedule; they are not counted either way.
+        </Notice>
+      )}
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Active courses and next booking">
+        <table className="data">
+          <thead>
+            <tr>
+              <th>Patient</th>
+              <th>Course</th>
+              <th className="num">Attended / planned</th>
+              <th>Last visit</th>
+              <th>Next booking</th>
+            </tr>
+          </thead>
+          <tbody>
+            {follow.length === 0 && (
+              <tr>
+                <td colSpan={5} className="muted">
+                  No active treatment courses.
+                </td>
+              </tr>
+            )}
+            {follow.map((r) => (
+              <tr key={r.course.id}>
+                <td>
+                  <Link to={`/c/patients/${r.course.patientId}`}>{name(r.course.patientId)}</Link> <span className="mono xs muted">{patientCode(r.course.patientId)}</span>
+                </td>
+                <td>{r.course.title}</td>
+                <td className="num">
+                  {r.progress.attended} / {r.course.plannedSessions}
+                </td>
+                <td>{r.lastVisit ? localDay(r.lastVisit) : '—'}</td>
+                <td>{r.nextBooking ? localDay(r.nextBooking) : <span className="badge warn">None booked</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="xs muted">Counted from appointment records only. A missing booking is an administrative prompt to contact the patient, not a clinical judgement.</p>
+    </section>
+  );
+}
 
 /** Go/no-go checklist for real-patient release (Phase 20). Read-only: approval is never recorded here. */
 function ReleasePanel() {
@@ -149,6 +231,7 @@ export function Analytics() {
         />
         <p className="xs muted">Counts of records in this clinic's system by the month they were created. Not a clinical measure.</p>
       </section>
+      <AttendancePanel />
       <div className="grid cols-4">
         <div className="panel">
           <Stat label="Patients on a program" value={withProgram.length} />

@@ -35,6 +35,10 @@ const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 
 const SchedulePage = lazy(() => named(import('../features/clinic/SchedulePage'), 'SchedulePage'));
 const BillingPage = lazy(() => named(import('../features/clinic/BillingPage'), 'BillingPage'));
 const DischargePage = lazy(() => named(import('../features/clinic/DischargePage'), 'DischargePage'));
+const PatientDeskCheck = lazy(() => named(import('../features/desk/DeskCheck'), 'PatientDeskCheck'));
+const ClinicDeskCheck = lazy(() => named(import('../features/desk/DeskCheck'), 'ClinicDeskCheck'));
+const AboutPage = lazy(() => named(import('../features/about/AboutPage'), 'AboutPage'));
+const PrivacyNotice = lazy(() => named(import('../features/about/AboutPage'), 'PrivacyNotice'));
 const RomGuide = lazy(() => named(import('../features/library/RomGuide'), 'RomGuide'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
@@ -263,6 +267,8 @@ export function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/auth" element={<AuthScreen />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/privacy" element={<PrivacyNotice />} />
             <Route
               path="/onboarding"
               element={
@@ -277,6 +283,7 @@ export function App() {
               <Route path="assess" element={<KneeAssessment />} />
               <Route path="assess/shoulder" element={<ShoulderAssessment />} />
               <Route path="assess/:region" element={<RegionAssessment />} />
+              <Route path="desk" element={<PatientDeskCheck />} />
               <Route path="train" element={<PatientTrain />} />
               <Route path="session" element={<TrainSession />} />
               <Route path="progress" element={<PatientProgress />} />
@@ -289,6 +296,7 @@ export function App() {
               <Route path="patients/:id" element={<PatientDetail />} />
               <Route path="patients/:id/assess" element={<ClinicAssessmentStart />} />
               <Route path="patients/:id/discharge" element={<DischargePage />} />
+              <Route path="patients/:id/desk" element={<ClinicDeskCheck />} />
               <Route path="patients/:id/assess/:region" element={<ClinicAssessment />} />
               <Route path="assessments" element={<AssessmentQueue />} />
               <Route path="assessments/:id" element={<AssessmentRoute />} />

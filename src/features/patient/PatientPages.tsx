@@ -105,6 +105,7 @@ export function PatientHome() {
         ))}
       </div>
       <OtherAreas patientId={patient.id} />
+      <DeskCheckCard />
       <Link to="/p/progress" className="btn secondary">
         {t('home.recent_progress')} <IconChevron width={18} />
       </Link>
@@ -147,6 +148,22 @@ function PlanLibrary({ programId }: { programId: string }) {
         })}
       </div>
     </div>
+  );
+}
+
+/** Seated desk posture check (side view, camera estimates for review). */
+function DeskCheckCard() {
+  const { t } = useT();
+  return (
+    <Link to="/p/desk" className="panel list-item" style={{ textDecoration: 'none' }}>
+      <span className="grow">
+        <span className="list-title">{t('desk.entry')}</span>
+        <span className="small muted" style={{ display: 'block' }}>
+          {t('desk.entry_body')}
+        </span>
+      </span>
+      <span aria-hidden="true">›</span>
+    </Link>
   );
 }
 
@@ -452,6 +469,10 @@ export function PatientProfile() {
         <button className="btn secondary" onClick={exportData}>
           {t('profile.export')}
         </button>
+        <div className="row wrap small" style={{ gap: '1rem' }}>
+          <Link to="/about">{t('about.how')}</Link>
+          <Link to="/privacy">{t('about.privacy')}</Link>
+        </div>
         {!patient.isDemo && (
           <details>
             <summary className="btn danger" style={{ listStyle: 'none' }}>

@@ -11,7 +11,7 @@ import { synthesize, type SynthScene } from './synthetic';
  */
 
 export interface SimulationScenario {
-  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | import('../protocols/types').ProtocolId;
+  exercise: ExerciseId | 'posture_anterior' | 'posture_posterior' | 'posture_lateral' | 'posture_desk' | import('../protocols/types').ProtocolId;
   side: Side;
   /** Peak angle the simulated patient reaches (can be set below target to show incomplete reps). */
   peak: number;
@@ -82,10 +82,19 @@ export class SimulatedPoseProvider implements PoseProvider {
       case 'posture_lateral':
         scene = { kind: 'standing_lateral', side: s.side, trunkLean: 3 };
         break;
+      case 'posture_desk':
+        // Seated, side view (desk posture check demo).
+        scene = { kind: 'sit_to_stand_lateral', side: s.side, kneeFlexion: 90, trunkLean: 8 };
+        break;
       default:
         scene = { kind: 'standing_anterior', shoulderTiltDeg: 2.5, pelvicTiltDeg: 1.2 };
     }
     let lm = synthesize(scene, { ...SIM_FRAME, noisePx: 1.5, seed: this.seed++ });
+    if (s.exercise === 'posture_desk') {
+      // Seated scenes place the ankle near the centre; centre the hips instead, as a real set-up would.
+      const dx = 0.5 - (lm[23].x + lm[24].x) / 2;
+      lm = lm.map((l) => ({ ...l, x: l.x + dx }));
+    }
     if (s.exercise === 'posture_posterior') {
       // Back view: mirror horizontally so the patient's left appears on the image left; face hidden.
       lm = lm.map((l, i) => ({ ...l, x: 1 - l.x, visibility: i <= 10 && i !== 7 && i !== 8 ? 0.2 : l.visibility }));

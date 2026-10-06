@@ -150,3 +150,58 @@ export function toCsv(headers: string[], rows: (string | number | null | undefin
 
 /** Rupees with two decimals for CSV (no currency symbol, no grouping). */
 export const csvRupees = (paise: number) => (paise / 100).toFixed(2);
+
+export interface AttendanceMonth {
+  month: string; // YYYY-MM
+  attended: number;
+  missed: number;
+  cancelled: number;
+  /** Past bookings still marked 'scheduled' — attendance not recorded. */
+  unrecorded: number;
+  /** attended / (attended + missed); null when neither was recorded. */
+  attendanceRate: number | null;
+}
+
+/**
+ * Attendance per calendar month (local time), oldest first, for `months` months ending at `now`.
+ * Only past appointments count. Unrecorded visits are reported, never assumed attended or missed.
+ */
+export function attendanceByMonth(db: Pick<DB, 'appointments'>, now: Date, months = 6): AttendanceMonth[] {
+  const nowIso = now.toISOString();
+  const past = (db.appointments ?? []).filter((a) => a.at <= nowIso);
+  const out: AttendanceMonth[] = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const inMonth = past.filter((a) => localDay(a.at).startsWith(key));
+    const n = (s: Appointment['status']) => inMonth.filter((a) => a.status === s).length;
+    const attended = n('done');
+    const missed = n('missed');
+    out.push({ month: key, attended, missed, cancelled: n('cancelled'), unrecorded: n('scheduled'), attendanceRate: attended + missed ? attended / (attended + missed) : null });
+  }
+  return out;
+}
+
+export interface RetentionRow {
+  course: TreatmentCourse;
+  progress: CourseProgress;
+  /** Most recent attended visit for this patient, if any. */
+  lastVisit: string | null;
+  /** Next future booking for this patient (status 'scheduled'), if any. */
+  nextBooking: string | null;
+}
+
+/** Active treatment courses with their next booking; the clinic sees which have none booked. */
+export function activeCourseFollowUp(db: Pick<DB, 'appointments' | 'treatmentCourses'>, now: Date): RetentionRow[] {
+  const nowIso = now.toISOString();
+  const appts = db.appointments ?? [];
+  return (db.treatmentCourses ?? [])
+    .filter((c) => c.status === 'active')
+    .map((course) => {
+      const mine = appts.filter((a) => a.patientId === course.patientId);
+      const last = mine.filter((a) => a.status === 'done' && a.at <= nowIso).sort((a, b) => b.at.localeCompare(a.at))[0];
+      const next = mine.filter((a) => a.status === 'scheduled' && a.at > nowIso).sort((a, b) => a.at.localeCompare(b.at))[0];
+      return { course, progress: courseProgress(db, course), lastVisit: last?.at ?? null, nextBooking: next?.at ?? null };
+    })
+    .sort((a, b) => Number(!!a.nextBooking) - Number(!!b.nextBooking) || (a.lastVisit ?? '').localeCompare(b.lastVisit ?? ''));
+}

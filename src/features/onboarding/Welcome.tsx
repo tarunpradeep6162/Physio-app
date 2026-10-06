@@ -84,6 +84,10 @@ export function Welcome() {
               {t('welcome.demo_clinician')}
             </button>
           </div>
+          <nav className="welcome-links" aria-label={t('about.links')}>
+            <Link to="/about">{t('about.how')}</Link>
+            <Link to="/privacy">{t('about.privacy')}</Link>
+          </nav>
         </div>
       </div>
     </div>

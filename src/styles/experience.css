@@ -344,3 +344,14 @@ h2, h3 { letter-spacing: -.015em; }
 /* Tables on the dark camera stage (self-correction comparison): no light row fills. */
 .glass table.data, .glass table.data tr, .glass table.data td, .glass table.data th { background: transparent !important; color: #f0fdfa; border-color: rgba(148, 163, 184, .25); }
 .glass table.data th { color: #94a3b8; }
+
+/* Public trust pages (/about, /privacy) */
+.public-page { min-height: 100vh; background: var(--surface); color: var(--ink); }
+.public-head { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; padding: 1rem clamp(1rem, 4vw, 2rem); border-bottom: 1px solid var(--line); background: var(--panel); }
+.public-head .brand { color: var(--ink); }
+.public-head nav a { color: var(--teal); font-weight: 600; }
+.public-page .panel table.data { width: 100%; }
+.public-page dd { color: var(--ink-2); }
+mark.tbc { background: #fef3c7; color: #78350f; padding: 0 0.25em; border-radius: 4px; }
+.welcome-links { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; font-size: 0.9rem; }
+.welcome-links a { color: #bfd9d4; }

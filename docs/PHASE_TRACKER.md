@@ -220,3 +220,14 @@ Features were chosen after reviewing a competitor's public pages. They are built
   - usability with real patients;
   - VoiceOver / TalkBack testing;
   - incident process agreed and staffed.
+
+## Oct 2026 — remaining items from the iKinetec review
+
+| Item | Status |
+|---|---|
+| Public About / trust page (`/about`): how it works, data-flow diagram, validation status (not yet validated), regulatory status (not assessed by any regulator), guidance referred to (not endorsements), device requirements, FAQ | Done |
+| Privacy notice (`/privacy`) — DPDP Act 2023 **draft for legal review**; clinic-specific items left as visible placeholders | Done (draft) |
+| Attendance and follow-up analytics: monthly attended / missed / cancelled, unrecorded past bookings, active courses without a next booking | Done |
+| Desk posture check (`/p/desk`, `/c/patients/:id/desk`): seated side view; ear–shoulder line, trunk lean, hip angle (withheld when the knee is hidden); 3 s median; saved as camera estimates pending review; no ideal values | Done (`desk-check-1.0.0`, unvalidated) |
+| Kinesiophobia questionnaire (e.g. Tampa Scale) | Blocked: licence/permission must be confirmed first |
+| Tamil and other Indian-language translations | Blocked: needs a clinician-reviewed translator |

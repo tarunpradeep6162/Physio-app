@@ -365,6 +365,9 @@ export function PatientDetail() {
           <Link to={`/c/programs/new?patient=${patient.id}`} className="btn secondary">
             Build program
           </Link>
+          <Link to={`/c/patients/${patient.id}/desk`} className="btn secondary">
+            {t('desk.entry')}
+          </Link>
           <Link to={`/c/patients/${patient.id}/discharge`} className="btn secondary">
             Discharge
           </Link>
