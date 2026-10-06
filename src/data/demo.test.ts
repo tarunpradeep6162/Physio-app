@@ -40,3 +40,30 @@ describe('demo data', () => {
     expect(JSON.stringify(db).length).toBeLessThan(1_500_000);
   });
 });
+
+describe('demo refresh for returning browsers (gap 11)', () => {
+  it('removes old demo rows, including unflagged linked rows, and keeps real records', async () => {
+    const { withoutDemo } = await import('./demo');
+    const db = buildDemoDb();
+    const demoPatient = db.patients[0].id;
+    // An unflagged row linked to a demo patient (e.g. a capture written by older code).
+    db.intakeAnswers.push({ id: 'unflagged', assessmentId: db.assessments.find((a) => a.patientId === demoPatient)!.id, questionId: 'q', value: 1, answeredAt: '2026-01-01T00:00:00Z' } as never);
+    db.patients.push({ id: 'real-p', userId: 'real-u', name: 'Real Person', preferredLanguage: 'en', createdAt: '2026-01-01T00:00:00Z' });
+    db.pros.push({ id: 'real-pro', patientId: 'real-p', type: 'nprs_now', value: 4, recordedAt: '2026-01-02T00:00:00Z' });
+    const clean = withoutDemo(db);
+    expect(clean.patients.map((p) => p.id)).toEqual(['real-p']);
+    expect(clean.pros.map((p) => p.id)).toEqual(['real-pro']);
+    expect(clean.intakeAnswers.some((r) => r.id === 'unflagged')).toBe(false);
+    expect(clean.users.some((u) => u.isDemo)).toBe(false);
+    expect(clean.treatmentCourses).toHaveLength(0);
+    expect(clean.expenses).toHaveLength(0);
+  });
+
+  it('the demo now includes back-office samples', () => {
+    const db = buildDemoDb();
+    expect(db.treatmentCourses).toHaveLength(1);
+    expect(db.appointments.filter((a) => a.courseId === db.treatmentCourses[0].id && a.status === 'done')).toHaveLength(3);
+    expect(db.payments.every((p) => p.isDemo)).toBe(true);
+    expect(db.expenses.every((e) => e.isDemo)).toBe(true);
+  });
+});

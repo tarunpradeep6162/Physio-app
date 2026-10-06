@@ -299,6 +299,13 @@ export function ClinicSettingsPage() {
           <span>Emergency number shown to patients</span>
           <input className="input" defaultValue={settings.emergencyNumber} onBlur={(e) => updateSettings({ emergencyNumber: e.target.value }, user.id)} />
         </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.retainFinancialOnErasure === true} onChange={(e) => updateSettings({ retainFinancialOnErasure: e.target.checked }, user.id)} />
+          <span>Keep payment records when a patient deletes their account</span>
+        </label>
+        <p className="xs muted" style={{ margin: 0 }}>
+          Off (default): deleting an account removes the patient's courses and payments too. On: amounts, dates, payment method and receipt reference are kept for accounting, with the patient link, course name and notes removed. Decide with your accountant or legal adviser; the change is recorded in the audit log.
+        </p>
       </section>
 
       <ExceptionRulesEditor rules={settings.exceptionRules} actorId={user.id} reviewerName={clinicianName} />

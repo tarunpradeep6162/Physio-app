@@ -54,14 +54,29 @@ export function exportPatientData(db: DB, patientId: ID): Record<string, unknown
  * Erases a patient's records. The audit trail keeps only a pseudonymous deletion record; events
  * about the erased rows or by the erased user are removed.
  */
+/** Value that replaces the patient link on financial rows kept after erasure (identifies no one). */
+export const ERASED_PATIENT = 'erased';
+
+/**
+ * Financial rows kept after erasure when the clinic has chosen to (settings.retainFinancialOnErasure,
+ * default off): amounts, dates, method and receipt reference stay; the patient link, course name and
+ * notes (which can reveal a condition) are removed.
+ */
+function pseudonymiseFinancial(table: string, r: Row): Row {
+  if (table === 'treatmentCourses') return { id: r.id, patientId: ERASED_PATIENT, title: 'Treatment course', plannedSessions: r.plannedSessions, feePaise: r.feePaise, startDate: r.startDate, status: r.status, createdBy: r.createdBy, createdAt: r.createdAt };
+  return { id: r.id, patientId: ERASED_PATIENT, courseId: r.courseId, amountPaise: r.amountPaise, method: r.method, date: r.date, reference: r.reference, createdBy: r.createdBy, createdAt: r.createdAt };
+}
+
 export function erasePatient(db: DB, patientId: ID, now: string): DB {
   const ids = patientLinkedIds(db, patientId);
   const userId = db.patients.find((p) => p.id === patientId)?.userId ?? null;
+  const retain = db.settings?.retainFinancialOnErasure === true;
   const next = { ...db } as DB;
   for (const [k, v] of Object.entries(db)) {
     if (!Array.isArray(v) || ORG_TABLES.has(k)) continue;
     if (k === 'users') (next as unknown as Record<string, Row[]>).users = (v as Row[]).filter((u) => u.id !== userId);
     else if (k === 'audit') (next as unknown as Record<string, Row[]>).audit = (v as Row[]).filter((e) => e.actorId !== userId && !ids.has(e.entityId as string));
+    else if (retain && (k === 'payments' || k === 'treatmentCourses')) (next as unknown as Record<string, Row[]>)[k] = (v as Row[]).map((r) => (linked(r, ids) ? pseudonymiseFinancial(k, r) : r));
     else (next as unknown as Record<string, Row[]>)[k] = (v as Row[]).filter((r) => !linked(r, ids));
   }
   next.audit = [...next.audit, { id: `erasure-${now}`, actorId: 'system', action: 'account_deleted', entity: 'patients', entityId: 'erased', at: now }];

@@ -18,6 +18,7 @@ import { cameraProvenance, type DeviceContext } from '../engine/provenance';
 import type { Side } from '../engine/types';
 import { buildCaptureRows } from '../features/knee/persist';
 import type { Assessment, CaptureSession, DB, Measurement, Patient, TrainingSession } from './models';
+import { patientLinkedIds } from './privacy';
 import { emptyDb, getDb, replaceDb, uuid } from './store';
 
 /**
@@ -232,18 +233,77 @@ export function buildDemoDb(): DB {
   capture(a5, 0.4 * DAY - 180_000, 'hip_abduction_standing', 'right', { peak: 31 });
   db.alerts.push({ id: uuid(), patientId: p5.id, type: 'assessment_submitted', severity: 'info', detail: 'Hip assessment', createdAt: iso(0.4 * DAY), isDemo: true });
 
+  // Back office (simulated): one treatment course for DP-01 with attended, missed and booked visits,
+  // a payment and two clinic expenses, so the schedule and billing screens are not empty.
+  const day = (msAgo: number) => iso(msAgo).slice(0, 10);
+  const at = (daysFromNow: number, hour: number) => {
+    const d = new Date(Date.now() + daysFromNow * DAY);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+  const course = { id: uuid(), patientId: p1.id, title: 'Knee rehabilitation (demo)', plannedSessions: 8, feePaise: 640000, startDate: day(14 * DAY), status: 'active' as const, createdBy: clinUser.id, createdAt: iso(14 * DAY), isDemo: true };
+  db.treatmentCourses.push(course);
+  for (const [d, status] of [[-14, 'done'], [-10, 'done'], [-7, 'missed'], [-3, 'done'], [1, 'scheduled'], [5, 'scheduled']] as const)
+    db.appointments.push({ id: uuid(), patientId: p1.id, clinicianId: clin.id, at: at(d, 10), kind: 'session', status, courseId: course.id, createdBy: clinUser.id, createdAt: iso(15 * DAY), isDemo: true });
+  db.payments.push({ id: uuid(), patientId: p1.id, courseId: course.id, amountPaise: 320000, method: 'upi', date: day(14 * DAY), reference: 'DEMO-UPI-001', createdBy: clinUser.id, createdAt: iso(14 * DAY), isDemo: true });
+  db.expenses.push({ id: uuid(), category: 'rent', title: 'Clinic rent (demo)', amountPaise: 1500000, date: day(5 * DAY), createdBy: clinUser.id, createdAt: iso(5 * DAY), isDemo: true });
+  db.expenses.push({ id: uuid(), category: 'equipment', title: 'Resistance bands (demo)', amountPaise: 120000, date: day(9 * DAY), createdBy: clinUser.id, createdAt: iso(9 * DAY), isDemo: true });
+
   return db;
 }
 
-/** Seeds demo data (idempotent). */
+/** Bump when the demo fixture changes: returning browsers then get the new demo in place of the old one. */
+export const DEMO_FIXTURE_VERSION = '2026-10-06';
+const DEMO_VERSION_KEY = 'physiovision.demo.version';
+
+/** The database without any demonstration rows, including rows linked to demo patients that carry no flag. */
+export function withoutDemo(db: DB): DB {
+  const demoPatients = db.patients.filter((p) => p.isDemo).map((p) => p.id);
+  const linked = new Set<string>();
+  for (const id of demoPatients) for (const x of patientLinkedIds(db, id)) linked.add(x);
+  const demoUsers = new Set(db.users.filter((u) => u.isDemo).map((u) => u.id));
+  const LINKS = ['patientId', 'assessmentId', 'programId', 'sessionId', 'captureId', 'scanId', 'importId', 'pauseId', 'measurementId'];
+  const next = { ...db } as DB;
+  for (const k of Object.keys(db) as (keyof DB)[]) {
+    const v = db[k];
+    if (!Array.isArray(v)) continue;
+    (next as unknown as Record<string, unknown[]>)[k] = (v as unknown as Record<string, unknown>[]).filter((r) => {
+      if (r.isDemo) return false;
+      if (typeof r.id === 'string' && linked.has(r.id)) return false;
+      if (LINKS.some((l) => typeof r[l] === 'string' && linked.has(r[l] as string))) return false;
+      if (k === 'audit' && demoUsers.has(r.actorId as string)) return false;
+      return true;
+    });
+  }
+  return next;
+}
+
+function storedDemoVersion(): string | null {
+  try {
+    return localStorage.getItem(DEMO_VERSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Seeds demo data; replaces an older demo fixture (gap 11). Real accounts and their records are untouched. */
 export function ensureDemoData() {
   const cur = getDb();
-  if (cur.users.some((u) => u.isDemo)) return;
+  const hasDemo = cur.users.some((u) => u.isDemo);
+  if (hasDemo && storedDemoVersion() === DEMO_FIXTURE_VERSION) return;
+  const base = hasDemo ? withoutDemo(cur) : cur;
   const demo = buildDemoDb();
-  const merged: DB = { ...cur };
+  const merged: DB = { ...base };
   for (const k of Object.keys(demo) as (keyof DB)[]) {
     const v = demo[k];
-    if (Array.isArray(v)) (merged as unknown as Record<string, unknown[]>)[k] = [...((cur[k] as unknown[]) ?? []), ...v];
+    if (Array.isArray(v)) (merged as unknown as Record<string, unknown[]>)[k] = [...((base[k] as unknown[]) ?? []), ...v];
   }
   replaceDb(merged);
+  try {
+    localStorage.setItem(DEMO_VERSION_KEY, DEMO_FIXTURE_VERSION);
+  } catch {
+    /* private mode: the demo is simply rebuilt next time */
+  }
 }
+
+

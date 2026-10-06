@@ -161,6 +161,7 @@ function PatientLayout() {
 
 function ClinicianLayout() {
   const { t } = useT();
+  const [more, setMore] = useState(false);
   const validation = useDb((d) => d.settings.validationModeEnabled);
   const items = [
     { to: '/c/overview', label: t('nav.overview'), icon: IconGrid },
@@ -215,17 +216,28 @@ function ClinicianLayout() {
             </Suspense>
           </main>
         </div>
+        {/* Phones: four main sections plus "More" for the rest (the side rail is hidden there). */}
+        {more && (
+          <div className="more-sheet" role="dialog" aria-label={t('nav.more')}>
+            {items.slice(4).map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} onClick={() => setMore(false)} className={({ isActive }) => (isActive ? 'active' : '')}>
+                <Icon />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </div>
+        )}
         <nav className="bottom-nav" aria-label="Clinician">
-          {items.slice(0, 5).map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'active' : '')}>
+          {items.slice(0, 4).map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} onClick={() => setMore(false)} className={({ isActive }) => (isActive ? 'active' : '')}>
               <Icon />
               <span>{label}</span>
             </NavLink>
           ))}
-          <NavLink to="/c/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
-            <IconSettings />
-            <span>{t('nav.settings')}</span>
-          </NavLink>
+          <button type="button" className={`bottom-more${more ? ' active' : ''}`} aria-expanded={more} onClick={() => setMore((v) => !v)}>
+            <IconList />
+            <span>{t('nav.more')}</span>
+          </button>
         </nav>
       </div>
     </RequireRole>

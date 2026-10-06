@@ -113,7 +113,7 @@ export function LibraryPage() {
           const isOpen = open === it.id;
           return (
             <article key={it.id} className="panel stack tight">
-              <button className="row between wrap" style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer' }} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : it.id)}>
+              <button className="row between wrap lib-head" style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', width: '100%' }} aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : it.id)}>
                 <strong>
                   {it.title} <span className="xs muted">v{it.version}</span>
                 </strong>

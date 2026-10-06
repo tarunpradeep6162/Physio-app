@@ -103,6 +103,27 @@ select pg_temp.expect((select count(*) from public.records where patient_id = 'p
 select pg_temp.expect((select count(*) from auth.users where id = '00000000-0000-0000-0000-00000000000a') = 0, 'A''s sign-in removed');
 select pg_temp.expect((select count(*) from public.records where patient_id = 'pb') = 1, 'B intact');
 
+-- Optional financial retention: with the clinic setting on, E's payment and course survive erasure
+-- without anything that identifies E or the condition.
+insert into auth.users (id, email) values ('00000000-0000-0000-0000-00000000000e', 'pat.e@example.test');
+set local role authenticated;
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000e');
+insert into public.records (tbl, id, patient_id, data) values ('patients', 'pe', 'pe', '{"userId":"00000000-0000-0000-0000-00000000000e","name":"E"}');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
+insert into public.records (tbl, id, patient_id, data) values ('settings', 'clinic', null, '{"id":"clinic","retainFinancialOnErasure":true}');
+insert into public.records (tbl, id, patient_id, data) values
+ ('treatmentCourses', 'tc-e', 'pe', '{"patientId":"pe","title":"Rehab after ACL repair","plannedSessions":8,"feePaise":640000,"note":"post-op"}'),
+ ('payments', 'pay-e', 'pe', '{"patientId":"pe","courseId":"tc-e","amountPaise":320000,"method":"upi","date":"2026-10-01","reference":"UPI-1","note":"first half"}'),
+ ('pros', 'pro-e', 'pe', '{"patientId":"pe","type":"nprs_now","value":4}');
+select pg_temp.as_user('00000000-0000-0000-0000-00000000000e');
+select pg_temp.expect(public.delete_my_data() >= 2, 'E erased');
+reset role;
+select pg_temp.expect((select count(*) from public.records where patient_id = 'pe') = 0, 'nothing linked to E remains');
+select pg_temp.expect((select data ->> 'amountPaise' from public.records where id = 'pay-e') = '320000', 'payment amount kept');
+select pg_temp.expect((select data::text from public.records where id = 'pay-e') not like '%first half%' and (select data ->> 'patientId' from public.records where id = 'pay-e') = 'erased', 'payment has no note or patient link');
+select pg_temp.expect((select data ->> 'title' from public.records where id = 'tc-e') = 'Treatment course' and (select data::text from public.records where id = 'tc-e') not like '%ACL%', 'course name and notes removed');
+select pg_temp.expect((select count(*) from public.records where id = 'pro-e') = 0, 'clinical rows still erased');
+
 -- Adding an existing account to the allowlist promotes it; another organisation sees nothing.
 insert into public.clinician_allowlist (email) values ('pat.b@example.test');
 select pg_temp.expect((select role from public.profiles where user_id = '00000000-0000-0000-0000-00000000000b') = 'clinician', 'allowlist promotes an existing account');
@@ -114,5 +135,6 @@ select pg_temp.as_user('00000000-0000-0000-0000-0000000000d0');
 select pg_temp.expect((select count(*) from public.records) = 0, 'another clinic''s physiotherapist sees nothing');
 select pg_temp.as_user('');
 select pg_temp.expect((select count(*) from public.records) = 0, 'signed-out requests see nothing');
+select pg_temp.expect(not has_function_privilege('authenticated', 'public.dl_role()', 'execute') and not has_function_privilege('authenticated', 'public.dl_org()', 'execute') and not has_function_privilege('authenticated', 'public.dl_my_patient_ids()', 'execute'), 'old public RLS helpers cannot be called by app users');
 rollback;
 \echo ALL SUPABASE TESTS PASSED

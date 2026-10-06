@@ -71,3 +71,31 @@ describe('Phase 19 — no health information leaks to logs or analytics', () => 
     expect(offenders).toEqual([]);
   });
 });
+
+describe('financial records on erasure (clinic setting)', () => {
+  function withMoney() {
+    const { db, pid, uid } = richDb();
+    db.treatmentCourses.push({ id: 'tc1', patientId: pid, title: 'Knee rehab after ACL repair', plannedSessions: 8, feePaise: 640000, startDate: '2026-09-01', status: 'active', note: 'post-op', createdBy: 'c', createdAt: '2026-09-01' });
+    db.payments.push({ id: 'pay1', patientId: pid, courseId: 'tc1', amountPaise: 320000, method: 'upi', date: '2026-09-02', reference: 'UPI-123', note: 'first half', createdBy: 'c', createdAt: '2026-09-02' });
+    return { db, pid, uid };
+  }
+  it('default: courses and payments are erased with the patient', () => {
+    const { db, pid } = withMoney();
+    const out = erasePatient(db, pid, 'now');
+    expect(out.payments.filter((x) => x.patientId === pid || x.id === 'pay1')).toHaveLength(0);
+    expect(out.treatmentCourses.filter((x) => x.patientId === pid || x.id === 'tc1')).toHaveLength(0);
+  });
+  it('when the clinic keeps them: amounts remain, nothing identifies the patient or the condition', () => {
+    const { db, pid, uid } = withMoney();
+    db.settings = { ...db.settings, retainFinancialOnErasure: true };
+    const out = erasePatient(db, pid, 'now');
+    expect(out.payments.find((x) => x.id === 'pay1')).toEqual({ id: 'pay1', patientId: 'erased', courseId: 'tc1', amountPaise: 320000, method: 'upi', date: '2026-09-02', reference: 'UPI-123', createdBy: 'c', createdAt: '2026-09-02' });
+    expect(out.treatmentCourses.find((x) => x.id === 'tc1')).toMatchObject({ patientId: 'erased', title: 'Treatment course', feePaise: 640000 });
+    expect(out.payments.every((x) => x.patientId !== pid)).toBe(true);
+    const money = JSON.stringify([out.payments, out.treatmentCourses]);
+    expect(money).not.toContain(pid);
+    expect(money).not.toContain(uid);
+    expect(money).not.toMatch(/ACL|post-op|first half/);
+    expect(out.patients.some((p) => p.id === pid)).toBe(false);
+  });
+});

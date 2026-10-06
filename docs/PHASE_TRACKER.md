@@ -62,7 +62,7 @@ A phase is never marked **done** on a clean build alone.
 8. **Found in Phase 1 and fixed:** the safety evidence item was always labelled `knee-safety`.
 9. **Found in Phase 1 and fixed:** the report's Progress chart appeared after a single assessment (it counted left and right points rather than assessments).
 10. ~~Calibration ignored headroom for an overhead arm.~~ **Fixed in Phase 4** by the arm-room check.
-11. **Open:** demo data is seeded once per browser. Browsers that already hold the earlier demo will not see demo patient DP-04 until site data is cleared.
+11. ~~Demo data is seeded once per browser.~~ **Fixed 6 Oct 2026:** the demo fixture is versioned (`DEMO_FIXTURE_VERSION`); a returning browser's old demo rows (including unflagged rows linked to demo patients) are replaced, real accounts untouched. The demo now includes back-office samples.
 5. There is no server, so real-patient use is impossible. → Phase 6.
 6. There is no real-device data. → Phase 2 (hardware needed).
 12. **Open (Phase 3):** self-occlusion of the elbow and object occlusion still yield unsafe values in the lab; the coverage check did not catch them. Owner decision recorded in `docs/tracking/RESULTS.md`.
@@ -183,8 +183,16 @@ Features were chosen after reviewing a competitor's public pages. They are built
   - "AI recovery %";
   - public report links;
   - revenue split by patient gender.
+- **Financial records on erasure:** clinic setting *Keep payment records when a patient deletes their account* (default off). When it is on, payments and course fees are kept with the patient link, course name and notes removed, both in the app and on the server (migration `20261006000004`). Whether to turn it on is the owner's decision after legal or accounting advice.
+- **Supabase advisor fixes** (migration `20261006000003`):
+  - the RLS helpers move to a private schema that the REST API does not expose;
+  - `auth.uid()` and the helpers are evaluated once per query;
+  - indexes on the `org_id` foreign keys;
+  - an explicit no-access policy on the allowlist.
+
+  Migrations `000003` and `000004` are tested locally (`db/supabase_test.sql`) and still have to be applied to the live project. Leaked-password protection is a dashboard setting (Authentication → Policies), so the owner must enable it there.
+- **Phone layout:** the clinician bottom bar shows four sections plus **More**; library badges wrap.
 - **Open questions:**
-  - retention of financial records after a patient deletes their account (currently erased with the patient's data; tax-record rules need advice);
   - kinesiophobia questionnaire licensing;
   - more Indian languages (each needs clinical translation review).
 

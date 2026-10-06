@@ -41,6 +41,7 @@ export const en = {
   'nav.analytics': 'Analytics',
   'nav.schedule': 'Schedule',
   'nav.billing': 'Billing',
+  'nav.more': 'More',
   'nav.settings': 'Settings',
   'nav.validation': 'Validation',
   'nav.sign_out': 'Sign out',

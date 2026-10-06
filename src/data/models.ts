@@ -692,6 +692,11 @@ export interface ClinicSettings {
   releaseThresholds?: { values: Record<string, { loaWithin: number; maxFailureRate: number; minIcc: number; minN: number }>; lockedBy: ID; lockedAt: ISODate } | null;
   /** Raw video is never stored; landmark data retention in days (0 = keep until deleted). */
   retentionDays: number;
+  /**
+   * When a patient deletes their account, keep payments and treatment-course fees with the patient
+   * link removed (for accounting). Off by default; the clinic owner decides after legal advice.
+   */
+  retainFinancialOnErasure?: boolean;
   /** Exception-queue rules (Phase 17); absent = defaults, all unreviewed. */
   exceptionRules?: import('../clinical/trends').ExceptionRule[];
 }
