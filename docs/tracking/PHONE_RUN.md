@@ -76,3 +76,20 @@ Capture three heel slides, five sit-to-stands and three squats. Compare attempte
 1. Attach the exported JSON files and this completed sheet to the tracking issue; share no identifying camera footage.
 2. Enter blinded clinician reference measurements through the clinician capture view. The study protocol is in `docs/validation/STUDY_PROTOCOL.md`; Dheepika must approve it and lock thresholds before evaluation data are collected.
 3. Triage every unsafe number as a release blocker. Use tuning participants to change the algorithm, then rerun the frozen evaluation split. Do not present agreement or diagnostic claims until that work is complete.
+
+## 3D anatomy on real phones (required separately from pose tracking)
+
+Open the patient symptom map and clinician Anatomy explorer on the **same phone/browser** used for the camera run. Record the exact commit and whether WebGL2 starts. The atlas is a reference image; its region selection is not a clinical measurement.
+
+| Check | Front camera phone | Rear camera phone / second browser |
+| --- | --- | --- |
+| Anatomy reaches first render (seconds, cold cache / warm cache) | | |
+| Muscle and optional skeleton visually present | | |
+| Rotate front/back/side; left and right labels remain anatomically correct | | |
+| Tap knee, shoulder, neck, ankle and back: selected region matches the on-screen label and saved symptom | | |
+| 2D toggle keeps selections; retry 3D; browser with WebGL disabled gives a clear 2D fallback | | |
+| Five-minute interaction: memory/thermal impression, responsiveness, crash or context loss | | |
+| Offline after one load: record what still works and whether a clear explanation appears | | |
+| Screen reader and large text: region list remains selectable without WebGL | | |
+
+Use browser network tools when available to confirm that `/anatomy/anatomy.glb` and `/anatomy/skeleton.glb` come from Dheepika Lab's origin, return GLB bytes (not the SPA HTML), and show no request to `raw.githubusercontent.com`. Record whether 27 MB is acceptable on the target mobile connection. No result is pre-filled here.

@@ -2,30 +2,14 @@ import { useState } from 'react';
 import { summariseValidation, validationPairs } from '../../clinical/validationData';
 import { Notice } from '../../components/ui';
 import { updateSettings, useDb } from '../../data/store';
-import { PROTOCOLS } from '../../engine/protocols/registry';
+import { REQUIRED_VALIDATION_METRICS, validateReleaseThresholds } from '../../release/validationThresholds';
 
 /**
  * Validation study panel (clinician Settings). Release thresholds are the clinical lead's decision:
  * they start EMPTY, are entered here and locked before the final evaluation set is analysed.
  * Agreement figures are shown per split and are descriptive until the study protocol is complete.
  */
-const METRICS_BY_PROTOCOL: Record<string, string[]> = {
-  knee_supported_flexion: ['knee_flexion_peak', 'knee_extension_position'],
-  knee_sit_to_stand: ['sts_time_5', 'sts_rise_time'],
-  knee_squat: ['squat_fppa_left', 'squat_fppa_right', 'squat_depth'],
-  shoulder_flexion_active: ['shoulder_flexion_peak'],
-  shoulder_abduction_active: ['shoulder_abduction_peak'],
-  hip_flexion_standing: ['hip_flexion_peak'],
-  hip_abduction_standing: ['hip_abduction_peak'],
-  ankle_knee_to_wall: ['knee_to_wall_shin_angle'],
-  heel_raise_double: ['heel_raise_count'],
-  trunk_forward_bend: ['trunk_forward_bend_peak'],
-  trunk_side_bend: ['trunk_side_bend_peak'],
-  neck_flexion_extension: ['neck_flexion_change', 'neck_extension_change'],
-  single_leg_stance: ['single_leg_stance_time'],
-  march_in_place: ['march_cadence'],
-};
-const METRICS = Object.values(PROTOCOLS).flatMap((p) => METRICS_BY_PROTOCOL[p.id] ?? []);
+const METRICS = REQUIRED_VALIDATION_METRICS;
 
 const EMPTY_ROW = { loaWithin: '', maxFailureRate: '', minIcc: '', minN: '' };
 
@@ -35,16 +19,35 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
   const rows = summariseValidation(db);
   const pairs = validationPairs(db);
   const [draft, setDraft] = useState<Record<string, { loaWithin: string; maxFailureRate: string; minIcc: string; minN: string }>>({});
+  const [thresholdError, setThresholdError] = useState('');
   const f = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '–' : v.toFixed(d));
 
   const lock = () => {
-    const values: NonNullable<typeof rt>['values'] = {};
-    for (const [k, v] of Object.entries(draft)) {
-      const n = { loaWithin: Number(v.loaWithin), maxFailureRate: Number(v.maxFailureRate) / 100, minIcc: Number(v.minIcc), minN: Number(v.minN) };
-      if (Object.values(n).every((x) => Number.isFinite(x) && x > 0)) values[k] = n;
+    if (pairs.some((pair) => pair.split === 'evaluation')) {
+      setThresholdError('Final-evaluation references already exist. Thresholds cannot be locked after evaluation data was collected. Ask the study team to document a new prospective protocol.');
+      return;
     }
-    if (!Object.keys(values).length) return;
-    if (!confirm('Lock these release thresholds? They cannot be changed once evaluation data is analysed.')) return;
+    const values: NonNullable<typeof rt>['values'] = {};
+    for (const metric of METRICS) {
+      const row = draft[metric] ?? EMPTY_ROW;
+      if (Object.values(row).some((value) => value.trim() === '')) {
+        setThresholdError(`Complete every field before locking; ${metric.replace(/_/g, ' ')} is incomplete.`);
+        return;
+      }
+      values[metric] = {
+        loaWithin: Number(row.loaWithin),
+        maxFailureRate: Number(row.maxFailureRate) / 100,
+        minIcc: Number(row.minIcc),
+        minN: Number(row.minN),
+      };
+    }
+    const errors = validateReleaseThresholds({ values, lockedBy: actorId, lockedAt: new Date().toISOString() });
+    if (errors.length) {
+      setThresholdError(errors[0]);
+      return;
+    }
+    setThresholdError('');
+    if (!confirm('Lock all release thresholds? They cannot be changed once evaluation data is analysed.')) return;
     updateSettings({ releaseThresholds: { values, lockedBy: actorId, lockedAt: new Date().toISOString() } }, actorId);
   };
 
@@ -122,6 +125,7 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
               </tbody>
             </table>
           </div>
+          {thresholdError && <Notice tone="warn">{thresholdError}</Notice>}
           <button className="btn secondary sm" disabled={isDemo} onClick={lock} title={isDemo ? 'Demo accounts cannot lock thresholds' : undefined}>
             Lock thresholds
           </button>

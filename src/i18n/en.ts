@@ -39,6 +39,7 @@ export const en = {
   'nav.programs': 'Programs',
   'nav.library': 'Library',
   'nav.research': 'Research',
+  'nav.anatomy': 'Anatomy',
   'train.cues': 'Tips',
   'train.mistakes': 'Avoid',
   'train.advice': 'Home advice from your physiotherapist',

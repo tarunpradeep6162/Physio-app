@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { recordIncident } from '../../app/incidents';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { regionLabel, type BodyView } from './regions';
 
-interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: () => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
+interface Props { selected: string[]; onToggle: (id: string) => void; onUnavailable: (reason: 'webgl' | 'model') => void; readOnly?: boolean; initialView: BodyView; compact?: boolean }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
-const ROOT = 'https://raw.githubusercontent.com/JohanBellander/BodyExplorer/7d04bf3c4de2bd9cb234dd51d7e6857c099afafd/public/';
+const ROOT = '/anatomy/';
 
 // BodyParts3D is Z-up with Y as depth. Adapt the geometries to Three.js Y-up.
 function orient(geometry: THREE.BufferGeometry, origin: THREE.Vector3, scale: number) {
@@ -64,7 +65,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const el = host.current; if (!el) return;
     let renderer: THREE.WebGLRenderer;
     try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' }); }
-    catch { unavailableRef.current(); return; }
+    catch { unavailableRef.current('webgl'); return; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -95,10 +96,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const resize = () => { const r = el.getBoundingClientRect(); if (!r.width || !r.height) return; renderer.setSize(r.width, r.height, false); camera.aspect = r.width / r.height; camera.updateProjectionMatrix(); render(); };
     const observer = new ResizeObserver(resize); observer.observe(el); resize();
     const loader = new GLTFLoader();
-    Promise.all([
-      load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 70)}%`)),
-      load(loader, ROOT + 'skeleton.glb'),
-    ]).then(([anatomy, skeleton]) => {
+    load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`)).then((anatomy) => {
       if (disposed) return;
       const box = new THREE.Box3().setFromObject(anatomy), center = box.getCenter(new THREE.Vector3());
       const scale = 8.7 / box.getSize(new THREE.Vector3()).z;
@@ -110,9 +108,15 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         part.userData.tendon = /tendon|ligament|retinaculum|membrane/i.test(part.name);
         figure.add(part); target.push(part);
       });
-      add(anatomy, muscle, muscles); add(skeleton, bone, bones);
+      add(anatomy, muscle, muscles);
       setStatus(''); render();
-    }).catch(() => { if (!disposed) unavailableRef.current(); });
+      // The skeleton is decorative context. A failed optional download must not hide usable anatomy.
+      load(loader, ROOT + 'skeleton.glb').then((skeleton) => {
+        if (disposed) return;
+        add(skeleton, bone, bones);
+        render();
+      }).catch((error) => { if (!disposed) recordIncident('error', error); });
+    }).catch((error) => { if (!disposed) { recordIncident('error', error); unavailableRef.current('model'); } });
     const ray = new THREE.Raycaster(), pointer = new THREE.Vector2(), canvas = renderer.domElement;
     const hit = (e: PointerEvent) => { const r = canvas.getBoundingClientRect(); pointer.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1); ray.setFromCamera(pointer, camera); const part = ray.intersectObjects(muscles)[0]?.object as Part | undefined; return part ? idFor(part) : null; };
     const down = (e: PointerEvent) => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false }; };
@@ -129,6 +133,6 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     <div className="bodymap-3d-caption">Drag to rotate · Tap a region · Anatomical reference model</div>
     <div className="bodymap-3d-views" role="group" aria-label="Body view"><button type="button" onClick={() => rotateRef.current?.(0)}>Front</button><button type="button" onClick={() => rotateRef.current?.(Math.PI)}>Back</button><button type="button" onClick={() => rotateRef.current?.(-Math.PI / 2)}>Side</button></div>
     <div className="bodymap-3d-selected" aria-live="polite">{hover ? regionLabel(hover) : selected.length ? selected.map(regionLabel).join(' · ') : 'Select where you feel symptoms'}</div>
-    <p className="bodymap-3d-credit">Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan</p>
+    <p className="bodymap-3d-credit">Anatomy: BodyParts3D / Z-Anatomy · CC BY-SA · Illustrative, not your scan · <a href="/anatomy/SOURCE_ATTRIBUTION.md" target="_blank" rel="noopener noreferrer">Model credits</a></p>
   </div>;
 }

@@ -1,5 +1,6 @@
 import type { DB } from '../data/models';
 import { PROTOCOLS } from '../engine/protocols/registry';
+import { validateReleaseThresholds } from './validationThresholds';
 import { latestItems } from '../content/contentStore';
 import { DEFAULT_EXCEPTION_RULES } from '../clinical/trends';
 
@@ -76,10 +77,11 @@ export function releaseGate(db: DB): GateItem[] {
   const content = latestItems(db);
   const approvals = Object.keys(s.ruleApprovals ?? {});
   const validated = INTENDED_USES.filter((u) => u.status === 'validated').length;
+  const thresholdErrors = validateReleaseThresholds(s.releaseThresholds);
   return [
     { id: 'clinical_approval', label: 'Clinical lead approval of the release (Dheepika)', status: 'pending', detail: 'On hold by instruction. Recorded only by the clinical lead, outside the app.', owner: 'Dheepika' },
     { id: 'intended_uses', label: 'Intended uses validated', status: validated === INTENDED_USES.length ? 'pass' : 'pending', detail: `${validated} of ${INTENDED_USES.length} validated; evidence so far is synthetic or lab-emulated only.`, owner: 'Clinical lead + study team' },
-    { id: 'release_thresholds', label: 'Validation acceptance thresholds locked before the final analysis', status: s.releaseThresholds ? 'pass' : 'pending', detail: s.releaseThresholds ? `Locked ${s.releaseThresholds.lockedAt}` : 'Not set (Validation study screen).', owner: 'Clinical lead + statistician' },
+    { id: 'release_thresholds', label: 'Validation acceptance thresholds locked before the final analysis', status: thresholdErrors.length ? 'pending' : 'pass', detail: thresholdErrors.length ? thresholdErrors.slice(0, 3).join('; ') : `Locked ${s.releaseThresholds!.lockedAt}`, owner: 'Clinical lead + statistician' },
     { id: 'rule_sets', label: 'Clinical rule sets reviewed (safety, reasoning, protocols)', status: 'pending', detail: approvals.length ? `${approvals.length} rule set(s) recorded in Settings; the full list in the approval packet still needs review.` : 'None reviewed.', owner: 'Clinical lead' },
     { id: 'exception_rules', label: 'Exception-queue thresholds reviewed', status: rules.every((r) => !r.enabled || r.reviewedBy) ? 'pass' : 'pending', detail: `${rules.filter((r) => r.enabled && !r.reviewedBy).length} enabled rule(s) unreviewed.`, owner: 'Clinical lead' },
     { id: 'content', label: 'Exercise content reviewed and published', status: 'pending', detail: `${content.filter((c) => c.review.status === 'approved').length} of ${content.length} items approved; licensed media not yet added.`, owner: 'Clinical lead' },

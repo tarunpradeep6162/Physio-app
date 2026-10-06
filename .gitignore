@@ -6,3 +6,7 @@ dist
 public/pose/wasm
 public/pose/models/*.task
 *.tsbuildinfo
+
+# Generated from the checked-in parts; source downloads remain local.
+public/anatomy/anatomy.glb
+assets/source/

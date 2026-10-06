@@ -246,4 +246,4 @@ Features were chosen after reviewing a competitor's public pages. They are built
 | Anatomy: exercise cues and common mistakes | Clinician-authored cues and mistakes per library item, saved as a draft version for review; shown to patients after approval | Done |
 | Anatomy: condition atlas (627 conditions), likely causes | Not adopted — needs clinician-authored, referenced content; the app does not generate diagnoses | Needs clinical author |
 | Fixed likelihood %, default diagnosis/score, pre-filled sign-off, public report links, revenue by gender, spine curves / Q-angle / cm, "ideal" ghost skeleton, device-bound licence | Not adopted (see the review for reasons) | By design |
-| 3D body model, female/child body map | Map stays 2D and labelled interim until an accessible 3D model works | Open |
+| 3D body model, female/child body map | A 3D anatomy view with a 2D fallback was added in a parallel session (`/c/anatomy`, `BodyMap3D.tsx`); keyboard/screen-reader use and target-phone testing still to confirm. No female/child body variants | Partly done |

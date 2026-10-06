@@ -33,13 +33,14 @@ const AssessmentRoute = lazy(() => named(import('../features/knee/AssessmentRout
 const ReportRoute = lazy(() => named(import('../features/report/ReportView'), 'ReportRoute'));
 const LibraryPage = lazy(() => named(import('../features/library/LibraryPage'), 'LibraryPage'));
 const SchedulePage = lazy(() => named(import('../features/clinic/SchedulePage'), 'SchedulePage'));
+const ResearchPage = lazy(() => named(import('../features/clinician/ResearchPage'), 'ResearchPage'));
+const AnatomyAtlas = lazy(() => named(import('../features/bodymap/AnatomyAtlas'), 'AnatomyAtlas'));
 const BillingPage = lazy(() => named(import('../features/clinic/BillingPage'), 'BillingPage'));
 const DischargePage = lazy(() => named(import('../features/clinic/DischargePage'), 'DischargePage'));
 const PatientDeskCheck = lazy(() => named(import('../features/desk/DeskCheck'), 'PatientDeskCheck'));
 const ClinicDeskCheck = lazy(() => named(import('../features/desk/DeskCheck'), 'ClinicDeskCheck'));
 const AboutPage = lazy(() => named(import('../features/about/AboutPage'), 'AboutPage'));
 const PrivacyNotice = lazy(() => named(import('../features/about/AboutPage'), 'PrivacyNotice'));
-const ResearchPage = lazy(() => named(import('../features/clinician/ResearchPage'), 'ResearchPage'));
 const RomGuide = lazy(() => named(import('../features/library/RomGuide'), 'RomGuide'));
 const ProgramBuilder = lazy(() => named(import('../features/clinician/ProgramBuilder'), 'ProgramBuilder'));
 const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsIndex'), 'ProgramsIndex'));
@@ -177,6 +178,7 @@ function ClinicianLayout() {
     { to: '/c/programs', label: t('nav.programs'), icon: IconList },
     { to: '/c/library', label: t('nav.library'), icon: IconList },
     { to: '/c/research', label: t('nav.research'), icon: IconFlask },
+    { to: '/c/anatomy', label: t('nav.anatomy'), icon: IconScan },
     { to: '/c/analytics', label: t('nav.analytics'), icon: IconChart },
     { to: '/c/settings', label: t('nav.settings'), icon: IconSettings },
   ];
@@ -305,8 +307,9 @@ export function App() {
               <Route path="programs" element={<ProgramsIndex />} />
               <Route path="programs/new" element={<ProgramBuilder />} />
               <Route path="library" element={<LibraryPage />} />
-              <Route path="library/rom-guide" element={<RomGuide />} />
               <Route path="research" element={<ResearchPage />} />
+              <Route path="anatomy" element={<AnatomyAtlas />} />
+              <Route path="library/rom-guide" element={<RomGuide />} />
               <Route path="schedule" element={<SchedulePage />} />
               <Route path="billing" element={<BillingPage />} />
               <Route path="analytics" element={<Analytics />} />

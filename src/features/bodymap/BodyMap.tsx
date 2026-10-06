@@ -46,6 +46,7 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
   const artId = useId().replace(/:/g, '');
   const [view, setViewState] = useState<BodyView>(initialView);
   const [mode, setMode] = useState<'3d' | '2d'>(readOnly ? '2d' : '3d');
+  const [threeUnavailable, setThreeUnavailable] = useState<'webgl' | 'model' | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hover, setHover] = useState<string | null>(null);
@@ -140,11 +141,12 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
   return (
     <div className="stack tight">
       {!drawing && <div className="bodymap-mode" role="group" aria-label="Anatomy display">
-        <button type="button" aria-pressed={mode === '3d'} onClick={() => setMode('3d')}>3D body</button>
+        <button type="button" aria-pressed={mode === '3d'} onClick={() => { setThreeUnavailable(null); setMode('3d'); }}>3D body</button>
         <button type="button" aria-pressed={mode === '2d'} onClick={() => setMode('2d')}>2D map</button>
       </div>}
+      {threeUnavailable && <p className="small muted" role="status">{threeUnavailable === 'webgl' ? '3D anatomy needs WebGL, which this browser or device could not start. Use the 2D map and region list here.' : 'The anatomical model could not load. Check your connection or retry 3D; the 2D map and region list are available.'}</p>}
       {mode === '3d' && !drawing ? <Suspense fallback={<div className="bodymap-3d-loading" role="status">Loading 3D anatomy…</div>}>
-        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={() => setMode('2d')} readOnly={readOnly} compact={compact} initialView={initialView} />
+        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={(reason) => { setMode('2d'); setThreeUnavailable(reason); }} readOnly={readOnly} compact={compact} initialView={initialView} />
       </Suspense> : <>
       <Segmented label={t('body.rotate')} options={VIEW_ORDER.map((v) => ({ id: v, label: viewLabels[v] }))} value={view} onChange={setView} />
       <div

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Notice } from '../../components/ui';
 import { buildQuery, fetchAbstract, PubMedError, RESEARCH_FILTERS, searchPubMed, type AbstractSection, type PubMedRef, type ResearchFilter } from '../../evidence/pubmed';
 
@@ -31,32 +32,44 @@ export function ResearchPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ query: string; count: number; refs: PubMedRef[] } | null>(null);
+  // Only the latest search may update the page (a slow earlier response must not overwrite it).
+  const request = useRef(0);
 
   const run = async (t: string, f: ResearchFilter[]) => {
     const q = buildQuery(t, f);
     if (!q) return;
+    const id = ++request.current;
     setBusy(true);
     setError(null);
+    setResult(null);
     try {
       const r = await searchPubMed(q, { retmax: 20 });
-      setResult({ query: q, ...r });
+      if (request.current === id) setResult({ query: q, ...r });
     } catch (x) {
-      setResult(null);
-      setError(x instanceof PubMedError ? x.message : 'PubMed search failed.');
+      if (request.current === id) setError(x instanceof PubMedError ? x.message : 'PubMed search failed.');
     } finally {
-      setBusy(false);
+      if (request.current === id) setBusy(false);
     }
   };
   const toggle = (f: ResearchFilter) => setFilters((xs) => (xs.includes(f) ? xs.filter((x) => x !== f) : [...xs, f]));
 
   return (
     <div className="content stack loose">
-      <div>
-        <p className="eyebrow">Evidence</p>
-        <h1>Research</h1>
-        <p className="muted">Search PubMed live. Titles, journals and abstracts are shown exactly as PubMed returns them; the app does not summarise, grade or rank them. Appraise each paper yourself. Attach references to a patient’s plan from the program builder.</p>
+      <div className="row between wrap">
+        <div>
+          <p className="eyebrow">Evidence</p>
+          <h1>Research</h1>
+          <p className="muted">Search PubMed live. Titles, journals and abstracts are shown exactly as PubMed returns them; the app does not summarise, grade or rank them. Appraise each paper yourself.</p>
+        </div>
+        <Link className="btn secondary sm" to="/c/programs/new">
+          Open treatment planner
+        </Link>
       </div>
+      <Notice>
+        A search match does not establish that a treatment works for a particular patient — check the study design, population, outcomes and full text. Only the terms you enter are sent to NCBI. Never enter names or patient details.
+      </Notice>
       <form
+        role="search"
         className="panel stack"
         onSubmit={(e) => {
           e.preventDefault();
@@ -105,6 +118,7 @@ export function ResearchPage() {
       {error && <Notice tone="warn">{error} No references are shown until PubMed responds.</Notice>}
       {result && (
         <section className="stack" aria-live="polite" aria-labelledby="res-h">
+          <p className="xs muted" style={{ margin: 0 }}>To attach an appraised paper to a treatment plan, open the Evidence section in the planner. The record count is not a clinical consensus.</p>
           <h2 id="res-h" className="h3">
             {result.count.toLocaleString('en-IN')} records · first {result.refs.length} by PubMed relevance
           </h2>
