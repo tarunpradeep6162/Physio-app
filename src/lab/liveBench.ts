@@ -38,6 +38,33 @@ export interface LiveBenchResult {
   loadMs: number;
   /** Per-window timings over the run (thermal / sustained-load slowdown). No frames are kept. */
   sustained: SustainedSummary;
+  /** When and on what this ran (Phase 23 exit evidence). No personal data. */
+  context: RunContext;
+}
+
+export interface RunContext {
+  startedAt: string;
+  endedAt: string;
+  userAgent: string;
+  platform: string;
+  devicePixelRatio: number;
+  hardwareConcurrency: number | null;
+  /** GB, rounded by the browser (Chrome only). */
+  deviceMemoryGB: number | null;
+  /** Battery API where available (e.g. Chrome on Android); null elsewhere. */
+  battery: { startLevel: number; endLevel: number; charging: boolean } | null;
+  /** False if the page was hidden at any point (results not comparable). */
+  visibleThroughout: boolean;
+}
+
+type BatteryLike = { level: number; charging: boolean };
+async function battery(): Promise<BatteryLike | null> {
+  try {
+    const nav = navigator as Navigator & { getBattery?: () => Promise<BatteryLike> };
+    return nav.getBattery ? await nav.getBattery() : null;
+  } catch {
+    return null;
+  }
 }
 
 const pct = (xs: number[], p: number) => {
@@ -48,6 +75,14 @@ const pct = (xs: number[], p: number) => {
 
 export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions): Promise<LiveBenchResult> {
   const duration = (o.durationSec ?? 10) * 1000;
+  const startedAt = new Date().toISOString();
+  const bat = await battery();
+  const batStart = bat ? { level: bat.level, charging: bat.charging } : null;
+  let visibleThroughout = document.visibilityState === 'visible';
+  const onVis = () => {
+    if (document.visibilityState !== 'visible') visibleThroughout = false;
+  };
+  document.addEventListener('visibilitychange', onVis);
   const stream = await openCamera(o.facing ?? 'user', video, o.constraints);
   const track = stream.getVideoTracks()[0];
   const t0Load = performance.now();
@@ -149,6 +184,19 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
   worker?.close();
   closeCamera(stream);
   video.srcObject = null;
+  document.removeEventListener('visibilitychange', onVis);
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  const context: RunContext = {
+    startedAt,
+    endedAt: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+    devicePixelRatio: window.devicePixelRatio || 1,
+    hardwareConcurrency: navigator.hardwareConcurrency || null,
+    deviceMemoryGB: nav.deviceMemory ?? null,
+    battery: bat && batStart ? { startLevel: Math.round(batStart.level * 100) / 100, endLevel: Math.round(bat.level * 100) / 100, charging: batStart.charging || bat.charging } : null,
+    visibleThroughout,
+  };
   return {
     loop,
     provider: info.id,
@@ -162,5 +210,6 @@ export async function runLiveBench(video: HTMLVideoElement, o: LiveBenchOptions)
     ui: { rafGapP95Ms: pct(gaps, 0.95), rafGapMaxMs: pct(gaps, 1), longTaskMsPerSec: Math.round((longTask / elapsed) * 1000) },
     loadMs: Math.round(loadMs),
     sustained: sustainedWindows(timeline, elapsed),
+    context,
   };
 }

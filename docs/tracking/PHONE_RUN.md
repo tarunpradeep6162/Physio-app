@@ -40,6 +40,10 @@ For each cell, record:
 - inference p50 / p95 from Validation Mode diagnostics;
 - whether any number appeared while invalid.
 
+## What each result JSON now records (Oct 2026)
+
+Every lab run result has a `context` block: start and end time, user agent, platform, device pixel ratio, CPU cores, device memory (where the browser reports it), battery level at start and end (where the Battery API exists, e.g. Chrome on Android), and `visibleThroughout`. If that is `false` the page was hidden during the run, and the result is not comparable. Dropped camera frames are `skippedCameraFrames`. Record room lighting and phone temperature by hand in the table above, because the page cannot measure them.
+
 ## Sustained run (thermal)
 
 On `/lab.html`, tap **Sustained run (5 min, worker)** with the phone on its mount. The result JSON contains `sustained.windows` (fps and inference p50/p95 per 30 s) and `slowdownRatio` (last ÷ first window). Record the phone's temperature by touch (cool / warm / hot) and the battery change. **Only timings are kept; no frames or video.**
