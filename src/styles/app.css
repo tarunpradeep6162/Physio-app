@@ -789,6 +789,9 @@ textarea.input {
 
 /* Tables */
 .table-wrap {
+  /* Contain absolutely positioned descendants (sr-only labels): otherwise they escape the scroll
+     box and widen the page, which makes phones zoom the whole screen out. */
+  position: relative;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }

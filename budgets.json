@@ -1,0 +1,13 @@
+{
+  "about": "Phase 43 size budgets, in kilobytes after gzip. null means the owner has not set a budget yet: the size is reported but cannot fail the build. These are engineering limits only; they say nothing about clinical performance.",
+  "setBy": null,
+  "setOn": null,
+  "budgets": {
+    "initialJsGzipKB": null,
+    "allJsGzipKB": null,
+    "cssGzipKB": null,
+    "anatomyLiteGzipKB": null,
+    "anatomyFullGzipKB": null,
+    "poseRuntimeGzipKB": null
+  }
+}

@@ -11,3 +11,8 @@ public/pose/models/*.task
 public/anatomy/anatomy.glb
 assets/source/
 a11y-report.json
+test-results/
+e2e-report/
+playwright-report/
+size-report.json
+sbom.cdx.json

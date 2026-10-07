@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Dheepika Lab — camera-first movement intelligence platform for physiotherapy (MVP).",
+  "description": "Dheepika Lab \u2014 camera-first movement intelligence platform for physiotherapy (MVP).",
   "scripts": {
     "postinstall": "node scripts/prepare-pose-assets.mjs && node scripts/prepare-anatomy-assets.mjs",
     "dev": "vite",
@@ -14,7 +14,10 @@
     "test:watch": "vitest",
     "serve": "node scripts/serve-dist.mjs",
     "prebuild": "node scripts/prepare-anatomy-assets.mjs",
-    "a11y": "node scripts/a11y-audit.mjs"
+    "a11y": "node scripts/a11y-audit.mjs",
+    "e2e": "playwright test",
+    "size": "node scripts/size-report.mjs",
+    "licences": "node scripts/licence-check.mjs"
   },
   "dependencies": {
     "@fontsource/noto-sans-tamil": "^5.3.0",
@@ -28,6 +31,7 @@
     "three": "^0.186.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
