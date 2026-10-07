@@ -22,13 +22,13 @@ export interface MigrationBundle {
   sha256: string;
 }
 
-const TABLES = ['users', 'patients', 'clinicians', 'careRelationships', 'consents', 'assessments', 'painRegions', 'pros', 'scans', 'measurements', 'observations', 'programs', 'programExercises', 'sessions', 'notes', 'alerts', 'messages', 'audit', 'radiationPaths', 'intakeAnswers', 'safetyResponses', 'amendments', 'testPlans', 'captures', 'reasoningDecisions', 'impressions', 'reports', 'draftDecisions', 'examFindings', 'planPauses', 'planResumes', 'appointments', 'activitySamples', 'activityImports', 'contentItems', 'contentReviews', 'programLibraryItems', 'deviceMeasurements', 'treatmentCourses', 'payments', 'expenses', 'discharges'] as const;
+export const MIGRATION_TABLES = ['users', 'patients', 'clinicians', 'careRelationships', 'consents', 'assessments', 'painRegions', 'pros', 'scans', 'measurements', 'observations', 'programs', 'programExercises', 'sessions', 'notes', 'alerts', 'messages', 'audit', 'radiationPaths', 'intakeAnswers', 'safetyResponses', 'amendments', 'testPlans', 'captures', 'reasoningDecisions', 'impressions', 'reports', 'draftDecisions', 'examFindings', 'planPauses', 'planResumes', 'appointments', 'activitySamples', 'activityImports', 'contentItems', 'contentReviews', 'programLibraryItems', 'deviceMeasurements', 'treatmentCourses', 'payments', 'expenses', 'discharges'] as const;
 const LINK_KEYS = ['patientId', 'assessmentId', 'programId', 'sessionId', 'captureId', 'scanId', 'userId', 'clinicianId', 'fromUserId', 'createdBy', 'reviewedBy', 'authorId', 'approvedBy', 'actorId', 'baselineAssessmentId', 'baselineCaptureId', 'entityId'] as const;
 
 /** Follow demo relationships, including rows without patientId or isDemo (plans, paths, audit). */
 function demoRecordIds(db: DB): Set<string> {
   const ids = new Set<string>();
-  const rows = TABLES.flatMap((t) => db[t] as unknown as Record<string, unknown>[]);
+  const rows = MIGRATION_TABLES.flatMap((t) => db[t] as unknown as Record<string, unknown>[]);
   for (const row of rows) {
     if (row.isDemo === true || (row.provenance as { source?: string } | undefined)?.source === 'simulated_demo') {
       if (typeof row.id === 'string') ids.add(row.id);
@@ -66,7 +66,7 @@ export async function buildMigrationBundle(db: DB, opts: { includeDemo?: boolean
   const excluded = { demoRows: 0, passwordHashes: 0, images: 0 };
   const demoIds = includeDemo ? new Set<string>() : demoRecordIds(db);
   const tables: Record<string, unknown[]> = {};
-  for (const t of TABLES) {
+  for (const t of MIGRATION_TABLES) {
     const rows = (db[t] as unknown as Record<string, unknown>[]) ?? [];
     tables[t] = rows
       .filter((r) => {
@@ -113,12 +113,12 @@ export async function verifyMigrationBundle(input: unknown, opts: { allowDemo?: 
   if (!b.options || !b.excluded || !b.tables || !b.counts || !/^[a-f0-9]{64}$/.test(b.sha256)) throw new Error('Incomplete migration bundle');
   if (b.options.includeDemo && !opts.allowDemo) throw new Error('Demo data import is disabled');
   if (b.options.includeImages && !opts.allowImages) throw new Error('Image import requires separate consent');
-  if (Object.keys(b.tables).length !== TABLES.length || Object.keys(b.counts).length !== TABLES.length) throw new Error('Unexpected migration table');
-  for (const t of TABLES) {
+  if (Object.keys(b.tables).length !== MIGRATION_TABLES.length || Object.keys(b.counts).length !== MIGRATION_TABLES.length) throw new Error('Unexpected migration table');
+  for (const t of MIGRATION_TABLES) {
     if (!Array.isArray(b.tables[t]) || b.counts[t] !== b.tables[t].length) throw new Error(`Invalid row count for ${t}`);
   }
   if (b.tables.users.some((u) => u && typeof u === 'object' && ('passwordHash' in u || 'passwordSalt' in u))) throw new Error('Local credentials may not be imported');
-  if (!opts.allowDemo && TABLES.some((t) => b.tables[t].some((r) => r && typeof r === 'object' && (r as { isDemo?: boolean }).isDemo === true))) throw new Error('Demo data found in bundle');
+  if (!opts.allowDemo && MIGRATION_TABLES.some((t) => b.tables[t].some((r) => r && typeof r === 'object' && (r as { isDemo?: boolean }).isDemo === true))) throw new Error('Demo data found in bundle');
   if (!opts.allowImages && b.tables.scans.some((r) => r && typeof r === 'object' && 'imageDataUrl' in r)) throw new Error('Images found in bundle');
   if (await sha256Hex(canonical(b.tables)) !== b.sha256) throw new Error('Migration checksum mismatch');
   return b;

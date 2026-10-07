@@ -2,7 +2,7 @@ import type { DB } from '../data/models';
 import { PROTOCOLS } from '../engine/protocols/registry';
 import { validateReleaseThresholds } from './validationThresholds';
 import { latestItems } from '../content/contentStore';
-import { DEFAULT_EXCEPTION_RULES } from '../clinical/trends';
+import { withDefaultRules } from '../clinical/trends';
 
 /**
  * Evidence, validation and controlled release (Phase 20).
@@ -73,7 +73,7 @@ export interface GateItem {
 /** Go/no-go checklist. Every item must pass before real-patient release; the build flag must also change. */
 export function releaseGate(db: DB): GateItem[] {
   const s = db.settings;
-  const rules = s.exceptionRules ?? DEFAULT_EXCEPTION_RULES;
+  const rules = withDefaultRules(s.exceptionRules);
   const content = latestItems(db);
   const approvals = Object.keys(s.ruleApprovals ?? {});
   const validated = INTENDED_USES.filter((u) => u.status === 'validated').length;

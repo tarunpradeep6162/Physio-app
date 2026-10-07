@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildDemoDb } from '../data/demo';
 import type { CaptureSession, DB } from '../data/models';
-import { DEFAULT_EXCEPTION_RULES, exceptionQueue, metricTrend, reviewRule, symptomTrend, updateRule } from './trends';
+import { DEFAULT_EXCEPTION_RULES, exceptionQueue, metricTrend, reviewRule, symptomTrend, updateRule, withDefaultRules } from './trends';
 
 const kneePatient = (db: DB) => db.patients.find((p) => db.assessments.filter((a) => a.patientId === p.id && a.region === 'knee').length >= 2)!;
 
@@ -78,5 +78,45 @@ describe('Phase 17 — exception queue with configurable, reviewed thresholds', 
     const q = exceptionQueue(db, DEFAULT_EXCEPTION_RULES, new Date().toISOString(), () => []);
     const dp4 = db.patients.find((p) => p.name.includes('DP-04'))!;
     expect(q.some((x) => x.patientId === dp4.id && x.ruleId === 'repeat_invalid')).toBe(false); // 1 invalid < 2
+  });
+});
+
+describe('overdue clinician work (Phase 34)', () => {
+  const NOW = '2026-10-07T10:00:00.000Z';
+  const ago = (d: number) => new Date(Date.parse(NOW) - d * 86_400_000).toISOString();
+  const only = (db: DB, id: string) => exceptionQueue(db, DEFAULT_EXCEPTION_RULES, NOW, () => []).filter((x) => x.ruleId === id);
+
+  it('flags assessments and safety holds waiting for review past the threshold', () => {
+    const db = buildDemoDb();
+    const pid = db.patients[0].id;
+    db.assessments = [
+      { ...db.assessments[0], id: 'w1', patientId: pid, status: 'submitted', createdAt: ago(3) },
+      { ...db.assessments[0], id: 'w2', patientId: pid, status: 'safety_hold', createdAt: ago(5) },
+      { ...db.assessments[0], id: 'w3', patientId: pid, status: 'submitted', createdAt: ago(1) },
+      { ...db.assessments[0], id: 'w4', patientId: pid, status: 'reviewed', createdAt: ago(9) },
+    ];
+    const items = only(db, 'review_waiting');
+    expect(items.map((i) => i.summary)).toEqual(['Submitted assessment waiting 3 day(s) for review', 'Safety hold waiting 5 day(s) for review']);
+  });
+
+  it('flags an unresolved plan pause and an overdue reassessment on the approved plan', () => {
+    const db = buildDemoDb();
+    const prog = db.programs.find((p) => p.status === 'active')!;
+    prog.approvedAt = ago(40);
+    prog.reassessAfterDays = 28;
+    db.assessments = db.assessments.filter((a) => a.patientId !== prog.patientId || a.createdAt <= prog.approvedAt!);
+    db.planPauses = [{ id: 'pz', programId: prog.id, patientId: prog.patientId, reason: 'pain_rule', detail: '6/10', by: 'u', at: ago(3) }];
+    db.planResumes = [];
+    expect(only(db, 'pause_unresolved').map((i) => i.summary)).toEqual(['Plan paused 3 day(s) without a clinician decision']);
+    expect(only(db, 'reassess_overdue').some((i) => /28 days since approval/.test(i.summary))).toBe(true);
+    db.planResumes = [{ id: 'rz', programId: prog.id, pauseId: 'pz', by: 'u', at: ago(1) } as DB['planResumes'][number]];
+    expect(only(db, 'pause_unresolved')).toEqual([]);
+  });
+
+  it('adds new rules to settings saved before they existed, unreviewed', () => {
+    const saved = DEFAULT_EXCEPTION_RULES.filter((r) => !['review_waiting', 'reassess_overdue', 'pause_unresolved'].includes(r.id)).map((r) => ({ ...r, threshold: r.threshold + 1, reviewedBy: 'lead' }));
+    const merged = withDefaultRules(saved);
+    expect(merged.slice(0, saved.length)).toEqual(saved); // the clinic's own choices are kept
+    expect(merged.filter((r) => !r.reviewedBy).map((r) => r.id)).toEqual(['review_waiting', 'reassess_overdue', 'pause_unresolved']);
   });
 });

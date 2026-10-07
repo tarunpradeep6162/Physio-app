@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { isPathwayRegion, PATHWAYS } from '../../clinical/pathways';
-import { activityTrend, adherenceTrend, DEFAULT_EXCEPTION_RULES, exceptionQueue, metricTrend, reviewRule, symptomTrend, updateRule, type ExceptionRule, type MetricTrend } from '../../clinical/trends';
+import { activityTrend, adherenceTrend, exceptionQueue, withDefaultRules, metricTrend, reviewRule, symptomTrend, updateRule, type ExceptionRule, type MetricTrend } from '../../clinical/trends';
 import { Notice } from '../../components/ui';
 import type { DB, ID, Patient } from '../../data/models';
 import { fmtDate } from '../../data/queries';
@@ -120,7 +120,7 @@ export function TrendsTab({ db, patient }: { db: DB; patient: Patient }) {
 }
 
 export function ExceptionQueuePanel({ db }: { db: DB }) {
-  const rules = db.settings.exceptionRules ?? DEFAULT_EXCEPTION_RULES;
+  const rules = withDefaultRules(db.settings.exceptionRules);
   const items = exceptionQueue(db, rules, new Date().toISOString(), (pid) => trendRowsFor(db, pid));
   const name = (id: string) => db.patients.find((p) => p.id === id)?.name ?? id;
   const unreviewed = rules.filter((r) => r.enabled && !r.reviewedBy).length;
@@ -151,7 +151,7 @@ export function ExceptionQueuePanel({ db }: { db: DB }) {
 }
 
 export function ExceptionRulesEditor({ rules, actorId, reviewerName }: { rules: ExceptionRule[] | undefined; actorId: string; reviewerName: string }) {
-  const current = rules ?? DEFAULT_EXCEPTION_RULES;
+  const current = withDefaultRules(rules);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const save = (next: ExceptionRule[]) => updateSettings({ exceptionRules: next }, actorId);
   return (

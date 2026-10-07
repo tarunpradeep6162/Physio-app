@@ -3,7 +3,7 @@ import { compareConfig } from '../engine/protocols/recorder';
 import { dailyActivity } from '../integrations/activity';
 import { activityConsent } from '../integrations/activityStore';
 import { capturesFor } from './evidence';
-import { latestApprovedPlan } from './plan';
+import { latestApprovedPlan, openPauses, reassessmentDue } from './plan';
 import { programExercises } from '../data/queries';
 
 /**
@@ -143,7 +143,7 @@ export function activityTrend(db: DB, patientId: ID, now: string, weeks = 6, min
 // ---- Exception queue ------------------------------------------------------------------------
 
 export interface ExceptionRule {
-  id: 'pain_rise' | 'low_adherence' | 'no_contact' | 'rom_decrease' | 'repeat_invalid' | 'activity_drop';
+  id: 'pain_rise' | 'low_adherence' | 'no_contact' | 'rom_decrease' | 'repeat_invalid' | 'activity_drop' | 'review_waiting' | 'reassess_overdue' | 'pause_unresolved';
   label: string;
   /** Threshold value in `unit`. */
   threshold: number;
@@ -162,7 +162,20 @@ export const DEFAULT_EXCEPTION_RULES: ExceptionRule[] = [
   { id: 'rom_decrease', label: 'Comparable camera value lower than the previous comparable value by at least', threshold: 10, unit: '° / unit', enabled: true },
   { id: 'repeat_invalid', label: 'Invalid captures in the latest assessment, at least', threshold: 2, unit: 'captures', enabled: true },
   { id: 'activity_drop', label: 'Weekly median steps lower than the previous week by at least (both weeks ≥ 4 days of data)', threshold: 30, unit: '%', enabled: true },
+  // Phase 34: clinician work that is overdue (operational, not clinical).
+  { id: 'review_waiting', label: 'Submitted assessment (or safety hold) not yet reviewed for at least', threshold: 2, unit: 'days', enabled: true },
+  { id: 'reassess_overdue', label: 'Reassessment due on the approved plan and not done for at least', threshold: 0, unit: 'days', enabled: true },
+  { id: 'pause_unresolved', label: 'Plan paused (pain rule or patient report) and not resumed or revised for at least', threshold: 2, unit: 'days', enabled: true },
 ];
+
+/**
+ * Rules saved before a new rule existed still get the new rule (at its default, unreviewed), so a
+ * clinic's stored settings never silently switch off a later safety check.
+ */
+export function withDefaultRules(saved: ExceptionRule[] | undefined): ExceptionRule[] {
+  if (!saved) return DEFAULT_EXCEPTION_RULES;
+  return [...saved, ...DEFAULT_EXCEPTION_RULES.filter((d) => !saved.some((r) => r.id === d.id))];
+}
 
 export interface ExceptionItem {
   patientId: ID;
@@ -236,6 +249,26 @@ export function exceptionQueue(db: DB, rules: ExceptionRule[], now: string, tren
       if (w.length === 2 && w[0].medianSteps && w[1].medianSteps !== null) {
         const drop = ((w[0].medianSteps - w[1].medianSteps) / w[0].medianSteps) * 100;
         if (drop >= r6.threshold) push(r6, `Median daily steps ${w[0].medianSteps} → ${w[1].medianSteps} (−${Math.round(drop)}%)`, [`device-imported, ${w[0].daysWithData} and ${w[1].daysWithData} days of data`]);
+      }
+    }
+    const days = (iso: string) => (nowMs - Date.parse(iso)) / 86_400_000;
+    const r7 = on('review_waiting');
+    if (r7) {
+      for (const a of db.assessments.filter((x) => x.patientId === p.id && (x.status === 'submitted' || x.status === 'safety_hold'))) {
+        const waited = days(a.createdAt);
+        if (waited >= r7.threshold) push(r7, `${a.status === 'safety_hold' ? 'Safety hold' : 'Submitted assessment'} waiting ${Math.floor(waited)} day(s) for review`, [`${a.region ?? 'knee'} assessment ${a.createdAt.slice(0, 10)}`], a.createdAt);
+      }
+    }
+    const r8 = on('reassess_overdue');
+    if (r8 && prog) {
+      for (const due of reassessmentDue(db, prog, now)) {
+        if (days(due.since) >= r8.threshold) push(r8, `Reassessment overdue: ${due.reason}`, [`plan ${prog.title} v${prog.version ?? 1}`, `due since ${due.since.slice(0, 10)}`], due.since);
+      }
+    }
+    const r9 = on('pause_unresolved');
+    if (r9 && prog) {
+      for (const pause of openPauses(db, prog.id)) {
+        if (days(pause.at) >= r9.threshold) push(r9, `Plan paused ${Math.floor(days(pause.at))} day(s) without a clinician decision`, [`pause reason: ${pause.reason.replace(/_/g, ' ')}${pause.detail ? ` (${pause.detail})` : ''}`, `plan ${prog.title} v${prog.version ?? 1}`], pause.at);
       }
     }
   }
