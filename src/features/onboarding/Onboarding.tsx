@@ -24,7 +24,7 @@ export function Onboarding() {
   const [sex, setSex] = useState<string>(patient?.sex ?? '');
   const [phone, setPhone] = useState(patient?.phone ?? '');
   const [height, setHeight] = useState(patient?.heightCm?.toString() ?? '');
-  const [lang, setLang] = useState<Locale>(locale);
+  const [lang, setLang] = useState<Exclude<Locale, 'pseudo'>>(locale === 'pseudo' ? 'en' : locale);
   const [consent, setConsent] = useState<Record<Exclude<ConsentType, 'activity_steps' | 'activity_walking'>, boolean>>({ camera_processing: false, data_storage: false, image_storage: false, research_export: false });
   const [concern, setConcern] = useState(patient?.concern ?? '');
   const [goal, setGoal] = useState(patient?.goal ?? '');

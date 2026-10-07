@@ -6,7 +6,7 @@ import { signOut } from '../data/auth';
 import { usePrefs } from '../data/prefs';
 import { getSyncStatus, onSyncStatus } from '../data/remote/status';
 import { storageError, useDb } from '../data/store';
-import { I18nProvider, useT } from '../i18n';
+import { htmlLang, I18nProvider, useT } from '../i18n';
 import { useCurrentUser } from './hooks';
 import { applyUpdate, onUpdateReady, updateReady } from './swUpdate';
 
@@ -56,7 +56,7 @@ function useDocumentPrefs() {
     h.classList.toggle('large-text', prefs.largeText);
     h.classList.toggle('high-contrast', prefs.highContrast);
     h.classList.toggle('reduced-motion', prefs.reducedMotion);
-    h.lang = prefs.locale;
+    h.lang = htmlLang(prefs.locale);
   }, [prefs]);
   return prefs;
 }

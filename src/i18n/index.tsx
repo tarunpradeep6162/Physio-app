@@ -8,19 +8,41 @@ import { ta } from './ta';
  * dictionary here — no component changes needed. Clinical strings require reviewed translations.
  */
 
-export type Locale = 'en' | 'ta';
+/** 'pseudo' is a layout-test locale (Phase 46): never offered to people, set only by tests. */
+export type Locale = 'en' | 'ta' | 'pseudo';
 
-export const LOCALES: { id: Locale; label: string; speech: string; reviewed: boolean }[] = [
+/** Languages a person can choose. */
+export type UserLocale = Exclude<Locale, 'pseudo'>;
+
+export const LOCALES: { id: UserLocale; label: string; speech: string; reviewed: boolean }[] = [
   { id: 'en', label: 'English', speech: 'en-IN', reviewed: true },
   { id: 'ta', label: 'தமிழ் (Tamil)', speech: 'ta-IN', reviewed: false },
 ];
 
-const DICTS: Record<Locale, Partial<Record<MessageKey, string>>> = { en, ta };
+const DICTS: Record<UserLocale, Partial<Record<MessageKey, string>>> = { en, ta };
+
+const ACCENT: Record<string, string> = { a: 'á', e: 'é', i: 'í', o: 'ó', u: 'ú', A: 'Á', E: 'É', I: 'Í', O: 'Ó', U: 'Ú', c: 'ç', n: 'ñ', s: 'š', y: 'ý' };
+
+/**
+ * Pseudo-localisation for layout testing: accents every letter outside {placeholders}, adds about
+ * 40% length (translations such as Tamil often run longer than English) and brackets the string so
+ * clipped or hard-coded text is easy to see.
+ */
+export function pseudo(s: string): string {
+  const body = s.split(/(\{\w+\})/).map((part) => (/^\{\w+\}$/.test(part) ? part : part.replace(/[a-zA-Z]/g, (c) => ACCENT[c] ?? c))).join('');
+  // Padding comes as short words so it wraps like real text instead of forcing overflow.
+  const words = Math.ceil((s.length * 0.4) / 6);
+  return `[${body}${words ? ' ' + Array(words).fill('·····').join(' ') : ''}]`;
+}
+
+/** BCP 47 tag for the document: the pseudo locale uses the conventional pseudo-English tag. */
+export const htmlLang = (l: Locale) => (l === 'pseudo' ? 'en-XA' : l);
 
 export type Params = Record<string, string | number>;
 
 export function translate(locale: Locale, key: string, params?: Params): string {
-  const raw = (DICTS[locale] as Record<string, string | undefined>)[key] ?? (en as Record<string, string>)[key] ?? key;
+  const english = (en as Record<string, string>)[key];
+  const raw = locale === 'pseudo' ? (english !== undefined ? pseudo(english) : key) : (DICTS[locale] as Record<string, string | undefined>)[key] ?? english ?? key;
   if (!params) return raw;
   return raw.replace(/\{(\w+)\}/g, (_, k: string) => (params[k] !== undefined ? String(params[k]) : `{${k}}`));
 }
