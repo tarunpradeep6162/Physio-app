@@ -2,6 +2,7 @@ import { lazy, Suspense, useId, useRef, useState, type PointerEvent as RPointerE
 import { IconMinus, IconPlus } from '../../components/icons';
 import { Segmented } from '../../components/ui';
 import { setPrefs, usePrefs } from '../../data/prefs';
+import type { AtlasStats } from './atlasProbe';
 import { useT } from '../../i18n';
 import { capsulePath, regionLabel, viewsFor, VIEW_ORDER, VIEWS, type BodyView, type Shape } from './regions';
 
@@ -48,6 +49,8 @@ export interface BodyMapProps {
   paths?: MapPath[];
   drawing?: { color: string; onStroke: (points: [number, number][], view: BodyView) => void } | null;
   onViewChange?: (v: BodyView) => void;
+  /** 3D atlas device performance record (testers; no patient data). */
+  onAtlasStats?: (s: AtlasStats) => void;
 }
 
 function shapeEl(s: Shape, props: Record<string, unknown>) {
@@ -59,7 +62,7 @@ function shapeEl(s: Shape, props: Record<string, unknown>) {
 const pathD = (pts: [number, number][]) => pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
 const BodyMap3D = lazy(() => import('./BodyMap3D'));
 
-export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', compact, paths = [], drawing, onViewChange }: BodyMapProps) {
+export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', compact, paths = [], drawing, onViewChange, onAtlasStats }: BodyMapProps) {
   const { t } = useT();
   const artId = useId().replace(/:/g, '');
   // Read-only maps (reports, review) open on the view showing most of the marked regions, so a
@@ -75,7 +78,7 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
     setModeState(m);
     if (!readOnly) setPrefs({ bodyMapMode: m });
   };
-  const [threeUnavailable, setThreeUnavailable] = useState<'webgl' | 'model' | null>(null);
+  const [threeUnavailable, setThreeUnavailable] = useState<'webgl' | 'model' | 'context_lost' | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hover, setHover] = useState<string | null>(null);
@@ -178,9 +181,9 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
         <button type="button" aria-pressed={mode === '2d'} onClick={() => setMode('2d')}>2D map</button>
       </div>}
       {drawing && <p className="xs muted" style={{ margin: 0 }}>Radiation paths are drawn on the 2D map.</p>}
-      {threeUnavailable && <p className="small muted" role="status">{threeUnavailable === 'webgl' ? '3D anatomy needs WebGL, which this browser or device could not start. Use the 2D map and region list here.' : 'The anatomical model could not load. Check your connection or retry 3D; the 2D map and region list are available.'}</p>}
+      {threeUnavailable && <p className="small muted" role="status">{threeUnavailable === 'webgl' ? '3D anatomy needs WebGL, which this browser or device could not start. Use the 2D map and region list here.' : threeUnavailable === 'context_lost' ? 'The 3D view stopped because this device ran short of graphics memory. Your selections are kept on the 2D map; you can retry 3D.' : 'The anatomical model could not load. Check your connection or retry 3D; the 2D map and region list are available.'}</p>}
       {mode === '3d' && !drawing ? <Suspense fallback={<div className="bodymap-3d-loading" role="status">Loading 3D anatomy…</div>}>
-        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={(reason) => { setModeState('2d'); setThreeUnavailable(reason); }} readOnly={readOnly} compact={compact} initialView={initialView} />
+        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={(reason) => { setModeState('2d'); setThreeUnavailable(reason); }} readOnly={readOnly} compact={compact} initialView={initialView} onStats={onAtlasStats} />
         {!readOnly && (
           <details className="bodymap-list">
             <summary>{t('body.list_toggle')}</summary>

@@ -3,15 +3,18 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { recordIncident } from '../../app/incidents';
 import { classifyMesh, regionAt } from './anatomyRegions';
+import { deviceInfo, memoryInfo, Samples, type AtlasStats } from './atlasProbe';
 import { regionLabel, type BodyView } from './regions';
 
 interface Props {
   selected: string[];
   onToggle: (id: string) => void;
-  onUnavailable: (reason: 'webgl' | 'model') => void;
+  onUnavailable: (reason: 'webgl' | 'model' | 'context_lost') => void;
   readOnly?: boolean;
   initialView: BodyView;
   compact?: boolean;
+  /** Device performance record for testers (Phase 24); no patient data. */
+  onStats?: (s: AtlasStats) => void;
 }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 const ROOT = '/anatomy/';
@@ -61,7 +64,7 @@ function load(loader: GLTFLoader, url: string, progress?: (f: number) => void) {
 }
 
 /** A licensed anatomical atlas, not a rendering or diagnosis of the patient. */
-export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact }: Props) {
+export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact, onStats }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected), toggleRef = useRef(onToggle), unavailableRef = useRef(onUnavailable);
   const api = useRef<{ rotateTo: (a: number) => void; rotateBy: (d: number) => void; zoom: (d: number) => void; draw: () => void } | null>(null);
@@ -71,6 +74,8 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
   selectedRef.current = selected;
   toggleRef.current = onToggle;
   unavailableRef.current = onUnavailable;
+  const statsRef = useRef(onStats);
+  statsRef.current = onStats;
   useEffect(() => api.current?.draw(), [selected]);
 
   useEffect(() => {
@@ -119,6 +124,36 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     let lastColoured: { sel: string; hover: number } | null = null;
     let origin: THREE.Vector3 | null = null, scale = 1;
 
+    let dragging = false;
+    // Performance probe (Phase 24): timings only, no patient data.
+    const probe = {
+      start: performance.now(),
+      modelMs: null as number | null,
+      skeletonStart: 0,
+      skeletonMs: null as number | null,
+      tagMs: 0,
+      vertices: 0,
+      triangles: 0,
+      bytes: 0,
+      frameInterval: new Samples(),
+      renderCpu: new Samples(),
+      tap: new Samples(),
+      lastFrame: 0,
+      tapAt: 0,
+      contextLost: 0,
+    };
+    const emitStats = () =>
+      statsRef.current?.({
+        kind: 'dheepika-atlas-device-qa',
+        version: 1,
+        recordedAt: new Date().toISOString(),
+        device: deviceInfo(renderer.getContext()),
+        load: { modelMs: probe.modelMs, tagMs: Math.round(probe.tagMs), skeletonMs: probe.skeletonMs, meshes: parts.length, vertices: probe.vertices, triangles: probe.triangles, geometryBytes: probe.bytes },
+        interaction: { frameInterval: probe.frameInterval.summary(), renderCpu: probe.renderCpu.summary(), tapToHighlight: probe.tap.summary() },
+        memory: memoryInfo(),
+        contextLost: probe.contextLost,
+      });
+
     const colour = () => {
       const sel = selectedRef.current;
       const key = sel.join('|');
@@ -140,9 +175,20 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     };
     const render = () => {
       cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame((now) => {
         colour();
+        const t = performance.now();
         renderer.render(scene, camera);
+        probe.renderCpu.add(performance.now() - t);
+        if (dragging) {
+          if (probe.lastFrame) probe.frameInterval.add(now - probe.lastFrame);
+          probe.lastFrame = now;
+        }
+        if (probe.tapAt) {
+          probe.tap.add(performance.now() - probe.tapAt);
+          probe.tapAt = 0;
+          emitStats();
+        }
       });
     };
     /** The surface under a resting pointer changes when the model turns: drop the stale hover. */
@@ -186,8 +232,14 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         seen.add(geometry);
         const info = classifyMesh(node.name || '');
         const p = geometry.getAttribute('position');
+        const t0 = performance.now();
         const region = new Uint16Array(p.count);
         for (let v = 0; v < p.count; v++) region[v] = indexOf(regionAt(info, p.getX(v), p.getY(v), p.getZ(v)));
+        probe.tagMs += performance.now() - t0;
+        probe.vertices += p.count;
+        probe.triangles += (geometry.index ? geometry.index.count : p.count) / 3;
+        for (const a of Object.values(geometry.attributes)) probe.bytes += (a as THREE.BufferAttribute).array.byteLength + p.count * 3;
+        if (geometry.index) probe.bytes += geometry.index.array.byteLength;
         geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(p.count * 3), 3, true));
         orient(geometry, origin!, scale);
         const mesh = new THREE.Mesh(geometry, material) as Part;
@@ -207,6 +259,11 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         add(anatomy, 'muscle');
         setStatus('');
         render();
+        requestAnimationFrame(() => {
+          probe.modelMs = Math.round(performance.now() - probe.start);
+          emitStats();
+        });
+        probe.skeletonStart = performance.now();
         // The skeleton adds context and lets bony landmarks (kneecap, shin, collarbone) be tapped.
         // A failed optional download must not hide usable anatomy.
         load(loader, ROOT + 'skeleton.glb')
@@ -214,6 +271,10 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
             if (disposed) return;
             add(skeleton, 'bone');
             api.current?.draw();
+            requestAnimationFrame(() => {
+              probe.skeletonMs = Math.round(performance.now() - probe.skeletonStart);
+              emitStats();
+            });
           })
           .catch((error) => { if (!disposed) recordIncident('error', error); });
       })
@@ -246,6 +307,15 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     let drag: { x: number; y: number; a: number; moved: boolean } | null = null;
     let hoverQueued = false;
     let pointerInside = false;
+    // A phone can drop the WebGL context under memory pressure: fall back to the 2D map, don't go blank.
+    const lost = (e: Event) => {
+      e.preventDefault();
+      probe.contextLost++;
+      emitStats();
+      recordIncident('error', new Error('WebGL context lost in anatomy atlas'));
+      if (!disposed) unavailableRef.current('context_lost');
+    };
+    canvas.addEventListener('webglcontextlost', lost);
     const down = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false };
@@ -253,7 +323,10 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const move = (e: PointerEvent) => {
       if (drag) {
         const dx = e.clientX - drag.x;
-        if (Math.abs(dx) > 6) drag.moved = true;
+        if (Math.abs(dx) > 6) {
+          drag.moved = true;
+          dragging = true;
+        }
         if (drag.moved) {
           figure.rotation.y = drag.a + dx * 0.012;
           clearHover();
@@ -280,10 +353,18 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     const up = (e: PointerEvent) => {
       if (drag && !drag.moved && !readOnly) {
         const i = hit(e.clientX, e.clientY);
-        if (i >= 0) toggleRef.current(ids[i]);
+        if (i >= 0) {
+          probe.tapAt = performance.now();
+          toggleRef.current(ids[i]);
+        }
       }
-      if (drag?.moved) snapView();
+      if (drag?.moved) {
+        snapView();
+        emitStats();
+      }
       drag = null;
+      dragging = false;
+      probe.lastFrame = 0;
     };
     const leave = () => {
       pointerInside = false;
@@ -310,6 +391,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
       canvas.removeEventListener('pointerup', up);
       canvas.removeEventListener('pointerleave', leave);
       canvas.removeEventListener('wheel', wheel);
+      canvas.removeEventListener('webglcontextlost', lost);
       canvas.remove();
       for (const t of parts) t.mesh.geometry.dispose();
       material.dispose();
