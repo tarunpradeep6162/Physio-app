@@ -77,9 +77,16 @@ export interface MetricSummary {
 
 export function summariseValidation(db: DB): MetricSummary[] {
   const pairs = validationPairs(db);
-  const keys = [...new Set(pairs.map((p) => `${p.metricId}|${p.split}`))].sort();
+  const keys = new Set(pairs.map((p) => `${p.metricId}|${p.split}`));
+  for (const cap of db.captures) {
+    const patient = db.patients.find((p) => p.id === cap.patientId);
+    const assessment = db.assessments.find((a) => a.id === cap.assessmentId);
+    if (!patient?.validationSplit || patient.isDemo || cap.isDemo || assessment?.isDemo ||
+      cap.provenance.source !== 'camera_estimation') continue;
+    for (const metric of cap.result.metrics) keys.add(`${metric.id}|${patient.validationSplit}`);
+  }
   const rt = db.settings.releaseThresholds ?? null;
-  return keys.map((k) => {
+  return [...keys].sort().map((k) => {
     const [metricId, split] = k.split('|') as [string, 'tuning' | 'evaluation'];
     const ps = pairs.filter((p) => p.metricId === metricId && p.split === split);
     const valid = ps.filter((p) => p.cameraValid && p.camera !== null).map((p) => ({ camera: p.camera!, reference: p.reference }));
@@ -112,6 +119,6 @@ export function summariseValidation(db: DB): MetricSummary[] {
         release.pass = release.pass && preSpecified;
       } else release = { pass: false, reasons: ['no release threshold set for this metric'], preSpecified: false };
     }
-    return { metricId, split, participants: new Set(ps.map((p) => p.patientId)).size, agreement: a, failure: fr, release };
+    return { metricId, split, participants: new Set(attempts.map((cap) => cap.patientId)).size, agreement: a, failure: fr, release };
   });
 }

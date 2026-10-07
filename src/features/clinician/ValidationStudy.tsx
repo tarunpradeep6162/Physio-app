@@ -133,7 +133,7 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
       )}
       <h3>Results so far</h3>
       {!rows.length ? (
-        <p className="small muted">No reference measurements from study participants yet. No agreement figures exist.</p>
+        <p className="small muted">No eligible camera captures or reference measurements yet.</p>
       ) : (
         <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">

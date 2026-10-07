@@ -62,6 +62,17 @@ describe('validation dataset', () => {
     expect(row.failure).toMatchObject({ n: 3, failed: 1, rate: 1 / 3 });
   });
 
+  it('shows failure-only metrics with no reference pair', () => {
+    const d = db(null);
+    d.measurements = [];
+    d.captures[2].result.quality.verdict = 'invalid';
+    const row = summariseValidation(d).find((r) => r.metricId === 'knee_flexion_peak' && r.split === 'evaluation')!;
+    expect(row.participants).toBe(2);
+    expect(row.agreement).toBeNull();
+    expect(row.failure).toMatchObject({ n: 2, failed: 1, rate: 0.5 });
+    expect(row.release?.pass).toBe(false);
+  });
+
   it('a release check only counts when thresholds were locked before the evaluation data existed', () => {
     const before = summariseValidation(db('2026-01-15T00:00:00Z')).find((r) => r.split === 'evaluation')!;
     expect(before.release!.preSpecified).toBe(true);
