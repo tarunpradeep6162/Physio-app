@@ -74,13 +74,13 @@ describe('validation dataset', () => {
   });
 
   it('a release check only counts when thresholds were locked before the evaluation data existed', () => {
-    const before = summariseValidation(db('2026-01-15T00:00:00Z')).find((r) => r.split === 'evaluation')!;
+    const before = summariseValidation(db('2026-01-15T00:00:00Z')).find((r) => r.split === 'evaluation' && r.metricId === 'knee_flexion_peak')!;
     expect(before.release!.preSpecified).toBe(true);
-    const after = summariseValidation(db('2026-03-01T00:00:00Z')).find((r) => r.split === 'evaluation')!;
+    const after = summariseValidation(db('2026-03-01T00:00:00Z')).find((r) => r.split === 'evaluation' && r.metricId === 'knee_flexion_peak')!;
     expect(after.release!.pass).toBe(false);
     expect(after.release!.reasons[0]).toMatch(/not locked before/);
     // Locking after camera capture but before its reference also fails: the estimate was visible.
-    const late = summariseValidation(db('2026-02-01T12:00:00Z')).find((r) => r.split === 'evaluation')!;
+    const late = summariseValidation(db('2026-02-01T12:00:00Z')).find((r) => r.split === 'evaluation' && r.metricId === 'knee_flexion_peak')!;
     expect(late.release!.preSpecified).toBe(false);
     // Repeatability needs repeated sessions: never silently passed.
     expect(before.release!.reasons.join(' ')).toMatch(/repeatability not established/);

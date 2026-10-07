@@ -28,7 +28,7 @@ export function validationPairs(db: DB): ValidationPair[] {
   const out: ValidationPair[] = [];
   // Repeated references to one camera result are ambiguous, not independent study samples.
   const refCounts = new Map<string, number>();
-  for (const m of db.measurements) if (m.captureId && m.metricId && m.reference) {
+  for (const m of db.measurements) if (m.captureId && m.metricId && m.reference && !m.isDemo) {
     const key = `${m.captureId}|${m.metricId}`;
     refCounts.set(key, (refCounts.get(key) ?? 0) + 1);
   }
