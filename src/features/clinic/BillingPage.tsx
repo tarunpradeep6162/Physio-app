@@ -79,7 +79,7 @@ export function BillingPage() {
         {dues.length === 0 ? (
           <p className="small muted">No outstanding balances.</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
             <table className="data">
               <thead>
                 <tr>
@@ -137,7 +137,7 @@ export function BillingPage() {
           values={[[...statement].reverse().map((r) => r.incomePaise / 100), [...statement].reverse().map((r) => r.expensePaise / 100)]}
           format={compactINR}
         />
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -209,7 +209,7 @@ function CoursesPanel({ db, actorId }: { db: DB; actorId: string }) {
       {courses.length === 0 ? (
         <p className="small muted">No courses yet.</p>
       ) : (
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -417,7 +417,7 @@ function PaymentsPanel({ db, actorId }: { db: DB; actorId: string }) {
       )}
       {amount && paise === null && <Notice tone="warn">Enter the amount in rupees, for example 1500 or 1500.50.</Notice>}
       {list.length > 0 && (
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>
@@ -509,7 +509,7 @@ function ExpensesPanel({ db, actorId }: { db: DB; actorId: string }) {
       </div>
       {amount && paise === null && <Notice tone="warn">Enter the amount in rupees, for example 25000.</Notice>}
       {list.length > 0 && (
-        <div className="table-wrap">
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
           <table className="data">
             <thead>
               <tr>

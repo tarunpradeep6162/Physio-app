@@ -91,11 +91,18 @@ export function SchedulePage() {
                           type="button"
                           className={`cal-day${d === day ? ' selected' : ''}${d === todayLocal() ? ' today' : ''}`}
                           aria-pressed={d === day}
-                          aria-label={`${d}${counts.get(d) ? `, ${counts.get(d)} booked` : ''}`}
                           onClick={() => setDay(d)}
                         >
+                          {/* The spoken name starts with the visible day number (voice control: "click 4"). */}
                           <span className="num">{Number(d.slice(8))}</span>
-                          {counts.get(d) ? <span className="cal-count">{counts.get(d)}</span> : null}
+                          <span className="sr-only"> {new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
+                          {counts.get(d) ? (
+                            <>
+                              <span className="sr-only">, </span>
+                              <span className="cal-count">{counts.get(d)}</span>
+                              <span className="sr-only"> booked</span>
+                            </>
+                          ) : null}
                         </button>
                       </td>
                     ) : (

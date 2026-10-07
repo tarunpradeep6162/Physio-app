@@ -10,3 +10,4 @@ public/pose/models/*.task
 # Generated from the checked-in parts; source downloads remain local.
 public/anatomy/anatomy.glb
 assets/source/
+a11y-report.json

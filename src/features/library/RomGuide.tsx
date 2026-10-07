@@ -47,7 +47,7 @@ export function RomGuide() {
       <Notice tone="warn">
         Draft reference awaiting clinical-lead review. It describes instrument placement only. Normal ranges are not shown: use the published reference your clinic has chosen and name it in your notes.
       </Notice>
-      <div className="table-wrap">
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Table (scrolls sideways on small screens)">
         <table className="data">
           <thead>
             <tr>
