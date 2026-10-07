@@ -55,3 +55,5 @@ Reviewer: engineering only (Claude Code session). **No clinician, statistician, 
 
 Unchanged and still blocked: 22 (locked occlusion capture set and devices; elbow and object occlusion remain release blockers), 27–30 (depend on 22–26 and clinical review), 35–36 (consent, secure records, native bridge), 40 (all gates, then explicit Dheepika approval). The real-patient flag stays off.
 
+
+Next: [phases 41–60](PHASES_41_60.md).
