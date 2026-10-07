@@ -1753,3 +1753,7 @@ table.data tr:hover td { background: #f1f5f9; }
   .panel { box-shadow: none !important; }
   .report-page { color: #111; }
 }
+
+/* Phase 45: update-ready banner (the person chooses when to reload). */
+.update-banner { background: #eef6ff; color: #12365c; border-color: #b9d4f1; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; justify-content: center; }
+.update-banner .btn { min-height: 36px; }

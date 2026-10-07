@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Notice } from '../../components/ui';
 import { BodyMap } from '../bodymap/BodyMap';
 import type { AtlasStats, Summary } from '../bodymap/atlasProbe';
+import { MODEL_DOWNLOAD_MB } from '../bodymap/BodyMap';
+import { keepModelOffline, offlineModelState, removeOfflineModels, storageEstimate, type OfflineModelState } from '../bodymap/offlineModel';
+import { usePrefs, type AnatomyDetail } from '../../data/prefs';
 import { regionLabel, viewsFor, VIEWS } from '../bodymap/regions';
 
 /** An anatomical navigation aid. A selected region is a location, never a diagnosis. */
@@ -63,6 +66,7 @@ export function AnatomyAtlas() {
             {matches.length === 0 && <p className="small muted">No mapped location matches that search.</p>}
           </div>
           <DeviceCheck stats={stats} />
+          <OfflineModel />
           <div className="row wrap">
             <Link className="btn secondary sm" to="/c/library">Exercise library</Link>
             <Link className="btn secondary sm" to="/c/library/rom-guide">ROM measurement guide</Link>
@@ -123,6 +127,68 @@ function DeviceCheck({ stats }: { stats: AtlasStats | null }) {
           </button>
         </div>
       )}
+    </details>
+  );
+}
+
+const mb = (b: number) => `${Math.round(b / 1048576)} MB`;
+
+/**
+ * Phase 45: keep the 3D model on this device for clinics with weak connections. Opt-in only; shows
+ * what it stores and lets the person remove it. The 2D map always works offline.
+ */
+function OfflineModel() {
+  const prefs = usePrefs();
+  const [state, setState] = useState<OfflineModelState | null>(null);
+  const [usage, setUsage] = useState<{ usage: number; quota: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const supported = typeof caches !== 'undefined';
+  const refresh = () => {
+    offlineModelState().then(setState).catch(() => setState({ stored: [], bytes: 0 }));
+    storageEstimate().then(setUsage).catch(() => setUsage(null));
+  };
+  useEffect(refresh, []);
+  const detail: AnatomyDetail = prefs.anatomyDetail ?? 'lite';
+  const run = async (f: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await f();
+    } catch {
+      setError('The model could not be stored. Check the connection and the free space on this device, then try again.');
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
+  return (
+    <details className="panel">
+      <summary style={{ cursor: 'pointer', minHeight: 44 }}>
+        <strong>Offline use</strong> <span className="xs muted">keep the 3D model on this device</span>
+      </summary>
+      <div className="stack tight" style={{ marginTop: '0.5rem' }}>
+        {!supported ? (
+          <p className="small muted">This browser cannot store the model for offline use. The 2D map works without a connection.</p>
+        ) : (
+          <>
+            <p className="small" style={{ margin: 0 }} role="status">
+              {state === null ? 'Checking…' : state.stored.length === 0 ? 'Not stored. The 3D model downloads each time it is opened.' : `Stored: ${state.stored.map((d) => (d === 'lite' ? 'light model' : 'full detail')).join(' and ')} (${mb(state.bytes)}).`}
+              {usage && <> This site uses {mb(usage.usage)} of about {mb(usage.quota)} available to it.</>}
+            </p>
+            <div className="row wrap">
+              <button type="button" className="btn secondary sm" disabled={busy || state?.stored.includes(detail)} onClick={() => run(() => keepModelOffline(detail))}>
+                {busy ? 'Storing…' : `Keep ${detail === 'lite' ? 'light model' : 'full detail'} (about ${MODEL_DOWNLOAD_MB[detail]} MB download)`}
+              </button>
+              {state && state.stored.length > 0 && (
+                <button type="button" className="btn ghost sm" disabled={busy} onClick={() => run(removeOfflineModels)}>Remove stored model</button>
+              )}
+            </div>
+            {error && <p className="small" role="alert" style={{ margin: 0 }}>{error}</p>}
+            <p className="xs muted" style={{ margin: 0 }}>The model is a reference illustration with no patient information. The model you keep is the one selected in the 3D view.</p>
+          </>
+        )}
+      </div>
     </details>
   );
 }

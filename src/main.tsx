@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './app/App';
 import { RouteErrorBoundary } from './app/RouteErrorBoundary';
 import { installIncidentHandlers } from './app/incidents';
+import { registerServiceWorker } from './app/swUpdate';
 import './styles/app.css';
 import './styles/experience.css';
 
@@ -19,6 +20,6 @@ createRoot(document.getElementById('root')!).render(
 // Offline-capable PWA shell (production builds only, so dev reloads are never stale).
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
+    registerServiceWorker(`${import.meta.env.BASE_URL}sw.js`).catch(() => undefined);
   });
 }

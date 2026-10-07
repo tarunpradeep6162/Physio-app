@@ -22,6 +22,8 @@ export const en = {
   'common.simulated': 'SIMULATED',
   'common.demo_banner': 'Demonstration data — simulated patients and measurements. Not for clinical use.',
   'common.loading': 'Loading…',
+  'common.update_ready': 'A new version of the app is ready. Finish what you are recording, then reload.',
+  'common.update_reload': 'Reload now',
   'common.offline': 'Offline — data is saved on this device and will not be lost.',
   'common.deg': '°',
   'common.none': 'None',

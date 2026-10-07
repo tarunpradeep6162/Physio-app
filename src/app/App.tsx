@@ -8,6 +8,7 @@ import { getSyncStatus, onSyncStatus } from '../data/remote/status';
 import { storageError, useDb } from '../data/store';
 import { I18nProvider, useT } from '../i18n';
 import { useCurrentUser } from './hooks';
+import { applyUpdate, onUpdateReady, updateReady } from './swUpdate';
 
 // Route-level code splitting: the camera/pose runtime, charts, body map and clinician modules
 // load only when needed so the Motion Mirror never waits on dashboard code.
@@ -84,8 +85,15 @@ function Banners() {
   useDb((d) => d.audit.length); // re-render on writes so storage errors surface
   const err = storageError();
   const sync = useSyncStatus();
+  const update = useSyncExternalStore(onUpdateReady, updateReady);
   return (
     <>
+      {update && (
+        <div className="demo-banner update-banner" role="status">
+          {t('common.update_ready')}{' '}
+          <button type="button" className="btn sm" onClick={applyUpdate}>{t('common.update_reload')}</button>
+        </div>
+      )}
       {user?.isDemo && (
         <div className="demo-banner" role="note">
           {t('common.demo_banner')}
