@@ -30,12 +30,47 @@ describe('validation dataset', () => {
     expect(pairs.every((p) => p.cameraValid)).toBe(true);
   });
 
+  it('excludes demo patients and captures even when their references are not marked demo', () => {
+    const d = db(null);
+    d.patients[0].isDemo = true;
+    d.captures[1].isDemo = true;
+    expect(validationPairs(d).map((p) => p.patientId)).toEqual(['p2', 'p3']);
+  });
+
+  it('excludes unblinded, mismatched and duplicate reference pairs', () => {
+    const d = db(null);
+    d.measurements[0].reference!.blinded = false;
+    d.measurements[1].patientId = 'p0';
+    d.measurements.push({ ...d.measurements[2], id: 'duplicate', isDemo: false });
+    expect(validationPairs(d).map((p) => p.patientId)).toEqual(['p3']);
+  });
+
+  it('allows an independently measured reference before capture, but excludes non-camera provenance', () => {
+    const d = db(null);
+    d.measurements[0].createdAt = '2026-01-31T00:00:00Z';
+    d.captures[1].provenance.source = 'simulated_demo';
+    expect(validationPairs(d).map((p) => p.patientId)).toEqual(['p0', 'p2', 'p3']);
+  });
+
+  it('counts unpaired failed attempts in the capture-failure denominator', () => {
+    const d = db(null);
+    const failed = { ...d.captures[2], id: 'failed-attempt',
+      result: { ...d.captures[2].result, quality: { ...d.captures[2].result.quality, verdict: 'invalid' as const } } };
+    d.captures.push(failed);
+    const row = summariseValidation(d).find((r) => r.metricId === 'knee_flexion_peak' && r.split === 'evaluation')!;
+    expect(row.agreement?.n).toBe(2);
+    expect(row.failure).toMatchObject({ n: 3, failed: 1, rate: 1 / 3 });
+  });
+
   it('a release check only counts when thresholds were locked before the evaluation data existed', () => {
     const before = summariseValidation(db('2026-01-15T00:00:00Z')).find((r) => r.split === 'evaluation')!;
     expect(before.release!.preSpecified).toBe(true);
     const after = summariseValidation(db('2026-03-01T00:00:00Z')).find((r) => r.split === 'evaluation')!;
     expect(after.release!.pass).toBe(false);
     expect(after.release!.reasons[0]).toMatch(/not locked before/);
+    // Locking after camera capture but before its reference also fails: the estimate was visible.
+    const late = summariseValidation(db('2026-02-01T12:00:00Z')).find((r) => r.split === 'evaluation')!;
+    expect(late.release!.preSpecified).toBe(false);
     // Repeatability needs repeated sessions: never silently passed.
     expect(before.release!.reasons.join(' ')).toMatch(/repeatability not established/);
   });

@@ -6,12 +6,12 @@ Each phase has one independently reviewable exit. A phase is complete only when 
 
 | Phase | Deliverable | Exit evidence / dependency | State |
 |---|---|---|---|
-| 21 | Release threshold integrity | Every current metric has a valid, locked threshold before evaluation references exist; test partial and malformed tables. | Implemented in code; deployment pending |
+| 21 | Release threshold integrity | Every current metric has a valid, locked threshold before evaluation references exist; test partial and malformed tables. | Engineering implemented; no clinical thresholds set |
 | 22 | Occlusion failure research | Reproduce elbow and object failures on real devices; fail closed for unobservable joints; keep unsafe frame count at zero across the locked challenge set. | Blocked on capture set and device |
 | 23 | Phone benchmark kit | Consent-safe capture worksheet, timestamps, device/model/browser/lighting, dropped frames, thermal state and reproducible export. | Existing worksheet; real phone runs pending |
 | 24 | Anatomy mobile performance | Inspect atlas on target phones for WebGL loss, frame time, memory, tap regions and accessible 2D fallback. | Real-phone testing pending |
-| 25 | Reference pairing | Blinded clinician measurement entered independently with instrument and timestamp; split participants before capture. | Study enrolment pending |
-| 26 | Agreement analysis | Per metric/device/subgroup failure, bias, LoA and repeatability against prespecified thresholds; show missing data. | Depends on 21, 23, 25 |
+| 25 | Reference pairing | Blinded clinician measurement entered independently with instrument and timestamp; split participants before capture. | Dataset guard extended (demo, mismatch, duplicate, unblinded and pre-capture references excluded); study enrolment pending |
+| 26 | Agreement analysis | Per metric/device/subgroup failure, bias, LoA and repeatability against prespecified thresholds; show missing data. | Capture failure denominator now includes unpaired attempts; device/subgroup and repeatability study evidence still pending |
 | 27 | Shoulder release candidate | Real-person shoulder ROM and occlusion tests, instructions, clinician review and report checks. | Depends on 22–26 and clinical review |
 | 28 | Knee release candidate | Repeat the full knee pathway with target phone setups and reference exam; investigate lateral/supine failure modes. | Depends on 22–26 |
 | 29 | Hip and ankle release candidates | Separate protocol validation and usability findings for each metric; no borrowed accuracy claim. | Depends on 22–26 |
@@ -34,3 +34,7 @@ Each phase has one independently reviewable exit. A phase is complete only when 
 - Clinical acceptance thresholds belong to the clinical lead and study statistician. The UI may check completeness and range, but it must not invent numbers.
 - Every release candidate is per protocol and per device context. Passing one joint or model is no evidence for another.
 - Record progress in this file and link raw measurements or test outputs. A green build means the software compiled, not that the intervention is safe or effective.
+
+## Engineering checkpoint, 7 October 2026
+
+The study dataset excludes demo flags on the patient, assessment, capture and reference; unblinded or contradictory references; duplicate capture/metric reference pairs; and malformed timestamps. Threshold pre-specification now precedes both capture and reference data; a blinded reference may legitimately be measured before the camera capture. The capture-failure denominator uses eligible camera attempts, including attempts with no reference. The threshold table declares all reported protocol metrics, including secondary compensation measures. Tests cover these cases and a protocol-output inventory check. These changes improve the integrity of future analysis; they do not provide reference agreement or clinical validation.

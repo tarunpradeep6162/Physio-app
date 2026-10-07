@@ -26,11 +26,22 @@ export interface ValidationPair {
 
 export function validationPairs(db: DB): ValidationPair[] {
   const out: ValidationPair[] = [];
+  // Repeated references to one camera result are ambiguous, not independent study samples.
+  const refCounts = new Map<string, number>();
+  for (const m of db.measurements) if (m.captureId && m.metricId && m.reference) {
+    const key = `${m.captureId}|${m.metricId}`;
+    refCounts.set(key, (refCounts.get(key) ?? 0) + 1);
+  }
   for (const m of db.measurements) {
-    if (m.category !== 'clinician_measured' || !m.reference || !m.captureId || !m.metricId || m.isDemo) continue;
+    if (m.category !== 'clinician_measured' || !m.reference?.blinded || !m.captureId || !m.metricId || m.isDemo || !Number.isFinite(m.value)) continue;
+    if (refCounts.get(`${m.captureId}|${m.metricId}`) !== 1) continue;
     const cap = db.captures.find((c) => c.id === m.captureId);
     const patient = db.patients.find((p) => p.id === m.patientId);
-    if (!cap || !patient?.validationSplit || cap.provenance.source === 'simulated_demo') continue;
+    const assessment = db.assessments.find((a) => a.id === cap?.assessmentId);
+    if (!cap || !patient?.validationSplit || patient.isDemo || cap.isDemo || assessment?.isDemo ||
+      m.patientId !== cap.patientId || cap.provenance.source !== 'camera_estimation' ||
+      !Number.isFinite(Date.parse(m.createdAt)) || !Number.isFinite(Date.parse(cap.createdAt))) continue;
+    if (m.unit !== cap.result.metrics.find((x) => x.id === m.metricId)?.unit) continue;
     const cm = cap.result.metrics.find((x) => x.id === m.metricId);
     const valid = !!cm && cm.validity === 'valid' && cm.value !== null && cap.result.quality.verdict === 'valid';
     const ua = cap.provenance.device?.userAgent ?? '';
@@ -73,12 +84,26 @@ export function summariseValidation(db: DB): MetricSummary[] {
     const ps = pairs.filter((p) => p.metricId === metricId && p.split === split);
     const valid = ps.filter((p) => p.cameraValid && p.camera !== null).map((p) => ({ camera: p.camera!, reference: p.reference }));
     const a = agreement(valid);
-    const fr = failureRate(ps.map((p) => ({ valid: p.cameraValid })));
+    // Every eligible attempt is counted, even if its failed capture has no reference measurement.
+    const attempts = db.captures.filter((cap) => {
+      const patient = db.patients.find((p) => p.id === cap.patientId);
+      const assessment = db.assessments.find((a) => a.id === cap.assessmentId);
+      return patient?.validationSplit === split && !patient.isDemo && !cap.isDemo &&
+        !assessment?.isDemo && cap.provenance.source === 'camera_estimation' &&
+        cap.result.metrics.some((m) => m.id === metricId);
+    });
+    const fr = failureRate(attempts.map((cap) => {
+      const m = cap.result.metrics.find((x) => x.id === metricId)!;
+      return { valid: cap.result.quality.verdict === 'valid' && m.validity === 'valid' && m.value !== null };
+    }));
     let release: MetricSummary['release'] = null;
     if (split === 'evaluation') {
       const t = rt?.values[metricId];
-      const firstEval = ps.map((p) => p.referenceAt).sort()[0];
-      const preSpecified = !!rt && !!firstEval && rt.lockedAt < firstEval;
+      const firstEval = Math.min(
+        ...ps.map((p) => Date.parse(p.referenceAt)),
+        ...attempts.map((cap) => Date.parse(cap.createdAt)),
+      );
+      const preSpecified = !!rt && Number.isFinite(firstEval) && Date.parse(rt.lockedAt) < firstEval;
       if (t) {
         // Test–retest needs repeated sessions per participant; not derivable from single pairs here.
         const r = checkRelease({ metric: metricId, ...t }, a, fr, { icc: null, n: 0 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { REQUIRED_VALIDATION_METRICS, validateReleaseThresholds } from './validationThresholds';
+import { REQUIRED_VALIDATION_METRICS, METRICS_BY_PROTOCOL, validateReleaseThresholds } from './validationThresholds';
+import { PROTOCOLS } from '../engine/protocols/registry';
+import { simulateCapture } from '../engine/protocols/simulate';
 
 const complete = () => ({
   values: Object.fromEntries(REQUIRED_VALIDATION_METRICS.map((metric) => [metric, {
@@ -10,6 +12,12 @@ const complete = () => ({
 });
 
 describe('release threshold integrity', () => {
+  it('declares every emitted metric for every current protocol', () => {
+    for (const protocol of Object.values(PROTOCOLS)) {
+      const result = simulateCapture(protocol.id, protocol.sided ? 'left' : null, { fps: 10, cycles: 1 });
+      expect([...METRICS_BY_PROTOCOL[protocol.id]].sort(), protocol.id).toEqual(result.metrics.map((m) => m.id).sort());
+    }
+  });
   it('requires all current protocol metrics and a valid lock', () => {
     const full = complete();
     expect(validateReleaseThresholds(full)).toEqual([]);
