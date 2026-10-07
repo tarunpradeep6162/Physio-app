@@ -172,40 +172,30 @@ function DeskCheck({ patient, backTo }: { patient: Patient; backTo: string }) {
 
 export function DeskResultsTable({ results }: { results: DeskResult[] }) {
   const { t } = useT();
+  // Stacked cards rather than a table: three columns are unreadable on a 390 px phone.
   return (
-    <div className="panel" style={{ overflowX: 'auto' }}>
-      <table className="data">
-        <thead>
-          <tr>
-            <th>{t('desk.col_measure')}</th>
-            <th className="num">{t('desk.col_value')}</th>
-            <th>{t('desk.col_quality')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {results.map((r) => (
-            <tr key={r.id}>
-              <td>
-                {t(`measure.desk.${r.id}`)}
-                <div className="xs muted">{t(`desk.how.${r.id}`)}</div>
-              </td>
-              <td className="num">{r.value === null ? '—' : `${r.value.toFixed(1)}°`}</td>
-              <td className="small">
-                {r.value === null ? (
-                  <span>
-                    {t('desk.withheld')}: {t(`desk.why.${r.withheld ?? 'too_few_frames'}`)}
-                  </span>
-                ) : (
-                  <span>
-                    {t('desk.quality', { n: r.frames, sd: (r.sd ?? 0).toFixed(1), c: Math.round(r.confidence * 100) })}
-                  </span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ul className="desk-results" aria-label={t('desk.results_title')}>
+      {results.map((r) => (
+        <li key={r.id} className="panel">
+          <div className="row between" style={{ alignItems: 'baseline', gap: '0.75rem' }}>
+            <strong>{t(`measure.desk.${r.id}`)}</strong>
+            <span className="num desk-value">{r.value === null ? '—' : `${r.value.toFixed(1)}°`}</span>
+          </div>
+          <p className="xs muted" style={{ margin: '0.25rem 0' }}>
+            {t(`desk.how.${r.id}`)}
+          </p>
+          <p className="small" style={{ margin: 0 }}>
+            {r.value === null ? (
+              <>
+                {t('desk.withheld')}: {t(`desk.why.${r.withheld ?? 'too_few_frames'}`)}
+              </>
+            ) : (
+              t('desk.quality', { n: r.frames, sd: (r.sd ?? 0).toFixed(1), c: Math.round(r.confidence * 100) })
+            )}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 

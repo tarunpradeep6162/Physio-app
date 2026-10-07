@@ -362,3 +362,7 @@ mark.tbc { background: #fef3c7; color: #78350f; padding: 0 0.25em; border-radius
 .stat-button[aria-pressed='true'] { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
 .chip-btn { border: 1px solid var(--line); border-radius: 999px; font-weight: 500; }
 .abstract { border-left: 3px solid var(--teal); padding-left: 0.75rem; }
+
+/* Desk check results: stacked cards (readable on phones) */
+.desk-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.desk-results .desk-value { font-size: 1.35rem; font-weight: 750; }
