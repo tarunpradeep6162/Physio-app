@@ -15,6 +15,7 @@ import { reportStatus } from '../../clinical/report';
 import { LOCALES, speechLang, useT } from '../../i18n';
 import { CONSENT_TEXT_VERSION } from '../onboarding/Onboarding';
 import { ProgressView } from '../progress/ProgressView';
+import { MyGoals } from './MyGoals';
 import { DailyCompanion } from './DailyCompanion';
 import { erasePatient, exportPatientData } from '../../data/privacy';
 import { allVersions } from '../../content/contentStore';
@@ -393,10 +394,12 @@ export function PatientTrain() {
 export function PatientProgress() {
   const { t } = useT();
   const patient = useCurrentPatient();
-  if (!patient) return null;
+  const user = useCurrentUser();
+  if (!patient || !user) return null;
   return (
     <div className="content stack loose">
       <h1>{t('progress.title')}</h1>
+      <MyGoals patientId={patient.id} userId={user.id} />
       <ProgressView patientId={patient.id} />
     </div>
   );

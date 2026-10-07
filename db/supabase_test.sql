@@ -45,6 +45,21 @@ do $$ begin
   raise exception 'SUPABASE TEST FAILED: patient signed a discharge summary';
 exception when insufficient_privilege then null; end $$;
 do $$ begin
+  insert into public.records (tbl, id, patient_id, data) values ('letters', 'lt-x', 'pa', '{"patientId":"pa","status":"signed","body":"self-referral"}');
+  raise exception 'SUPABASE TEST FAILED: patient wrote a clinical letter';
+exception when insufficient_privilege then null; end $$;
+do $$ begin
+  insert into public.records (tbl, id, patient_id, data) values ('outcomeInstruments', 'oi-x', null, '{"name":"X","enabled":true}');
+  raise exception 'SUPABASE TEST FAILED: patient enabled a questionnaire';
+exception when insufficient_privilege then null; end $$;
+-- A sets a goal in their own words and rates it; the rating cannot be rewritten afterwards.
+insert into public.records (tbl, id, patient_id, data) values ('goals', 'gl1', 'pa', '{"patientId":"pa","text":"Climb stairs at home","status":"active"}');
+insert into public.records (tbl, id, patient_id, data) values ('goalRatings', 'gr1', 'pa', '{"patientId":"pa","goalId":"gl1","rating":3}');
+do $$ begin
+  update public.records set data = '{"patientId":"pa","goalId":"gl1","rating":9}' where tbl = 'goalRatings' and id = 'gr1';
+  raise exception 'SUPABASE TEST FAILED: goal rating rewritten';
+exception when insufficient_privilege then null; end $$;
+do $$ begin
   update public.records set data = '{"role":"clinician"}' where tbl = 'users';
   if (select data ->> 'role' from public.records where tbl = 'users') = 'clinician' then raise exception 'SUPABASE TEST FAILED: patient became clinician'; end if;
 exception when insufficient_privilege then null; end $$;
@@ -73,7 +88,7 @@ exception when insufficient_privilege then null; end $$;
 -- The physiotherapist sees every patient's data and writes a plan for A.
 select pg_temp.as_user('00000000-0000-0000-0000-00000000000c');
 select pg_temp.expect((select count(*) from public.records where tbl = 'patients') = 2, 'physiotherapist sees all patients');
-select pg_temp.expect((select count(*) from public.records where patient_id = 'pa') = 5, 'physiotherapist sees all of A''s records');
+select pg_temp.expect((select count(*) from public.records where patient_id = 'pa') = 7, 'physiotherapist sees all of A''s records');
 insert into public.records (tbl, id, patient_id, data) values ('programs', 'pg1', 'pa', '{"patientId":"pa","status":"active"}');
 select pg_temp.expect((select count(*) from public.profiles) = 3, 'physiotherapist reads the organisation''s profiles');
 -- Append-only history cannot be edited, even by the physiotherapist.
@@ -81,6 +96,23 @@ insert into public.records (tbl, id, patient_id, data) values ('discharges', 'dc
 do $$ begin
   update public.records set data = '{"summary":"rewritten"}' where tbl = 'discharges' and id = 'dc1';
   raise exception 'SUPABASE TEST FAILED: signed discharge edited';
+exception when insufficient_privilege then null; end $$;
+-- A signed letter and a clinical note are fixed once written.
+insert into public.records (tbl, id, patient_id, data) values ('letters', 'lt1', 'pa', '{"patientId":"pa","status":"draft","body":"To the orthopaedic clinic"}');
+update public.records set data = '{"patientId":"pa","status":"signed","body":"To the orthopaedic clinic"}' where tbl = 'letters' and id = 'lt1';
+do $$ begin
+  update public.records set data = '{"patientId":"pa","status":"signed","body":"changed after signing"}' where tbl = 'letters' and id = 'lt1';
+  raise exception 'SUPABASE TEST FAILED: signed letter edited';
+exception when insufficient_privilege then null; end $$;
+insert into public.records (tbl, id, patient_id, data) values ('notes', 'nt1', 'pa', '{"patientId":"pa","body":"S: stairs painful"}');
+do $$ begin
+  update public.records set data = '{"patientId":"pa","body":"rewritten"}' where tbl = 'notes' and id = 'nt1';
+  raise exception 'SUPABASE TEST FAILED: clinical note edited';
+exception when insufficient_privilege then null; end $$;
+insert into public.records (tbl, id, patient_id, data) values ('challengeClips', 'cc1', null, '{"lockedInSet":"occlusion-v1","fps":30}');
+do $$ begin
+  delete from public.records where tbl = 'challengeClips' and id = 'cc1';
+  raise exception 'SUPABASE TEST FAILED: locked challenge clip deleted';
 exception when insufficient_privilege then null; end $$;
 do $$ begin
   update public.records set data = '{"action":"edited"}' where tbl = 'audit' and id = 'ev1';

@@ -48,6 +48,7 @@ const ProgramsIndex = lazy(() => named(import('../features/clinician/ProgramsInd
 const Analytics = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'Analytics'));
 const ClinicSettingsPage = lazy(() => named(import('../features/clinician/AnalyticsSettings'), 'ClinicSettingsPage'));
 const ValidationMode = lazy(() => named(import('../features/validation/ValidationMode'), 'ValidationMode'));
+const ChallengeRecorder = lazy(() => named(import('../features/validation/ChallengeRecorder'), 'ChallengeRecorder'));
 
 function useDocumentPrefs() {
   const prefs = usePrefs();
@@ -322,6 +323,7 @@ export function App() {
               <Route path="billing" element={<BillingPage />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="settings" element={<ClinicSettingsPage />} />
+              <Route path="challenge" element={<ChallengeRecorder />} />
             </Route>
             <Route path="/validation" element={<ValidationGate />} />
             <Route path="/report/:id" element={<ReportRoute />} />

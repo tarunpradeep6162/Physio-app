@@ -13,7 +13,7 @@ import { mergeReplicas, type SyncConflict } from './sync';
  */
 
 const KEY = 'physiovision.db.v1';
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export function uuid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -94,6 +94,11 @@ export function emptyDb(): DB {
     payments: [],
     expenses: [],
     discharges: [],
+    goals: [],
+    goalRatings: [],
+    outcomeInstruments: [],
+    letters: [],
+    challengeClips: [],
     reports: [],
     settings: DEFAULT_SETTINGS,
   };
@@ -145,6 +150,7 @@ export function migrate(parsed: DB): DB {
   // v6 → v7: contentItems, contentReviews and programLibraryItems start empty (Phase 16).
   // v7 → v8: deviceMeasurements starts empty (Phase 18).
   // v8 → v9: treatmentCourses, payments, expenses and discharges start empty (clinic back office).
+  // v9 → v10: goals, goalRatings, outcomeInstruments, letters and challengeClips start empty (Phases 47–52).
   return out;
 }
 
@@ -304,6 +310,9 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
   expenses: () => true,
   discharges: () => true,
   notes: () => true,
+  outcomeInstruments: () => true,
+  letters: () => true,
+  challengeClips: () => true,
   reports: (r) => r.status === 'clinician_reviewed',
   testPlans: (r) => r.source === 'clinician',
   measurements: (r) => r.reviewStatus !== undefined && r.reviewStatus !== 'pending' && r.category === 'camera_estimate',
@@ -312,7 +321,7 @@ const CLINICIAN_ONLY: Partial<Record<Table, Guard>> = {
 export class AuthorizationError extends Error {}
 
 /** History tables: rows are never edited or deleted through the app (Phase 9 append-only history). */
-const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['discharges', 'contentReviews', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
+const APPEND_ONLY: ReadonlySet<Table> = new Set<Table>(['goalRatings', 'notes', 'discharges', 'contentReviews', 'planPauses', 'planResumes', 'draftDecisions', 'examFindings', 'impressions', 'reasoningDecisions', 'amendments']);
 function assertAppendOnly(table: Table, op: string) {
   if (APPEND_ONLY.has(table)) throw new AuthorizationError(`${table} is append-only history; ${op} is not allowed.`);
 }

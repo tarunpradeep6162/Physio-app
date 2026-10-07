@@ -648,8 +648,116 @@ export interface ClinicalNote {
   patientId: ID;
   authorId: ID;
   assessmentId?: ID;
+  /** Free text; for a structured note, the four sections joined (kept for search and older readers). */
   body: string;
   createdAt: ISODate;
+  isDemo?: boolean;
+  /** Structured SOAP note (Phase 48). The headings are a format; the content is the clinician's. */
+  soap?: { subjective: string; objective: string; assessment: string; plan: string };
+  /** Measurements copied in, each with its source label, quality and version at the time. */
+  inserted?: NoteMeasurement[];
+  /** This note corrects an earlier one (notes are never edited; a correction is a new note). */
+  amends?: ID;
+}
+
+/** A measurement as quoted in a note: a frozen snapshot that keeps its source separate (Phase 48). */
+export interface NoteMeasurement {
+  measurementId: ID;
+  label: string;
+  value: string;
+  source: 'patient_report' | 'camera_estimate' | 'algorithmic_observation' | 'clinician_finding';
+  view?: string;
+  quality?: string;
+  version?: string;
+  recordedAt: ISODate;
+}
+
+/** Phase 47: a goal in the patient's own words, agreed with the clinician. Never generated. */
+export interface PatientGoal {
+  id: ID;
+  patientId: ID;
+  text: string;
+  createdBy: ID;
+  createdAt: ISODate;
+  /** Clinician who agreed the goal with the patient, if any. */
+  agreedBy?: ID;
+  agreedAt?: ISODate;
+  status: 'active' | 'achieved' | 'withdrawn';
+  closedAt?: ISODate;
+  isDemo?: boolean;
+}
+
+/** Phase 47: the patient's own 0–10 rating of progress towards a goal; stored verbatim, append-only. */
+export interface GoalRating {
+  id: ID;
+  goalId: ID;
+  patientId: ID;
+  rating: number;
+  note?: string;
+  ratedBy: ID;
+  ratedAt: ISODate;
+  isDemo?: boolean;
+}
+
+/**
+ * Phase 49: an outcome questionnaire the clinic might use. Only metadata: the instrument text and
+ * scoring are NOT in the app until the licence and the official materials are in hand.
+ */
+export interface OutcomeInstrument {
+  id: ID;
+  name: string;
+  version: string;
+  licenceStatus: 'not_checked' | 'requested' | 'licensed' | 'free_with_terms' | 'refused';
+  licenceHolder?: string;
+  /** Licence document, agreement number or URL of the terms. */
+  licenceRef?: string;
+  /** Official scoring manual reference. */
+  scoringSource?: string;
+  clinicalApprovedBy?: ID;
+  clinicalApprovedAt?: ISODate;
+  enabled: boolean;
+  createdBy: ID;
+  createdAt: ISODate;
+  updatedAt?: ISODate;
+}
+
+/** Phase 52: a clinician-written referral or update letter. Signed letters are not edited. */
+export interface Letter {
+  id: ID;
+  patientId: ID;
+  kind: 'referral' | 'update';
+  to: string;
+  body: string;
+  inserted: NoteMeasurement[];
+  status: 'draft' | 'signed';
+  createdBy: ID;
+  createdAt: ISODate;
+  signedBy?: ID;
+  signedAt?: ISODate;
+  /** A new version of a signed letter. */
+  supersedes?: ID;
+  isDemo?: boolean;
+}
+
+/**
+ * Phase 51: a labelled occlusion challenge sequence from a consenting volunteer (not a patient).
+ * Landmarks only; video is kept only under a separate purpose-specific consent, and never here.
+ */
+export interface ChallengeClip {
+  id: ID;
+  label: { occluder: string; joints: string[]; view: string; deviceClass: string; lighting?: string; notes?: string };
+  /** Frame times (ms from start). */
+  t: number[];
+  /** Per frame: 33 landmarks in the lab fixture encoding (src/lab/challenge.ts); null = no pose. */
+  frames: (string | null)[];
+  /** Per frame: the operator held "occluder in place" (ground truth for what the camera cannot see). */
+  occluded: boolean[];
+  frameWidth: number;
+  frameHeight: number;
+  consent: { participantCode: string; landmarkUse: true; videoRetained: false; consentVersion: string; recordedBy: ID };
+  createdAt: ISODate;
+  /** Phase 22 reviewers lock a set; a locked clip is never changed. */
+  lockedInSet?: string;
   isDemo?: boolean;
 }
 
@@ -768,6 +876,11 @@ export interface DB {
   payments: Payment[];
   expenses: Expense[];
   discharges: Discharge[];
+  goals: PatientGoal[];
+  goalRatings: GoalRating[];
+  outcomeInstruments: OutcomeInstrument[];
+  letters: Letter[];
+  challengeClips: ChallengeClip[];
   settings: ClinicSettings;
 }
 

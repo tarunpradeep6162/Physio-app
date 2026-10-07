@@ -5,6 +5,7 @@ import { CategoryBadge, Notice, Segmented, Stat } from '../../components/ui';
 import { serverMode, signOut } from '../../data/auth';
 import { getSyncStatus, onSyncStatus } from '../../data/remote/status';
 import { ValidationStudyPanel } from './ValidationStudy';
+import { CaptureQualityPanel, OutcomeRegistryPanel } from './ClinicTools';
 import { useT } from '../../i18n';
 import { ensureDemoData } from '../../data/demo';
 import { OBSERVATION_RULES_VERSION } from '../../clinical/evidence';
@@ -303,6 +304,7 @@ export function Analytics() {
           </dl>
         </div>
       </section>
+      <CaptureQualityPanel />
     </div>
   );
 }
@@ -459,6 +461,8 @@ export function ClinicSettingsPage() {
           <input className="input num" type="number" min={0} defaultValue={settings.retentionDays} onBlur={(e) => updateSettings({ retentionDays: Math.max(0, Number(e.target.value) || 0) }, user.id)} style={{ maxWidth: 160 }} />
         </label>
       </section>
+
+      <OutcomeRegistryPanel actorId={user.id} />
 
       <section className="panel stack">
         <h2>Motion engine (this device)</h2>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useCurrentClinician, useCurrentUser } from '../../app/hooks';
 import { IconChevron, IconPlus } from '../../components/icons';
@@ -21,6 +21,7 @@ import { ProgressView } from '../progress/ProgressView';
 import { ClinicianActivity } from '../activity/ActivityPanel';
 import { ExceptionQueuePanel, TrendsTab } from './Trends';
 import { DeviceTab } from './DeviceTab';
+import { GoalsTab, LettersTab, NotesTab } from './RecordTabs';
 import { RefLine } from './EvidencePanel';
 import { SessionSummary } from '../session/SessionSummary';
 
@@ -397,7 +398,7 @@ function completedRehab(db: DB, patientId: string): boolean {
   return (db.discharges ?? []).some((d) => d.patientId === patientId) || (db.treatmentCourses ?? []).some((c) => c.patientId === patientId && c.status === 'completed');
 }
 
-type Tab = 'overview' | 'assessment' | 'measurements' | 'pros' | 'programs' | 'sessions' | 'progress' | 'trends' | 'devices' | 'notes';
+type Tab = 'overview' | 'assessment' | 'measurements' | 'pros' | 'programs' | 'sessions' | 'progress' | 'trends' | 'devices' | 'notes' | 'goals' | 'letters';
 
 export function PatientDetail() {
   const { id } = useParams();
@@ -422,7 +423,9 @@ export function PatientDetail() {
     { id: 'devices', label: 'Devices & export' },
     { id: 'sessions', label: 'Session history' },
     { id: 'progress', label: 'Progress' },
+    { id: 'goals', label: 'Goals' },
     { id: 'notes', label: 'Clinical notes' },
+    { id: 'letters', label: 'Letters' },
   ];
 
   return (
@@ -513,7 +516,9 @@ export function PatientDetail() {
       {tab === 'progress' && <ProgressView patientId={patient.id} />}
       {tab === 'trends' && <TrendsTab db={db} patient={patient} />}
       {tab === 'devices' && <DeviceTab db={db} patient={patient} actorId={user.id} />}
+      {tab === 'goals' && <GoalsTab db={db} patient={patient} actorId={user.id} />}
       {tab === 'notes' && <NotesTab db={db} patient={patient} actorId={user.id} />}
+      {tab === 'letters' && <LettersTab db={db} patient={patient} actorId={user.id} />}
     </div>
   );
 }
@@ -942,42 +947,6 @@ function ProgramsTab({ db, patient, actorId }: { db: DB; patient: Patient; actor
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function NotesTab({ db, patient, actorId }: { db: DB; patient: Patient; actorId: string }) {
-  const [body, setBody] = useState('');
-  const notes = useMemo(() => db.notes.filter((n) => n.patientId === patient.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [db, patient.id]);
-  const author = (id: string) => db.clinicians.find((c) => c.id === id || c.userId === id)?.name ?? '—';
-  return (
-    <div className="stack">
-      <div className="panel stack tight">
-        <div className="row between">
-          <strong>New clinical note</strong>
-          <CategoryBadge kind="clinical" />
-        </div>
-        <textarea className="input" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Clinical interpretation, plan, reassessment findings…" />
-        <button
-          className="btn primary"
-          disabled={!body.trim()}
-          onClick={() => {
-            insert('notes', { id: uuid(), patientId: patient.id, authorId: actorId, body: body.trim(), createdAt: new Date().toISOString() }, actorId);
-            setBody('');
-          }}
-        >
-          Save note
-        </button>
-      </div>
-      {notes.map((n) => (
-        <div key={n.id} className="panel stack tight">
-          <div className="row between small muted">
-            <span>{author(n.authorId)}</span>
-            <span>{fmtDateTime(n.createdAt)}</span>
-          </div>
-          <p>{n.body}</p>
-        </div>
-      ))}
     </div>
   );
 }

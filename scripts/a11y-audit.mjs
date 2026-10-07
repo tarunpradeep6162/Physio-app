@@ -35,7 +35,7 @@ const OUT = process.argv[2] ?? 'a11y-report.json';
 
 const PUBLIC = ['/', '/about', '/privacy', '/auth?mode=signin'];
 const PATIENT = ['/p/home', '/p/assess/hip', '/p/train', '/p/progress', '/p/profile', '/p/desk'];
-const CLINICIAN = ['/c/overview', '/c/patients', '/c/schedule', '/c/billing', '/c/programs/new', '/c/library', '/c/library/rom-guide', '/c/research', '/c/anatomy', '/c/analytics', '/c/settings', '/c/assessments'];
+const CLINICIAN = ['/c/overview', '/c/patients', '/c/schedule', '/c/billing', '/c/programs/new', '/c/library', '/c/library/rom-guide', '/c/research', '/c/anatomy', '/c/analytics', '/c/settings', '/c/assessments', '/c/challenge'];
 
 const browser = await chromium.launch(process.env.PLAYWRIGHT_CHROMIUM ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM } : {});
 const results = [];

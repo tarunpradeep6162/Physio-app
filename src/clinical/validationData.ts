@@ -43,7 +43,7 @@ export function ageBand(dob: string | undefined, at: string): string {
   return age < 40 ? 'under 40' : age < 65 ? '40–64' : '65 and over';
 }
 
-function deviceClass(ua: string): string {
+export function deviceClass(ua: string): string {
   return /iPhone|iPad/.test(ua) ? 'iOS' : /Android/.test(ua) ? 'Android' : ua ? 'desktop/other' : 'unknown';
 }
 
