@@ -145,14 +145,21 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         renderer.render(scene, camera);
       });
     };
+    /** The surface under a resting pointer changes when the model turns: drop the stale hover. */
+    const clearHover = () => {
+      if (hoverIdx === -1) return;
+      hoverIdx = -1;
+      setHover(null);
+      render();
+    };
     const snapView = () => {
       const a = ((figure.rotation.y % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
       const near = (t: number) => Math.min(Math.abs(a - t), 2 * Math.PI - Math.abs(a - t)) < 0.05;
       setView(near(0) ? 'front' : near(Math.PI) ? 'back' : near((3 * Math.PI) / 2) ? 'left' : near(Math.PI / 2) ? 'right' : null);
     };
     api.current = {
-      rotateTo: (a) => { figure.rotation.y = a; snapView(); render(); },
-      rotateBy: (d) => { figure.rotation.y += d; snapView(); render(); },
+      rotateTo: (a) => { figure.rotation.y = a; snapView(); clearHover(); render(); },
+      rotateBy: (d) => { figure.rotation.y += d; snapView(); clearHover(); render(); },
       zoom: (d) => { camera.position.z = THREE.MathUtils.clamp(camera.position.z + d, ZOOM.min, ZOOM.max); render(); },
       draw: () => { lastColoured = null; render(); },
     };
@@ -238,6 +245,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
     };
     let drag: { x: number; y: number; a: number; moved: boolean } | null = null;
     let hoverQueued = false;
+    let pointerInside = false;
     const down = (e: PointerEvent) => {
       canvas.setPointerCapture(e.pointerId);
       drag = { x: e.clientX, y: e.clientY, a: figure.rotation.y, moved: false };
@@ -248,15 +256,19 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         if (Math.abs(dx) > 6) drag.moved = true;
         if (drag.moved) {
           figure.rotation.y = drag.a + dx * 0.012;
+          clearHover();
           render();
         }
         return;
       }
+      pointerInside = true;
       // Hover feedback is for mice only, at most once per frame (ray tests are not free on phones).
       if (e.pointerType !== 'mouse' || hoverQueued) return;
       hoverQueued = true;
       requestAnimationFrame(() => {
         hoverQueued = false;
+        // The pointer may have left (or the model turned) since this was queued.
+        if (!pointerInside) return;
         const i = hit(e.clientX, e.clientY);
         if (i !== hoverIdx) {
           hoverIdx = i;
@@ -274,11 +286,8 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
       drag = null;
     };
     const leave = () => {
-      if (hoverIdx !== -1) {
-        hoverIdx = -1;
-        setHover(null);
-        render();
-      }
+      pointerInside = false;
+      clearHover();
     };
     // Plain scrolling scrolls the page; pinch (or Ctrl + scroll) zooms the model.
     const wheel = (e: WheelEvent) => {
