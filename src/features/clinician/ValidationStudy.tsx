@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { hasFinalEvaluationData, summariseValidation, validationPairs } from '../../clinical/validationData';
+import { hasFinalEvaluationData, SUBGROUP_KEYS, summariseValidation, validationPairs, type MetricSummary, type SubgroupKey } from '../../clinical/validationData';
 import { Notice } from '../../components/ui';
 import { updateSettings, useDb } from '../../data/store';
 import { REQUIRED_VALIDATION_METRICS, validateReleaseThresholds } from '../../release/validationThresholds';
@@ -147,6 +147,8 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
                 <th>95% LoA</th>
                 <th>MAE</th>
                 <th>Capture failure</th>
+                <th>Test–retest ICC (n)</th>
+                <th>Missing</th>
                 <th>Release check</th>
               </tr>
             </thead>
@@ -163,6 +165,12 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
                   <td>{r.agreement ? `${f(r.agreement.loaLower)} to ${f(r.agreement.loaUpper)}` : '–'}</td>
                   <td>{f(r.agreement?.mae)}</td>
                   <td>{r.failure.rate === null ? '–' : `${Math.round(r.failure.rate * 100)}%`}</td>
+                  <td>
+                    {f(r.repeatability.icc, 2)} ({r.repeatability.n})
+                  </td>
+                  <td className="xs">
+                    {r.missing.validCaptureNoReference} without reference · {r.missing.referenceCameraInvalid} reference with no valid camera value
+                  </td>
                   <td className="xs">{r.release ? (r.release.pass ? 'meets locked thresholds' : r.release.reasons.join('; ')) : 'tuning split — not a release test'}</td>
                 </tr>
               ))}
@@ -170,11 +178,80 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
           </table>
         </div>
       )}
+      {rows.length > 0 && <StudyDetail rows={rows} />}
       <div className="row">
         <button className="btn secondary sm" onClick={exportJson} disabled={!pairs.length}>
           Export validation data (JSON)
         </button>
       </div>
     </section>
+  );
+}
+
+const SUBGROUP_LABEL: Record<SubgroupKey, string> = {
+  device: 'Device',
+  model: 'Pose model',
+  view: 'Camera view',
+  lighting: 'Lighting',
+  clothing: 'Clothing',
+  skinToneBand: 'Skin-tone band (consented only)',
+  sex: 'Sex',
+  ageBand: 'Age band',
+};
+
+/** Per-metric detail: subgroups, test–retest and failure reasons (STUDY_PROTOCOL steps 4 and 6). */
+function StudyDetail({ rows }: { rows: MetricSummary[] }) {
+  const [key, setKey] = useState(`${rows[0].metricId}|${rows[0].split}`);
+  const r = rows.find((x) => `${x.metricId}|${x.split}` === key) ?? rows[0];
+  const f = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '–' : v.toFixed(d));
+  return (
+    <div className="stack tight">
+      <label className="field" style={{ maxWidth: '28rem' }}>
+        <span>Detail for</span>
+        <select className="input" value={key} onChange={(e) => setKey(e.target.value)}>
+          {rows.map((x) => (
+            <option key={`${x.metricId}|${x.split}`} value={`${x.metricId}|${x.split}`}>
+              {x.metricId.replace(/_/g, ' ')} · {x.split}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="xs muted" style={{ margin: 0 }}>
+        Test–retest: ICC(2,1) {f(r.repeatability.icc, 2)}, SEM {f(r.repeatability.sem)}, MDC95 {f(r.repeatability.mdc95)} from {r.repeatability.n} participant(s) with a second session on a later day (same protocol version, view and device).
+        {r.repeatability.excluded.map((e) => ` ${e.count} without a pair: ${e.reason}.`).join('')}
+      </p>
+      {r.failureReasons.length > 0 && (
+        <p className="xs" style={{ margin: 0 }}>
+          Failure reasons: {r.failureReasons.map((x) => `${x.reason} (${x.count})`).join(' · ')}
+        </p>
+      )}
+      <div className="table-wrap" tabIndex={0} role="region" aria-label="Agreement by subgroup">
+        <table className="data compact">
+          <thead>
+            <tr>
+              <th>Subgroup</th>
+              <th>Group</th>
+              <th className="num">n</th>
+              <th className="num">Bias</th>
+              <th>95% LoA</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SUBGROUP_KEYS.flatMap((k) =>
+              r.subgroups[k].map((g, i) => (
+                <tr key={`${k}-${g.group}`}>
+                  <td>{i === 0 ? SUBGROUP_LABEL[k] : ''}</td>
+                  <td>{g.group}</td>
+                  <td className="num">{g.n}</td>
+                  <td className="num">{f(g.agreement?.bias)}</td>
+                  <td>{g.agreement ? `${f(g.agreement.loaLower)} to ${f(g.agreement.loaUpper)}` : g.n < 2 ? 'n too small' : '–'}</td>
+                </tr>
+              )),
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="xs muted" style={{ margin: 0 }}>Small groups are shown with their n, not pooled away. These figures describe the records entered; they are evidence only within the locked study protocol.</p>
+    </div>
   );
 }

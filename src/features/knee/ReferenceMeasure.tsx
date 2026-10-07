@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CategoryBadge } from '../../components/ui';
-import type { CaptureSession, DB, Measurement, Patient } from '../../data/models';
+import type { CaptureSession, DB, Measurement, Patient, StudyConditions } from '../../data/models';
 import { insert, update, uuid } from '../../data/store';
 
 /**
@@ -26,6 +26,7 @@ export function ReferenceMeasure({ cap, patient, db, actorId }: { cap: CaptureSe
   const [blinded, setBlinded] = useState(true);
   const [note, setNote] = useState('');
   const [open, setOpen] = useState(false);
+  const [cond, setCond] = useState<StudyConditions>({});
   if (!metrics.length) return null;
   const metric = metrics.find((m) => m.id === metricId) ?? metrics[0];
   const v = Number(value);
@@ -48,7 +49,13 @@ export function ReferenceMeasure({ cap, patient, db, actorId }: { cap: CaptureSe
         category: 'clinician_measured',
         captureId: cap.id,
         metricId: metric.id,
-        reference: { instrument, blinded, note: note.trim() || undefined },
+        reference: {
+          instrument,
+          blinded,
+          note: note.trim() || undefined,
+          // Skin-tone band is kept only with the participant's separate consent for it.
+          conditions: Object.keys(cond).length ? { ...cond, skinToneBand: cond.skinToneConsent ? cond.skinToneBand : undefined } : undefined,
+        },
         provenance: { source: instrument === 'goniometer' || instrument === 'inclinometer' ? 'clinician_goniometer' : 'clinician_entry', createdBy: actorId, createdAt: now, engineVersion: 'n/a', algorithmVersion: 'n/a' },
         reviewStatus: 'accepted',
         createdAt: now,
@@ -114,6 +121,42 @@ export function ReferenceMeasure({ cap, patient, db, actorId }: { cap: CaptureSe
             <input type="checkbox" checked={blinded} onChange={(e) => setBlinded(e.target.checked)} /> Assessor blinded to camera value
           </label>
         </div>
+        <fieldset className="row wrap" style={{ border: 0, padding: 0, margin: 0 }}>
+          <legend className="xs muted">Capture conditions for subgroup reporting (optional)</legend>
+          <label className="field">
+            <span>Lighting</span>
+            <select className="input" value={cond.lighting ?? ''} onChange={(e) => setCond((c) => ({ ...c, lighting: (e.target.value || undefined) as StudyConditions['lighting'] }))}>
+              <option value="">Not recorded</option>
+              <option value="even_indoor">Even indoor light</option>
+              <option value="dim">Dim</option>
+              <option value="backlit">Backlit (window behind)</option>
+              <option value="daylight">Daylight</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Clothing</span>
+            <select className="input" value={cond.clothing ?? ''} onChange={(e) => setCond((c) => ({ ...c, clothing: (e.target.value || undefined) as StudyConditions['clothing'] }))}>
+              <option value="">Not recorded</option>
+              <option value="fitted">Fitted</option>
+              <option value="loose">Loose</option>
+              <option value="limb_exposed">Limb exposed (shorts / sleeveless)</option>
+            </select>
+          </label>
+          <label className="row" style={{ gap: '0.4rem', alignSelf: 'flex-end', minHeight: 44 }}>
+            <input type="checkbox" checked={!!cond.skinToneConsent} onChange={(e) => setCond((c) => ({ ...c, skinToneConsent: e.target.checked }))} /> Participant consented to recording skin-tone band
+          </label>
+          {cond.skinToneConsent && (
+            <label className="field">
+              <span>Skin-tone band</span>
+              <select className="input" value={cond.skinToneBand ?? ''} onChange={(e) => setCond((c) => ({ ...c, skinToneBand: (e.target.value || undefined) as StudyConditions['skinToneBand'] }))}>
+                <option value="">Not recorded</option>
+                <option value="I-II">I–II</option>
+                <option value="III-IV">III–IV</option>
+                <option value="V-VI">V–VI</option>
+              </select>
+            </label>
+          )}
+        </fieldset>
         <input className="input" placeholder="Note (optional, e.g. landmarking method)" value={note} onChange={(e) => setNote(e.target.value)} />
         <div className="row">
           <button className="btn primary sm" disabled={!ok} onClick={save}>

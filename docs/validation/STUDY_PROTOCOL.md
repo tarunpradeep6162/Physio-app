@@ -40,6 +40,6 @@
 
 ## Not yet in the app
 
-- Consented subgroup fields: skin-tone band, clothing and lighting conditions per capture. Until then these must be kept in the study log.
-- Linking a second-day capture to its first-day pair for in-app ICC. The export supports doing this offline.
+- ~~Consented subgroup fields~~ Added Oct 2026: lighting, clothing and (with separate consent) skin-tone band are recorded with each reference measurement.
+- ~~Second-day pairing for in-app ICC~~ Added Oct 2026: the first valid capture on a later day with the same protocol version, view and device class is paired; participants without one are counted with the reason.
 - Video annotation tooling. Video is never recorded by the app.

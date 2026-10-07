@@ -339,6 +339,18 @@ export interface CameraScan {
 
 export type ReviewStatus = 'pending' | 'accepted' | 'rejected' | 'repeat_requested';
 
+/**
+ * Capture conditions for subgroup reporting. Skin-tone band is stored ONLY with the participant's
+ * separate consent for it (`skinToneConsent`); otherwise it is absent, never guessed.
+ */
+export interface StudyConditions {
+  lighting?: 'even_indoor' | 'dim' | 'backlit' | 'daylight';
+  clothing?: 'fitted' | 'loose' | 'limb_exposed';
+  skinToneConsent?: boolean;
+  /** Fitzpatrick-style band, self-reported or assessor-recorded with consent. */
+  skinToneBand?: 'I-II' | 'III-IV' | 'V-VI';
+}
+
 export interface Measurement {
   id: ID;
   patientId: ID;
@@ -364,7 +376,13 @@ export interface Measurement {
   reviewedAt?: ISODate;
   reviewNote?: string;
   /** When this clinician measurement is a REFERENCE for a camera capture metric (validation study). */
-  reference?: { instrument: 'goniometer' | 'inclinometer' | 'stopwatch' | 'video_annotation' | 'other'; blinded: boolean; note?: string };
+  reference?: {
+    instrument: 'goniometer' | 'inclinometer' | 'stopwatch' | 'video_annotation' | 'other';
+    blinded: boolean;
+    note?: string;
+    /** Study subgroup conditions of the paired capture (STUDY_PROTOCOL step 6), recorded by the assessor. */
+    conditions?: StudyConditions;
+  };
   createdAt: ISODate;
   isDemo?: boolean;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DB } from '../data/models';
 import { emptyDb } from '../data/store';
 import { simulateCapture } from '../engine/protocols/simulate';
-import { hasFinalEvaluationData, summariseValidation, validationPairs } from './validationData';
+import { ageBand, hasFinalEvaluationData, retestPairs, summariseValidation, validationPairs } from './validationData';
 
 function db(lockedAt: string | null): DB {
   const d = emptyDb();
@@ -93,5 +93,61 @@ describe('validation dataset', () => {
     expect(late.release!.preSpecified).toBe(false);
     // Repeatability needs repeated sessions: never silently passed.
     expect(before.release!.reasons.join(' ')).toMatch(/repeatability not established/);
+  });
+
+  it('pairs a second-day session for test–retest and reports participants without one', () => {
+    const d = db(null);
+    const second = (i: number, day: string, patch: Partial<DB['captures'][number]> = {}) => {
+      const first = d.captures[i];
+      const result = simulateCapture('knee_supported_flexion', 'left', { peak: 102 + i * 5 });
+      d.captures.push({ ...first, id: `c${i}-retest`, result, createdAt: day, provenance: { ...first.provenance, createdAt: day }, ...patch });
+    };
+    second(0, '2026-02-04T10:00:00Z'); // tuning, later day → pairs
+    second(1, '2026-02-01T18:00:00Z'); // same day only → excluded
+    const tuning = retestPairs(d, 'knee_flexion_peak', 'tuning');
+    expect(tuning.pairs.map((p) => p.patientId)).toEqual(['p0']);
+    expect(tuning.pairs[0].intervalDays).toBe(3);
+    expect(tuning.excluded).toEqual([{ reason: 'no valid second-day session', count: 1 }]);
+    // A later session on a different protocol version is not a retest of the same set-up.
+    second(2, '2026-02-05T10:00:00Z', { protocolVersion: '9.9.9' });
+    second(3, '2026-02-06T10:00:00Z');
+    const evaluation = retestPairs(d, 'knee_flexion_peak', 'evaluation');
+    expect(evaluation.pairs.map((p) => p.patientId)).toEqual(['p3']);
+    expect(evaluation.excluded).toEqual([{ reason: 'second session differs in protocol version, view or device', count: 1 }]);
+    const rep = summariseValidation(d).find((r) => r.split === 'tuning' && r.metricId === 'knee_flexion_peak')!.repeatability;
+    expect(rep.n).toBe(1);
+    expect(rep.icc).toBeNull(); // n < 2: no ICC is reported
+  });
+
+  it('reports agreement per subgroup, records skin tone only with consent, and shows missing data', () => {
+    const d = db(null);
+    d.patients[2].sex = 'female';
+    d.patients[3].dob = '1950-06-01';
+    d.measurements[2].reference!.conditions = { lighting: 'dim', clothing: 'fitted', skinToneBand: 'V-VI', skinToneConsent: false };
+    d.measurements[3].reference!.conditions = { lighting: 'dim', skinToneBand: 'III-IV', skinToneConsent: true };
+    const pairs = validationPairs(d).filter((p) => p.split === 'evaluation');
+    expect(pairs.map((p) => p.skinToneBand)).toEqual(['not recorded', 'III-IV']);
+    expect(pairs.map((p) => p.ageBand)).toEqual(['not recorded', '65 and over']);
+    const row = summariseValidation(d).find((r) => r.split === 'evaluation' && r.metricId === 'knee_flexion_peak')!;
+    expect(row.subgroups.lighting).toEqual([{ group: 'dim', n: 2, agreement: expect.objectContaining({ n: 2 }) }]);
+    expect(row.subgroups.sex.map((g) => [g.group, g.n])).toEqual(expect.arrayContaining([['female', 1], ['not recorded', 1]]));
+    // A single-person group is reported with its n, never pooled away (agreement needs n ≥ 2).
+    expect(row.subgroups.sex.every((g) => g.agreement === null)).toBe(true);
+    expect(row.missing).toEqual({ validCaptureNoReference: 0, referenceCameraInvalid: 0 });
+    d.measurements = d.measurements.filter((m) => m.id !== 'r3');
+    expect(summariseValidation(d).find((r) => r.split === 'evaluation' && r.metricId === 'knee_flexion_peak')!.missing.validCaptureNoReference).toBe(1);
+  });
+
+  it('lists failure reasons for failed attempts', () => {
+    const d = db(null);
+    d.captures[0].result = { ...d.captures[0].result, quality: { ...d.captures[0].result.quality, verdict: 'invalid', reasons: ['coverage below 75%'] } };
+    const row = summariseValidation(d).find((r) => r.split === 'tuning' && r.metricId === 'knee_flexion_peak')!;
+    expect(row.failureReasons).toEqual([{ reason: 'coverage below 75%', count: 1 }]);
+  });
+
+  it('age bands are computed at the capture date', () => {
+    expect(ageBand('1986-10-08', '2026-10-07T12:00:00Z')).toBe('under 40');
+    expect(ageBand('1986-10-07', '2026-10-07T12:00:00Z')).toBe('40–64');
+    expect(ageBand(undefined, '2026-10-07')).toBe('not recorded');
   });
 });
