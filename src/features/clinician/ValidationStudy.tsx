@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { summariseValidation, validationPairs } from '../../clinical/validationData';
+import { hasFinalEvaluationData, summariseValidation, validationPairs } from '../../clinical/validationData';
 import { Notice } from '../../components/ui';
 import { updateSettings, useDb } from '../../data/store';
 import { REQUIRED_VALIDATION_METRICS, validateReleaseThresholds } from '../../release/validationThresholds';
@@ -23,8 +23,8 @@ export function ValidationStudyPanel({ actorId, isDemo }: { actorId: string; isD
   const f = (v: number | null | undefined, d = 1) => (v === null || v === undefined ? '–' : v.toFixed(d));
 
   const lock = () => {
-    if (pairs.some((pair) => pair.split === 'evaluation')) {
-      setThresholdError('Final-evaluation references already exist. Thresholds cannot be locked after evaluation data was collected. Ask the study team to document a new prospective protocol.');
+    if (hasFinalEvaluationData(db)) {
+      setThresholdError('Final-evaluation camera captures or references already exist. Thresholds must be locked before either is collected. Ask the study team to document a new prospective protocol.');
       return;
     }
     const values: NonNullable<typeof rt>['values'] = {};

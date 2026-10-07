@@ -24,6 +24,16 @@ export interface ValidationPair {
   referenceAt: string;
 }
 
+/** A prospective threshold lock is unavailable once real evaluation data of either kind exists. */
+export function hasFinalEvaluationData(db: DB): boolean {
+  const patients = new Set(db.patients.filter((p) => p.validationSplit === 'evaluation' && !p.isDemo).map((p) => p.id));
+  const eligible = (patientId: string, assessmentId?: string) =>
+    patients.has(patientId) && !db.assessments.find((a) => a.id === assessmentId)?.isDemo;
+  return db.captures.some((cap) => !cap.isDemo && cap.provenance.source === 'camera_estimation' &&
+    eligible(cap.patientId, cap.assessmentId)) ||
+    db.measurements.some((m) => !m.isDemo && !!m.reference && eligible(m.patientId, m.assessmentId));
+}
+
 export function validationPairs(db: DB): ValidationPair[] {
   const out: ValidationPair[] = [];
   // Repeated references to one camera result are ambiguous, not independent study samples.

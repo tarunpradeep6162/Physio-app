@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DB } from '../data/models';
 import { emptyDb } from '../data/store';
 import { simulateCapture } from '../engine/protocols/simulate';
-import { summariseValidation, validationPairs } from './validationData';
+import { hasFinalEvaluationData, summariseValidation, validationPairs } from './validationData';
 
 function db(lockedAt: string | null): DB {
   const d = emptyDb();
@@ -23,6 +23,15 @@ function db(lockedAt: string | null): DB {
 }
 
 describe('validation dataset', () => {
+  it('blocks prospective threshold locking after any evaluation camera capture, even without references', () => {
+    const d = db(null);
+    d.measurements = [];
+    expect(hasFinalEvaluationData(d)).toBe(true);
+    d.captures = d.captures.filter((cap) => cap.patientId !== 'p2' && cap.patientId !== 'p3');
+    expect(hasFinalEvaluationData(d)).toBe(false);
+    d.measurements.push({ ...db(null).measurements[2], id: 'reference-only' });
+    expect(hasFinalEvaluationData(d)).toBe(true);
+  });
   it('pairs camera and reference per participant split and excludes demo data', () => {
     const pairs = validationPairs(db(null));
     expect(pairs).toHaveLength(4);
