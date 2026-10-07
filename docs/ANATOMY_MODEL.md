@@ -27,6 +27,19 @@ Run `python scripts/optimize_anatomy.py <source.glb> <output.glb>`. The script p
 
 The anatomy derivative is checked in as two exact binary parts under `model-source/` to fit the repository API transfer limit. `scripts/prepare-anatomy-assets.mjs` joins them and verifies the SHA-256 of both assets before build; the assembled anatomy file is generated and ignored by Git. The Vite build serves both GLBs from `/anatomy/` on the app's own origin. The browser no longer contacts GitHub to display the map. The skeleton is optional context and loads after the main anatomy.
 
+## Phone-weight copies (Phase 41)
+
+`node scripts/simplify-anatomy.mjs` writes `anatomy-lite.glb` and `skeleton-lite.glb`. It uses meshoptimizer 1.3.0 (MIT, dev dependency only). Each mesh is simplified on its own toward 25% of its triangles, with an absolute surface-deviation limit of 1.5 mm and open borders locked. Mesh and node names, materials, scene structure, normals of kept vertices and the source frame are unchanged. The output is deterministic, so two runs give the same bytes.
+
+| Built asset | SHA-256 | Bytes | gzip | Triangles |
+| --- | --- | ---: | ---: | ---: |
+| anatomy-lite.glb | `c386312a3a9a104d048ecebb2adb0fefa5e29414b25118e2da61134b48b26d73` | 6,257,724 | 4,566,780 | 355,598 (from 1,092,417) |
+| skeleton-lite.glb | `6676706ab9b0918cf84e9b5d9923433727427c7f5cecb7d759af82769f65e6be` | 1,934,612 | 1,425,857 | 126,750 (from 501,798) |
+
+The light files are committed. `prepare-anatomy-assets.mjs` checks their hashes. `anatomyRegions.test.ts` runs the full region mapping on both models and checks that every mesh is kept by name, that the light model has under half the triangles, and that no light mesh extends beyond its original bounds. Area-weighted main regions match on both models.
+
+The app loads the light model by default on narrow screens and with data saver or a slow connection; anyone can switch to **Full detail**, and the choice is remembered. The device check records which model ran. Whether phones handle either model acceptably is still decided by real-phone runs (`docs/ANATOMY_PHONE_QA.md`).
+
 ## Remaining checks
 
 The GLB structure, hash, mesh counts, unchanged geometry/index bytes and normal quantization were checked locally. Vercel must build and serve both files with a binary content type. A real WebGL device must verify appearance, rotation, region selection, loading time, memory and thermal behaviour. A browser with WebGL disabled correctly uses the 2D map. Do not describe this packaging check as real-phone validation.

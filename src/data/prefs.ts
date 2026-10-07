@@ -21,7 +21,12 @@ export interface Prefs {
   scanTone: ImageTone;
   /** Body map display chosen by this person; unset = decided by screen size and data saver. */
   bodyMapMode?: '3d' | '2d';
+  /** 3D anatomy model detail chosen by this person; unset = light on phones and data saver. */
+  anatomyDetail?: AnatomyDetail;
 }
+
+/** 'lite' is the phone-weight simplified model (Phase 41); 'full' the original packed model. */
+export type AnatomyDetail = 'lite' | 'full';
 
 const KEY = 'physiovision.prefs';
 

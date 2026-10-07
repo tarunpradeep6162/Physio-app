@@ -15,9 +15,12 @@ interface Props {
   compact?: boolean;
   /** Device performance record for testers (Phase 24); no patient data. */
   onStats?: (s: AtlasStats) => void;
+  /** Model detail: the simplified phone-weight files or the full ones. Same mesh names and regions. */
+  detail?: 'lite' | 'full';
 }
 type Part = THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
 const ROOT = '/anatomy/';
+const FILES = { lite: ['anatomy-lite.glb', 'skeleton-lite.glb'], full: ['anatomy.glb', 'skeleton.glb'] } as const;
 
 const VIEW_ANGLE: Record<BodyView, number> = { front: 0, back: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
 const VIEW_LABEL: Record<BodyView, string> = { front: 'Front', back: 'Back', left: 'Left side', right: 'Right side' };
@@ -64,7 +67,7 @@ function load(loader: GLTFLoader, url: string, progress?: (f: number) => void) {
 }
 
 /** A licensed anatomical atlas, not a rendering or diagnosis of the patient. */
-export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact, onStats }: Props) {
+export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly, initialView, compact, onStats, detail = 'full' }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const selectedRef = useRef(selected), toggleRef = useRef(onToggle), unavailableRef = useRef(onUnavailable);
   const api = useRef<{ rotateTo: (a: number) => void; rotateBy: (d: number) => void; zoom: (d: number) => void; draw: () => void } | null>(null);
@@ -148,7 +151,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         version: 1,
         recordedAt: new Date().toISOString(),
         device: deviceInfo(renderer.getContext()),
-        load: { modelMs: probe.modelMs, tagMs: Math.round(probe.tagMs), skeletonMs: probe.skeletonMs, meshes: parts.length, vertices: probe.vertices, triangles: probe.triangles, geometryBytes: probe.bytes },
+        load: { detail, modelMs: probe.modelMs, tagMs: Math.round(probe.tagMs), skeletonMs: probe.skeletonMs, meshes: parts.length, vertices: probe.vertices, triangles: probe.triangles, geometryBytes: probe.bytes },
         interaction: { frameInterval: probe.frameInterval.summary(), renderCpu: probe.renderCpu.summary(), tapToHighlight: probe.tap.summary() },
         memory: memoryInfo(),
         contextLost: probe.contextLost,
@@ -250,7 +253,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
       });
 
     const loader = new GLTFLoader();
-    load(loader, ROOT + 'anatomy.glb', (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`))
+    load(loader, ROOT + FILES[detail][0], (f) => setStatus(`Loading anatomical model… ${Math.round(f * 100)}%`))
       .then((anatomy) => {
         if (disposed) return;
         const box = new THREE.Box3().setFromObject(anatomy);
@@ -266,7 +269,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
         probe.skeletonStart = performance.now();
         // The skeleton adds context and lets bony landmarks (kneecap, shin, collarbone) be tapped.
         // A failed optional download must not hide usable anatomy.
-        load(loader, ROOT + 'skeleton.glb')
+        load(loader, ROOT + FILES[detail][1])
           .then((skeleton) => {
             if (disposed) return;
             add(skeleton, 'bone');
@@ -398,7 +401,7 @@ export default function BodyMap3D({ selected, onToggle, onUnavailable, readOnly,
       renderer.dispose();
       api.current = null;
     };
-  }, [initialView, readOnly]);
+  }, [initialView, readOnly, detail]);
 
   const onKey = (e: KeyboardEvent) => {
     const a = api.current;

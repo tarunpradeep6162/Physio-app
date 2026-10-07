@@ -102,6 +102,8 @@ function DeviceCheck({ stats }: { stats: AtlasStats | null }) {
           <dl className="small" style={{ margin: 0, display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '0.25rem 0.75rem' }}>
             <dt>Graphics</dt>
             <dd style={{ margin: 0 }}>{stats.device.webglRenderer ?? 'not reported'} · DPR {stats.device.devicePixelRatio}</dd>
+            <dt>Model</dt>
+            <dd style={{ margin: 0 }}>{stats.load.detail === 'lite' ? 'Light (simplified for phones)' : 'Full detail'}</dd>
             <dt>Model ready</dt>
             <dd style={{ margin: 0 }}>{ms(stats.load.modelMs)} (region tagging {ms(stats.load.tagMs)}) · skeleton {ms(stats.load.skeletonMs)}</dd>
             <dt>Geometry</dt>

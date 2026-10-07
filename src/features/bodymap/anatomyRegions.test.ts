@@ -21,22 +21,39 @@ function loadModel(file: string): Promise<THREE.Mesh[]> {
   );
 }
 
-/** Region of each vertex of a mesh, counted. */
+/**
+ * Regions of a mesh, weighted by surface area: each vertex carries a third of the area of every
+ * triangle it belongs to. Area (what a person can tap), not vertex count, decides the main region, so
+ * the result does not depend on how densely the model is tessellated in one place.
+ */
 function regionsOf(m: THREE.Mesh): Map<string, number> {
   const info = classifyMesh(m.name);
   const p = m.geometry.getAttribute('position');
+  const area = new Float64Array(p.count);
+  const idx = m.geometry.index;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  if (idx) for (let t = 0; t < idx.count; t += 3) {
+    const [i, j, k] = [idx.getX(t), idx.getX(t + 1), idx.getX(t + 2)];
+    a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, j); c.fromBufferAttribute(p, k);
+    const s = b.sub(a).cross(c.sub(a)).length() / 6;
+    area[i] += s; area[j] += s; area[k] += s;
+  }
   const out = new Map<string, number>();
   for (let i = 0; i < p.count; i++) {
     const id = regionAt(info, p.getX(i), p.getY(i), p.getZ(i));
-    out.set(id, (out.get(id) ?? 0) + 1);
+    out.set(id, (out.get(id) ?? 0) + (idx ? area[i] : 1));
   }
   return out;
 }
 const dominant = (r: Map<string, number>) => [...r.entries()].sort((a, b) => b[1] - a[1])[0][0];
 
-describe('3D anatomy → 2D region ids (whole shipped model)', async () => {
-  const muscles = await loadModel('anatomy.glb');
-  const bones = await loadModel('skeleton.glb');
+// Both shipped models: the full one and the phone-weight copy (Phase 41) must map identically by name.
+describe.each([
+  ['full', 'anatomy.glb', 'skeleton.glb'],
+  ['lite', 'anatomy-lite.glb', 'skeleton-lite.glb'],
+])('3D anatomy → 2D region ids (%s model)', async (_detail, muscleFile, boneFile) => {
+  const muscles = await loadModel(muscleFile);
+  const bones = await loadModel(boneFile);
   const all = [...muscles, ...bones];
   const byName = (n: string) => {
     const m = all.find((x) => x.name === n);
@@ -98,5 +115,30 @@ describe('3D anatomy → 2D region ids (whole shipped model)', async () => {
     const d = regionsOf(byName('diaphragm'));
     expect([...d.keys()].some((k) => k.endsWith('_left'))).toBe(true);
     expect([...d.keys()].some((k) => k.endsWith('_right'))).toBe(true);
+  });
+});
+
+describe('phone-weight model (Phase 41)', async () => {
+  const [full, lite] = await Promise.all([
+    Promise.all([loadModel('anatomy.glb'), loadModel('skeleton.glb')]).then((x) => x.flat()),
+    Promise.all([loadModel('anatomy-lite.glb'), loadModel('skeleton-lite.glb')]).then((x) => x.flat()),
+  ]);
+  const tris = (ms: THREE.Mesh[]) => ms.reduce((n, m) => n + (m.geometry.index?.count ?? 0) / 3, 0);
+
+  it('keeps every mesh, by name and in order', () => {
+    expect(lite.map((m) => m.name)).toEqual(full.map((m) => m.name));
+  });
+
+  it('is lighter, and every mesh keeps some geometry', () => {
+    expect(tris(lite)).toBeLessThan(tris(full) * 0.5);
+    for (const m of lite) expect(m.geometry.index!.count, m.name).toBeGreaterThan(0);
+  });
+
+  it('keeps each mesh within its original bounds (simplification never moves vertices)', () => {
+    for (const [i, m] of lite.entries()) {
+      const a = new THREE.Box3().setFromBufferAttribute(m.geometry.getAttribute('position') as THREE.BufferAttribute);
+      const b = new THREE.Box3().setFromBufferAttribute(full[i].geometry.getAttribute('position') as THREE.BufferAttribute);
+      expect(b.containsBox(a), m.name).toBe(true);
+    }
   });
 });

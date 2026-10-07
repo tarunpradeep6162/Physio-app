@@ -20,6 +20,8 @@ export interface AtlasStats {
     effectiveType: string | null;
   };
   load: {
+    /** Which model ran: the phone-weight simplified copy or the full model (Phase 41). */
+    detail: 'lite' | 'full';
     /** Muscle model: request → first frame drawn (ms). */
     modelMs: number | null;
     /** Of which: per-vertex region tagging (ms). */

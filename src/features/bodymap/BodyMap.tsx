@@ -1,7 +1,7 @@
 import { lazy, Suspense, useId, useRef, useState, type PointerEvent as RPointerEvent, type KeyboardEvent } from 'react';
 import { IconMinus, IconPlus } from '../../components/icons';
 import { Segmented } from '../../components/ui';
-import { setPrefs, usePrefs } from '../../data/prefs';
+import { setPrefs, usePrefs, type AnatomyDetail } from '../../data/prefs';
 import type { AtlasStats } from './atlasProbe';
 import { useT } from '../../i18n';
 import { capsulePath, regionLabel, viewsFor, VIEW_ORDER, VIEWS, type BodyView, type Shape } from './regions';
@@ -9,8 +9,12 @@ import { capsulePath, regionLabel, viewsFor, VIEW_ORDER, VIEWS, type BodyView, t
 /** Every region id in the 2D catalogue, alphabetical by label (the list used with the 3D model). */
 const ALL_REGIONS = [...new Set(Object.values(VIEWS).flatMap((v) => v.map((r) => r.id)))].sort((a, b) => regionLabel(a).localeCompare(regionLabel(b)));
 
-/** Compressed download of the 3D muscle + skeleton models (measured on the live site). */
-export const MODEL_DOWNLOAD_MB = 20;
+/**
+ * Compressed download of the 3D muscle + skeleton models (gzip). 'full' is the original packed
+ * model; 'lite' is the phone-weight simplified copy (Phase 41, scripts/simplify-anatomy.mjs) with
+ * the same mesh names and region mapping.
+ */
+export const MODEL_DOWNLOAD_MB: Record<AnatomyDetail, number> = { lite: 6, full: 20 };
 
 /**
  * 3D only by default where it is cheap: a wide screen and no data-saver or slow connection. Phones
@@ -78,6 +82,8 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
     setModeState(m);
     if (!readOnly) setPrefs({ bodyMapMode: m });
   };
+  // Phones and data saver get the simplified model unless the person chose the full one.
+  const detail: AnatomyDetail = prefs.anatomyDetail ?? (default3d() ? 'full' : 'lite');
   const [threeUnavailable, setThreeUnavailable] = useState<'webgl' | 'model' | 'context_lost' | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -176,14 +182,21 @@ export function BodyMap({ selected, onToggle, readOnly, initialView = 'front', c
     <div className="stack tight">
       {!drawing && <div className="bodymap-mode" role="group" aria-label="Anatomy display">
         <button type="button" aria-pressed={mode === '3d'} onClick={() => { setThreeUnavailable(null); setMode('3d'); }}>
-          3D body{mode !== '3d' && <span className="bodymap-mode-size"> · about {MODEL_DOWNLOAD_MB} MB</span>}
+          3D body{mode !== '3d' && <span className="bodymap-mode-size"> · about {MODEL_DOWNLOAD_MB[detail]} MB</span>}
         </button>
         <button type="button" aria-pressed={mode === '2d'} onClick={() => setMode('2d')}>2D map</button>
+      </div>}
+      {!drawing && mode === '3d' && <div className="bodymap-mode bodymap-detail" role="group" aria-label="3D model detail">
+        {(['lite', 'full'] as const).map((d) => (
+          <button key={d} type="button" aria-pressed={detail === d} onClick={() => setPrefs({ anatomyDetail: d })}>
+            {d === 'lite' ? 'Light model' : 'Full detail'}<span className="bodymap-mode-size"> · about {MODEL_DOWNLOAD_MB[d]} MB</span>
+          </button>
+        ))}
       </div>}
       {drawing && <p className="xs muted" style={{ margin: 0 }}>Radiation paths are drawn on the 2D map.</p>}
       {threeUnavailable && <p className="small muted" role="status">{threeUnavailable === 'webgl' ? '3D anatomy needs WebGL, which this browser or device could not start. Use the 2D map and region list here.' : threeUnavailable === 'context_lost' ? 'The 3D view stopped because this device ran short of graphics memory. Your selections are kept on the 2D map; you can retry 3D.' : 'The anatomical model could not load. Check your connection or retry 3D; the 2D map and region list are available.'}</p>}
       {mode === '3d' && !drawing ? <Suspense fallback={<div className="bodymap-3d-loading" role="status">Loading 3D anatomy…</div>}>
-        <BodyMap3D selected={selected} onToggle={onToggle} onUnavailable={(reason) => { setModeState('2d'); setThreeUnavailable(reason); }} readOnly={readOnly} compact={compact} initialView={initialView} onStats={onAtlasStats} />
+        <BodyMap3D key={detail} detail={detail} selected={selected} onToggle={onToggle} onUnavailable={(reason) => { setModeState('2d'); setThreeUnavailable(reason); }} readOnly={readOnly} compact={compact} initialView={initialView} onStats={onAtlasStats} />
         {!readOnly && (
           <details className="bodymap-list">
             <summary>{t('body.list_toggle')}</summary>
